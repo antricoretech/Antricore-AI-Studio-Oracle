@@ -298,3 +298,31 @@ def test_phase3_preflight_and_job_lineage(client):
     assert jobs[0]['lineage']['persona_id'] == persona['id']
     assert jobs[0]['lineage']['workflow_id'] == 'phase3_image'
     assert jobs[0]['attempt'] == 1
+
+
+def test_phase5_asset_manifest_and_approved_export_package(client):
+    import io
+    import zipfile
+
+    persona = client.post('/api/personas', json={
+        'name': 'Export Ready', 'age': 32,
+        'appearance': 'short black hair and green eyes',
+        'description': 'fictional adult fashion creator'
+    }).json()
+    imported = client.post('/api/assets/import', data={
+        'persona_id': persona['id'], 'kind': 'video', 'prompt': 'Imported reviewed episode output',
+        'disclosure': 'Fictional adult character. AI-generated synthetic media.', 'rights_confirmed': 'true'
+    }, files={'file': ('episode.mp4', b'fake mp4 bytes', 'video/mp4')})
+    assert imported.status_code == 201
+    aid = imported.json()['id']
+    manifest = client.get('/api/assets/' + aid + '/manifest')
+    assert manifest.status_code == 200
+    assert manifest.json()['schema_version'] == 'asset-manifest-1.0'
+    assert manifest.json()['asset']['sha256']
+    assert client.get('/api/assets/' + aid + '/package').status_code == 409
+    approved = client.patch('/api/assets/' + aid + '/review', json={'review': 'approved'})
+    assert approved.status_code == 200
+    package = client.get('/api/assets/' + aid + '/package')
+    assert package.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(package.content)) as archive:
+        assert {'manifest.json', 'AI-DISCLOSURE.txt'} <= set(archive.namelist())

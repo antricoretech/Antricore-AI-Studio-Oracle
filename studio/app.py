@@ -6,6 +6,7 @@ loopback or using a shared cloud worker.
 from __future__ import annotations
 
 import asyncio
+from io import BytesIO
 import importlib.util
 import json
 import os
@@ -15,6 +16,7 @@ import shutil
 import sys
 import uuid
 import logging
+import zipfile
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,7 +32,7 @@ DEFAULT_WORKFLOW_LABELS = {
 load_dotenv(ROOT / ".env")
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from . import database as db
 from .brief import PersonaBrief, PersonaCharacteristics, brief_dict, parse_brief_bytes, parse_persona_bytes
@@ -38,6 +40,7 @@ from .comfy import ComfyClient, output_files, render_graph, validate_graph
 from .media import extension_for, read_limited, validate_image_bytes, validate_media_signature
 from .policies import AI_DISCLOSURE
 from .preflight import workflow_preflight
+from .provenance import manifest, media_metadata, quality_report, sha256_bytes
 from .repositories import JobRepository, PersonaRepository, SeriesRepository
 from .schemas import JobIn, LinkIn, PersonaIn, ReviewIn, SeriesEpisodeIn, SeriesIn, SeriesQueueIn, VoiceIn
 from .settings import get_settings
@@ -538,8 +541,11 @@ async def execute_job(job_id, payload: JobIn, person: dict):
                 dest = aid + ext
                 (db.OUTPUTS / dest).write_bytes(content)
                 kind = "video" if ext in {".mp4", ".webm", ".gif"} else "audio" if ext in {".wav", ".mp3", ".flac"} else "image"
-                db.write("INSERT INTO assets (id,persona_id,job_id,filename,kind,prompt,rights_confirmed,disclosure,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
-                         (aid, person["id"], job_id, dest, kind, payload.prompt, 1, person.get("disclosure") or AI_DISCLOSURE, now()))
+                disclosure = person.get("disclosure") or AI_DISCLOSURE
+                metadata = media_metadata(content, kind, dest)
+                quality = quality_report(db.OUTPUTS / dest, kind, disclosure, lineage={"job_id": job_id})
+                db.write("INSERT INTO assets (id,persona_id,job_id,filename,kind,prompt,rights_confirmed,disclosure,created_at,sha256,metadata_json,quality_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                         (aid, person["id"], job_id, dest, kind, payload.prompt, 1, disclosure, now(), sha256_bytes(content), json.dumps(metadata), json.dumps(quality)))
             db.write("UPDATE jobs SET status='completed', finished_at=?, updated_at=? WHERE id=?", (now(), now(), job_id))
             db.write("UPDATE series_episodes SET status='completed' WHERE job_id=?", (job_id,))
             logger.info("job_completed", extra={"data": {"job_id": job_id, "outputs": len(files)}})
@@ -686,7 +692,14 @@ def get_jobs():
 
 @app.get("/api/assets")
 def get_assets():
-    return db.all_rows("SELECT assets.*,personas.name AS persona_name FROM assets JOIN personas ON personas.id=assets.persona_id ORDER BY assets.created_at DESC LIMIT 150")
+    rows = db.all_rows("SELECT assets.*,personas.name AS persona_name FROM assets JOIN personas ON personas.id=assets.persona_id ORDER BY assets.created_at DESC LIMIT 150")
+    for item in rows:
+        for key in ("metadata_json", "quality_json"):
+            try:
+                item[key.removesuffix("_json")] = json.loads(item[key] or "{}")
+            except (TypeError, json.JSONDecodeError):
+                item[key.removesuffix("_json")] = {}
+    return rows
 
 
 @app.post("/api/assets/import", status_code=201)
@@ -721,8 +734,11 @@ async def import_asset(
     destination = aid + suffix
     db.OUTPUTS.mkdir(parents=True, exist_ok=True)
     (db.OUTPUTS / destination).write_bytes(raw)
-    db.write("INSERT INTO assets (id,persona_id,job_id,filename,kind,prompt,rights_confirmed,disclosure,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
-             (aid, person["id"], None, destination, kind, prompt.strip()[:3000], 1, disclosure.strip()[:300], now()))
+    disclosure = disclosure.strip()[:300]
+    metadata = media_metadata(raw, kind, destination)
+    quality = quality_report(db.OUTPUTS / destination, kind, disclosure)
+    db.write("INSERT INTO assets (id,persona_id,job_id,filename,kind,prompt,rights_confirmed,disclosure,created_at,sha256,metadata_json,quality_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+             (aid, person["id"], None, destination, kind, prompt.strip()[:3000], 1, disclosure, now(), sha256_bytes(raw), json.dumps(metadata), json.dumps(quality)))
     return {"id": aid, "kind": kind, "review": "pending", "url": f"/api/assets/{aid}/file"}
 
 
@@ -734,12 +750,60 @@ def asset_file(aid: str):
     return FileResponse(db.OUTPUTS / asset["filename"])
 
 
+def _asset_bundle(aid: str):
+    asset = db.row("SELECT * FROM assets WHERE id=?", (aid,))
+    if not asset:
+        raise HTTPException(404, "Asset not found")
+    job = db.row("SELECT * FROM jobs WHERE id=?", (asset.get("job_id"),)) if asset.get("job_id") else None
+    person = db.row("SELECT * FROM personas WHERE id=?", (asset["persona_id"],))
+    quality = quality_report(db.OUTPUTS / asset["filename"], asset["kind"], asset.get("disclosure") or AI_DISCLOSURE,
+                             lineage={"job_id": asset.get("job_id")} if asset.get("job_id") else None,
+                             expected_sha256=asset.get("sha256"))
+    return asset, job, person, quality
+
+
+@app.get("/api/assets/{aid}/manifest")
+def asset_manifest(aid: str):
+    asset, job, person, quality = _asset_bundle(aid)
+    return manifest(asset, job=job, persona=person, quality=quality)
+
+
+@app.get("/api/assets/{aid}/quality")
+def asset_quality(aid: str):
+    _asset, _job, _person, quality = _asset_bundle(aid)
+    return quality
+
+
+@app.get("/api/assets/{aid}/package")
+def asset_package(aid: str):
+    asset, job, person, quality = _asset_bundle(aid)
+    if asset["review"] != "approved":
+        raise HTTPException(409, "Approve the asset before exporting a package")
+    if quality["status"] == "error":
+        raise HTTPException(409, "Quality checks found an integrity error; resolve it before export")
+    payload = manifest(asset, job=job, persona=person, quality=quality)
+    archive = BytesIO()
+    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
+        bundle.writestr(asset["filename"], (db.OUTPUTS / asset["filename"]).read_bytes())
+        bundle.writestr("manifest.json", json.dumps(payload, indent=2, ensure_ascii=False))
+        bundle.writestr("AI-DISCLOSURE.txt", asset.get("disclosure") or AI_DISCLOSURE)
+    archive.seek(0)
+    return StreamingResponse(iter([archive.getvalue()]), media_type="application/zip",
+                             headers={"Content-Disposition": f'attachment; filename="asset_{aid}.zip"'})
+
+
 @app.patch("/api/assets/{aid}/review")
 def set_review(aid: str, payload: ReviewIn):
     if payload.review not in {"approved", "rejected", "pending"}:
         raise HTTPException(400, "Review must be approved, rejected, or pending")
     if not db.row("SELECT id FROM assets WHERE id=?", (aid,)):
         raise HTTPException(404)
+    if payload.review == "approved":
+        asset, job, _person, quality = _asset_bundle(aid)
+        if quality["status"] == "error":
+            raise HTTPException(409, "Quality checks found an integrity error; inspect the asset before approving")
+        db.write("UPDATE assets SET review=?, quality_json=? WHERE id=?", (payload.review, json.dumps(quality), aid))
+        return {"id": aid, "review": payload.review, "quality": quality}
     db.write("UPDATE assets SET review=? WHERE id=?", (payload.review, aid))
     return {"id": aid, "review": payload.review}
 
@@ -754,8 +818,12 @@ async def create_voice(payload: VoiceIn):
         await asyncio.to_thread(synthesize, payload.text, payload.voice, destination)
     except Exception as e:
         raise HTTPException(503, f"Voice generation unavailable: {str(e)[:250]}") from e
-    db.write("INSERT INTO assets (id,persona_id,job_id,filename,kind,prompt,rights_confirmed,disclosure,created_at) VALUES (?,?,NULL,?,?,?,?,?,?)",
-             (aid, person["id"], aid + ".wav", "audio", payload.text, 1, person.get("disclosure") or AI_DISCLOSURE, now()))
+    raw = destination.read_bytes()
+    disclosure = person.get("disclosure") or AI_DISCLOSURE
+    metadata = media_metadata(raw, "audio", aid + ".wav")
+    quality = quality_report(destination, "audio", disclosure)
+    db.write("INSERT INTO assets (id,persona_id,job_id,filename,kind,prompt,rights_confirmed,disclosure,created_at,sha256,metadata_json,quality_json) VALUES (?,?,NULL,?,?,?,?,?,?,?,?,?)",
+             (aid, person["id"], aid + ".wav", "audio", payload.text, 1, disclosure, now(), sha256_bytes(raw), json.dumps(metadata), json.dumps(quality)))
     return {"id": aid, "url": f"/api/assets/{aid}/file"}
 
 

@@ -34,7 +34,7 @@ the boundaries are explicit enough to extract a worker later.
 - `studio/media.py` owns bounded reads, image decoding and media signatures.
 - `studio/repositories.py` owns the first persistence operations and exposes a
   transaction-backed series create path.
-- `studio/database.py` now records schema version `3`, adds useful indexes and
+- `studio/database.py` now records schema version `4`, adds useful indexes and
   exposes `write_many()` for atomic multi-row writes.
 
 The route module is intentionally not split into microservices yet. The next
@@ -84,3 +84,15 @@ local workflow.
 No bundler or npm toolchain is required yet. This keeps the dashboard usable
 on the same lightweight local/cloud Python deployment; a later UI phase can
 add type checking and browser end-to-end tests when Node tooling is available.
+
+## Phase 5 — quality and export provenance
+
+- Assets store a SHA-256 hash, basic media metadata and the latest quality
+  report. Image files are decoded during the check; disclosure and lineage are
+  surfaced as explicit review signals.
+- Approved assets expose a manifest endpoint and a ZIP export containing the
+  media file, `manifest.json` and `AI-DISCLOSURE.txt`.
+- Approval blocks integrity errors but still requires human review; warnings
+  such as missing lineage do not silently publish anything.
+- The gallery shows the quality status and offers the export package only after
+  approval.

@@ -43,7 +43,8 @@ def initialize():
             filename TEXT NOT NULL, kind TEXT NOT NULL, prompt TEXT NOT NULL,
             review TEXT NOT NULL DEFAULT 'pending', rights_confirmed INTEGER NOT NULL DEFAULT 0,
             disclosure TEXT NOT NULL DEFAULT 'Fictional adult character. AI-generated synthetic media.',
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL, sha256 TEXT, metadata_json TEXT NOT NULL DEFAULT '{}',
+            quality_json TEXT NOT NULL DEFAULT '{}'
         );
         CREATE TABLE IF NOT EXISTS links (
             code TEXT PRIMARY KEY, label TEXT NOT NULL,
@@ -79,6 +80,12 @@ def initialize():
         asset_columns = {row[1] for row in con.execute("PRAGMA table_info(assets)").fetchall()}
         if "disclosure" not in asset_columns:
             con.execute("ALTER TABLE assets ADD COLUMN disclosure TEXT NOT NULL DEFAULT 'Fictional adult character. AI-generated synthetic media.'")
+        if "sha256" not in asset_columns:
+            con.execute("ALTER TABLE assets ADD COLUMN sha256 TEXT")
+        if "metadata_json" not in asset_columns:
+            con.execute("ALTER TABLE assets ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}'")
+        if "quality_json" not in asset_columns:
+            con.execute("ALTER TABLE assets ADD COLUMN quality_json TEXT NOT NULL DEFAULT '{}'")
         job_columns = {row[1] for row in con.execute("PRAGMA table_info(jobs)").fetchall()}
         if "request_json" not in job_columns:
             con.execute("ALTER TABLE jobs ADD COLUMN request_json TEXT NOT NULL DEFAULT '{}'")
@@ -97,10 +104,11 @@ def initialize():
         CREATE INDEX IF NOT EXISTS idx_jobs_persona_created ON jobs(persona_id, created_at);
         CREATE INDEX IF NOT EXISTS idx_assets_persona_created ON assets(persona_id, created_at);
         CREATE INDEX IF NOT EXISTS idx_assets_review_kind ON assets(review, kind);
+        CREATE INDEX IF NOT EXISTS idx_assets_sha256 ON assets(sha256);
         CREATE INDEX IF NOT EXISTS idx_series_persona_created ON series(persona_id, created_at);
         CREATE INDEX IF NOT EXISTS idx_series_episodes_job ON series_episodes(job_id);
         """)
-        con.execute("INSERT INTO schema_meta(key,value) VALUES('schema_version','3') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+        con.execute("INSERT INTO schema_meta(key,value) VALUES('schema_version','4') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
         con.execute("UPDATE jobs SET status='interrupted', error='App restarted during job; retry from Studio', updated_at=? WHERE status IN ('running','submitted','queued','cancelling')", (datetime_now(),))
 
 

@@ -484,6 +484,7 @@ function renderGallery() {
     else preview.append(el('audio', { src: url, controls: '' }));
     const body = el('div', { class: 'asset-content' });
     body.append(el('strong', {}, asset.persona_name), el('small', {}, asset.kind.toUpperCase() + ' · ' + asset.review), el('small', {}, asset.prompt.slice(0, 105)), el('small', {}, 'Disclosure: ' + (asset.disclosure || 'Fictional adult character. AI-generated synthetic media.')));
+    if (asset.quality?.status) body.append(el('small', { class: asset.quality.status === 'error' ? 'error-text' : asset.quality.status === 'ready' ? 'ready-text' : 'muted' }, 'Quality gate: ' + asset.quality.status));
     const controls = el('div', { class: 'asset-controls' });
     for (const status of ['approved', 'rejected']) {
       const button = el('button', { type: 'button' }, status === 'approved' ? '✓ Approve' : '× Reject');
@@ -496,6 +497,7 @@ function renderGallery() {
       controls.append(button);
     }
     controls.append(el('a', { href: url, download: asset.filename, target: '_blank', rel: 'noopener' }, '↓ Download'));
+    if (asset.review === 'approved') controls.append(el('a', { href: '/api/assets/' + asset.id + '/package', download: 'asset_' + asset.id + '.zip' }, '↓ Export package'));
     if (asset.review === 'approved' && asset.kind === 'image') {
       const useForVideo = el('button', { type: 'button' }, 'Use for video');
       useForVideo.addEventListener('click', async () => {
