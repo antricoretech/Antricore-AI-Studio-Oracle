@@ -48,9 +48,9 @@ class SeriesRepository:
 
 class JobRepository:
     @staticmethod
-    def create(*, job_id: str, persona_id: str, workflow_id: str, kind: str, prompt: str, request_json: str, created_at: str):
+    def create(*, job_id: str, persona_id: str, workflow_id: str, kind: str, prompt: str, request_json: str, lineage_json: str = "{}", created_at: str):
         db.write(
-            "INSERT INTO jobs (id,persona_id,workflow_id,type,prompt,status,created_at,request_json,updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
-            (job_id, persona_id, workflow_id, kind, prompt, "queued", created_at, request_json, created_at),
+            "INSERT INTO jobs (id,persona_id,workflow_id,type,prompt,status,created_at,request_json,updated_at,lineage_json) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (job_id, persona_id, workflow_id, kind, prompt, "queued", created_at, request_json, created_at, lineage_json),
         )
 

@@ -273,3 +273,28 @@ def test_complete_generation_lifecycle_with_mocked_comfy(client, monkeypatch):
     assert client.get('/api/assets/'+assets[0]['id']+'/file').content == png
     assert client.patch('/api/assets/'+assets[0]['id']+'/review',json={'review':'approved'}).status_code == 200
     assert client.get('/api/summary').json()['approved'] == 1
+
+
+def test_phase3_preflight_and_job_lineage(client):
+    import json
+    import studio.database as test_db
+
+    persona = client.post('/api/personas', json={
+        'name': 'Phase Three', 'age': 29,
+        'appearance': 'short dark hair and hazel eyes',
+        'description': 'fictional adult editorial creator'
+    }).json()
+    workflow = test_db.WORKFLOWS / 'phase3_image.json'
+    workflow.write_text(json.dumps({'1': {'class_type': 'SaveImage', 'inputs': {'images': ['1', 0]}}}))
+    response = client.get('/api/preflight?workflow_id=phase3_image')
+    assert response.status_code == 200
+    assert response.json()['overall'] in {'ready', 'degraded'}
+    queued = client.post('/api/jobs', json={
+        'persona_id': persona['id'], 'workflow_id': 'phase3_image',
+        'prompt': 'A carefully lit editorial portrait', 'rights_confirmed': True
+    })
+    assert queued.status_code == 202
+    jobs = client.get('/api/jobs').json()
+    assert jobs[0]['lineage']['persona_id'] == persona['id']
+    assert jobs[0]['lineage']['workflow_id'] == 'phase3_image'
+    assert jobs[0]['attempt'] == 1

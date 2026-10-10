@@ -37,6 +37,7 @@ from .brief import PersonaBrief, PersonaCharacteristics, brief_dict, parse_brief
 from .comfy import ComfyClient, output_files, render_graph, validate_graph
 from .media import extension_for, read_limited, validate_image_bytes, validate_media_signature
 from .policies import AI_DISCLOSURE
+from .preflight import workflow_preflight
 from .repositories import JobRepository, PersonaRepository, SeriesRepository
 from .schemas import JobIn, LinkIn, PersonaIn, ReviewIn, SeriesEpisodeIn, SeriesIn, SeriesQueueIn, VoiceIn
 from .settings import get_settings
@@ -56,6 +57,7 @@ def uid():
 async def lifespan(app: FastAPI):
     db.initialize()
     app.state.job_tasks = set()
+    app.state.job_task_map = {}
     logger.info("studio_started", extra={"data_dir": str(db.DATA)})
     try:
         yield
@@ -320,9 +322,11 @@ async def monitor():
     checks["workflows"] = {"status": "ready" if ready_workflows else "warning", "detail": f"{len(ready_workflows)} verified graph(s), {len(catalog_workflows)} catalog recipe(s)", "ready_count": len(ready_workflows), "catalog_count": len(catalog_workflows), "items": workflows}
     checks["runtime"] = _runtime_monitor_rows()
     checks["models"] = _model_monitor_rows()
-    active_jobs = db.row("SELECT COUNT(*) AS n FROM jobs WHERE status IN ('queued','running','submitted')")
+    active_jobs = db.row("SELECT COUNT(*) AS n FROM jobs WHERE status IN ('queued','running','submitted','cancelling')")
     failed_jobs = db.row("SELECT COUNT(*) AS n FROM jobs WHERE status='failed'")
-    checks["queue"] = {"status": "warning" if failed_jobs["n"] else "ready", "detail": f"{active_jobs['n']} active job(s), {failed_jobs['n']} failed job(s)", "active": active_jobs["n"], "failed": failed_jobs["n"]}
+    cancelled_jobs = db.row("SELECT COUNT(*) AS n FROM jobs WHERE status='cancelled'")
+    retry_jobs = db.row("SELECT COUNT(*) AS n FROM jobs WHERE attempt > 1")
+    checks["queue"] = {"status": "warning" if failed_jobs["n"] else "ready", "detail": f"{active_jobs['n']} active job(s), {failed_jobs['n']} failed job(s)", "active": active_jobs["n"], "failed": failed_jobs["n"], "cancelled": cancelled_jobs["n"], "retried": retry_jobs["n"]}
     all_statuses = [checks["api"]["status"], checks["database"]["status"], checks["storage"]["status"], checks["security"]["status"], comfy["status"], checks["workflows"]["status"], checks["queue"]["status"]] + [item["status"] for item in checks["runtime"]] + [item["status"] for item in checks["models"]]
     overall = "error" if "error" in all_statuses else "degraded" if "warning" in all_statuses else "ready"
     return {"checked_at": now(), "overall": {"status": overall, "detail": "Core app is healthy; review warnings before a GPU render" if overall == "degraded" else "All checked integrations are ready" if overall == "ready" else "A core monitoring check failed"}, **checks}
@@ -585,20 +589,99 @@ async def create_job(payload: JobIn):
     except AttributeError:  # Pydantic v1 compatibility for older local installs.
         request_json = payload.json()
     created = now()
+    lineage = {
+        "persona_id": person["id"],
+        "persona_version": person.get("identity_version", 1),
+        "workflow_id": payload.workflow_id,
+        "checkpoint": payload.checkpoint,
+        "reference_id": payload.reference_id,
+        "source_asset_id": payload.source_asset_id,
+        "audio_asset_id": payload.audio_asset_id,
+        "seed": payload.seed,
+        "width": payload.width,
+        "height": payload.height,
+    }
     JobRepository.create(job_id=jid, persona_id=person["id"], workflow_id=payload.workflow_id,
-                         kind=category, prompt=payload.prompt, request_json=request_json, created_at=created)
-    task = asyncio.create_task(execute_job(jid, payload, person), name=f"studio-job-{jid}")
-    tasks = getattr(app.state, "job_tasks", None)
-    if tasks is not None:
-        tasks.add(task)
-        task.add_done_callback(tasks.discard)
+                         kind=category, prompt=payload.prompt, request_json=request_json,
+                         lineage_json=json.dumps(lineage, separators=(",", ":")), created_at=created)
+    _job_task(jid, payload, person)
     logger.info("job_queued", extra={"data": {"job_id": jid, "persona_id": person["id"], "workflow_id": payload.workflow_id}})
     return {"id": jid, "status": "queued"}
 
 
+@app.get("/api/preflight")
+def preflight(workflow_id: str | None = None):
+    """Run non-mutating checks before a render is queued."""
+
+    checks = workflow_preflight(workflow_id)
+    statuses = [item["status"] for item in checks]
+    overall = "error" if "error" in statuses else "degraded" if "warning" in statuses else "ready"
+    return {"checked_at": now(), "overall": overall, "checks": checks}
+
+
+def _job_task(job_id: str, payload: JobIn, person: dict):
+    task = asyncio.create_task(execute_job(job_id, payload, person), name=f"studio-job-{job_id}")
+    task_map = getattr(app.state, "job_task_map", None)
+    tasks = getattr(app.state, "job_tasks", None)
+    if tasks is not None:
+        tasks.add(task)
+    if task_map is not None:
+        task_map[job_id] = task
+    def finished(done):
+        if tasks is not None:
+            tasks.discard(done)
+        if task_map is not None:
+            task_map.pop(job_id, None)
+    task.add_done_callback(finished)
+    return task
+
+
+@app.post("/api/jobs/{job_id}/cancel")
+async def cancel_job(job_id: str):
+    job = db.row("SELECT id,status FROM jobs WHERE id=?", (job_id,))
+    if not job:
+        raise HTTPException(404, "Job not found")
+    if job["status"] in {"completed", "failed", "cancelled"}:
+        raise HTTPException(409, f"Job is already {job['status']}")
+    db.write("UPDATE jobs SET status='cancelled', cancel_requested=1, finished_at=?, updated_at=?, error=? WHERE id=?",
+             (now(), now(), "Cancelled by operator", job_id))
+    task = getattr(app.state, "job_task_map", {}).get(job_id)
+    if task and not task.done():
+        task.cancel()
+    logger.info("job_cancelled", extra={"data": {"job_id": job_id}})
+    return {"id": job_id, "status": "cancelled"}
+
+
+@app.post("/api/jobs/{job_id}/retry", status_code=202)
+async def retry_job(job_id: str):
+    job = db.row("SELECT * FROM jobs WHERE id=?", (job_id,))
+    if not job:
+        raise HTTPException(404, "Job not found")
+    if job["status"] not in {"failed", "interrupted", "cancelled"}:
+        raise HTTPException(409, "Only failed, interrupted, or cancelled jobs can be retried")
+    try:
+        raw = json.loads(job.get("request_json") or "{}")
+        payload = JobIn(**raw)
+    except (json.JSONDecodeError, TypeError, ValueError) as exc:
+        raise HTTPException(409, "This legacy job has no retryable request metadata") from exc
+    person = must_persona(payload.persona_id)
+    attempt = int(job.get("attempt") or 1) + 1
+    db.write("UPDATE jobs SET status='queued', attempt=?, cancel_requested=0, error=NULL, finished_at=NULL, updated_at=? WHERE id=?",
+             (attempt, now(), job_id))
+    _job_task(job_id, payload, person)
+    logger.info("job_retried", extra={"data": {"job_id": job_id, "attempt": attempt}})
+    return {"id": job_id, "status": "queued", "attempt": attempt}
+
+
 @app.get("/api/jobs")
 def get_jobs():
-    return db.all_rows("SELECT jobs.*,personas.name AS persona_name FROM jobs JOIN personas ON personas.id=jobs.persona_id ORDER BY jobs.created_at DESC LIMIT 100")
+    rows = db.all_rows("SELECT jobs.*,personas.name AS persona_name FROM jobs JOIN personas ON personas.id=jobs.persona_id ORDER BY jobs.created_at DESC LIMIT 100")
+    for item in rows:
+        try:
+            item["lineage"] = json.loads(item.pop("lineage_json") or "{}")
+        except (TypeError, json.JSONDecodeError):
+            item["lineage"] = {}
+    return rows
 
 
 @app.get("/api/assets")

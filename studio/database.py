@@ -34,7 +34,9 @@ def initialize():
             id TEXT PRIMARY KEY, persona_id TEXT NOT NULL, workflow_id TEXT NOT NULL,
             type TEXT NOT NULL, prompt TEXT NOT NULL, status TEXT NOT NULL,
             error TEXT, comfy_prompt_id TEXT, created_at TEXT NOT NULL, finished_at TEXT,
-            request_json TEXT NOT NULL DEFAULT '{}', updated_at TEXT
+            request_json TEXT NOT NULL DEFAULT '{}', updated_at TEXT,
+            lineage_json TEXT NOT NULL DEFAULT '{}', attempt INTEGER NOT NULL DEFAULT 1,
+            cancel_requested INTEGER NOT NULL DEFAULT 0
         );
         CREATE TABLE IF NOT EXISTS assets (
             id TEXT PRIMARY KEY, persona_id TEXT NOT NULL, job_id TEXT,
@@ -82,6 +84,12 @@ def initialize():
             con.execute("ALTER TABLE jobs ADD COLUMN request_json TEXT NOT NULL DEFAULT '{}'")
         if "updated_at" not in job_columns:
             con.execute("ALTER TABLE jobs ADD COLUMN updated_at TEXT")
+        if "lineage_json" not in job_columns:
+            con.execute("ALTER TABLE jobs ADD COLUMN lineage_json TEXT NOT NULL DEFAULT '{}'")
+        if "attempt" not in job_columns:
+            con.execute("ALTER TABLE jobs ADD COLUMN attempt INTEGER NOT NULL DEFAULT 1")
+        if "cancel_requested" not in job_columns:
+            con.execute("ALTER TABLE jobs ADD COLUMN cancel_requested INTEGER NOT NULL DEFAULT 0")
         # Foreign-key and queue lookups are the hot paths for the control plane.
         con.executescript("""
         CREATE INDEX IF NOT EXISTS idx_reference_images_persona ON reference_images(persona_id, created_at);
@@ -92,8 +100,8 @@ def initialize():
         CREATE INDEX IF NOT EXISTS idx_series_persona_created ON series(persona_id, created_at);
         CREATE INDEX IF NOT EXISTS idx_series_episodes_job ON series_episodes(job_id);
         """)
-        con.execute("INSERT INTO schema_meta(key,value) VALUES('schema_version','2') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
-        con.execute("UPDATE jobs SET status='interrupted', error='App restarted during job; retry from Studio' WHERE status IN ('running','submitted','queued')")
+        con.execute("INSERT INTO schema_meta(key,value) VALUES('schema_version','3') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+        con.execute("UPDATE jobs SET status='interrupted', error='App restarted during job; retry from Studio', updated_at=? WHERE status IN ('running','submitted','queued','cancelling')", (datetime_now(),))
 
 
 @contextmanager
@@ -137,3 +145,11 @@ def write_many(statements):
     with connection() as con:
         for sql, args in statements:
             con.execute(sql, args)
+
+
+def datetime_now():
+    """UTC timestamp helper kept local to avoid importing the route module."""
+
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")

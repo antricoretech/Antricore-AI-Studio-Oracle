@@ -34,7 +34,7 @@ the boundaries are explicit enough to extract a worker later.
 - `studio/media.py` owns bounded reads, image decoding and media signatures.
 - `studio/repositories.py` owns the first persistence operations and exposes a
   transaction-backed series create path.
-- `studio/database.py` now records schema version `2`, adds useful indexes and
+- `studio/database.py` now records schema version `3`, adds useful indexes and
   exposes `write_many()` for atomic multi-row writes.
 
 The route module is intentionally not split into microservices yet. The next
@@ -52,3 +52,18 @@ STUDIO_JOB_TIMEOUT_SECONDS=3600
 
 Keep the dashboard bound to `127.0.0.1` and use an authenticated SSH tunnel or
 private network. Do not publish the unauthenticated mode to the internet.
+
+## Phase 3 — execution reliability
+
+- `GET /api/preflight?workflow_id=<id>` runs read-only storage, workflow and
+  FFmpeg checks before a render is queued.
+- Jobs persist `lineage_json`, `attempt` and cancellation state. The lineage
+  captures persona version, workflow/checkpoint, references, seed and canvas.
+- `POST /api/jobs/{id}/cancel` stops an active local task and records the
+  operator action. `POST /api/jobs/{id}/retry` reuses validated request
+  metadata for failed, interrupted or cancelled work.
+- Monitoring now exposes active, failed, cancelled and retried queue counts.
+
+The queue is still a single-process worker by design. A cross-machine durable
+queue and GPU lease are the next scale step, not an implicit dependency of the
+local workflow.
