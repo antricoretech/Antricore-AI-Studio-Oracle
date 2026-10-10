@@ -65,8 +65,6 @@ def _model_checks(model_id: str | None, task: str | None, backend: str | None):
     return checks
 
 
-# End of read-only preflight helpers.
-
 def workflow_preflight(workflow_id: str | None = None, model_id: str | None = None,
                        task: str | None = None, width: int | None = None,
                        height: int | None = None):
@@ -117,3 +115,5 @@ def workflow_preflight(workflow_id: str | None = None, model_id: str | None = No
     checks.append({"id": "ffmpeg", **check(bool(ffmpeg), ffmpeg or "FFmpeg is not on PATH")})
     return checks
 
+# End of read-only preflight helpers.
+__all__ = ["workflow_preflight"]
