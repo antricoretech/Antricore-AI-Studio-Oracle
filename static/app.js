@@ -170,11 +170,11 @@ function tab(id, trigger = null) {
 
 async function refresh() {
   try {
-    const [personas, workflows, jobs, assets, links, summary, health, checkpoints, series] = await Promise.all([
+    const [personas, workflows, jobs, assets, links, summary, health, checkpoints, series, models] = await Promise.all([
       api('/api/personas'), api('/api/workflows'), api('/api/jobs'), api('/api/assets'),
-      api('/api/links'), api('/api/summary'), api('/api/health'), api('/api/checkpoints'), api('/api/series')
+      api('/api/links'), api('/api/summary'), api('/api/health'), api('/api/checkpoints'), api('/api/series'), api('/api/models')
     ]);
-    Object.assign(state, { personas, workflows, jobs, assets, links, series, health, checkpoints: checkpoints.checkpoints || [] });
+    Object.assign(state, { personas, workflows, jobs, assets, links, series, models, health, checkpoints: checkpoints.checkpoints || [] });
     for (const key of ['personas', 'jobs', 'assets', 'approved', 'clicks']) $('#m-' + key).textContent = summary[key];
     const connected = health.comfyui === 'connected';
     $('#comfy-status').textContent = connected ? 'ComfyUI bridge connected' : 'Direct CLI path available';
@@ -551,7 +551,10 @@ function renderWorkflows() {
   for (const workflow of state.workflows) {
     const item = el('div', { class: 'listitem' });
     const status = workflow.ready ? 'READY' : (workflow.backend === 'direct-cli' ? 'CLI RECIPE' : 'IMPORT REQUIRED');
+    const capability = workflow.task ? ' · ' + workflow.task : '';
+    const memory = workflow.min_vram_gb ? ' · ≥' + workflow.min_vram_gb + ' GiB VRAM' : '';
     item.append(el('strong', {}, workflow.label || workflow.id), el('small', {}, status + ' · ' + workflow.category + (workflow.model ? ' · ' + workflow.model : '') + (workflow.requires_reference ? ' · REQUIRES REFERENCE' : '')));
+    if (capability || memory) item.append(el('small', {}, capability + memory));
     if (workflow.description) item.append(el('small', {}, workflow.description));
     root.append(item);
   }
@@ -929,7 +932,8 @@ function mountGenerationPreflight() {
     if (!workflow.value) { status.textContent = 'Select a workflow first.'; status.className = 'fine error-text'; return; }
     button.disabled = true;
     try {
-      const result = await api('/api/preflight?workflow_id=' + encodeURIComponent(workflow.value));
+      const ratio = ($('#g-ratio')?.value || '768x1152').split('x').map(Number);
+      const result = await api('/api/preflight?workflow_id=' + encodeURIComponent(workflow.value) + '&width=' + ratio[0] + '&height=' + ratio[1]);
       const warning = result.checks.filter((item) => item.status !== 'ready');
       status.textContent = result.overall === 'ready' ? 'Preflight ready.' : 'Preflight ' + result.overall + ': ' + warning.map((item) => item.detail).join(' · ');
       status.className = 'fine ' + (result.overall === 'ready' ? 'ready-text' : 'muted');

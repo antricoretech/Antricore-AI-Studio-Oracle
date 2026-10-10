@@ -123,6 +123,7 @@ module boundaries.
 - `scripts/cloud-smoke-test.sh` — non-destructive cloud GPU/dependency/test validation
 - `docs/FREE_MODEL_RESEARCH.md` — license decision matrix, GitHub links, exclusion list and key caveats
 - `config/approved_models.json` — allowlisted Apache-2.0 **model weights** (not a dependency audit)
+- `GET /api/models` and Operations → Monitoring — capability-aware model inventory with local installation, VRAM and revision-pin status
 - `studio/free_cli.py` — runnable offline/local commands
 - `scripts/clone-github-repos.ps1` / `.sh` — allowlisted source repository checkouts
 - `docs/WORKFLOW_GUIDE.md` — ComfyUI adapters, revised guidance

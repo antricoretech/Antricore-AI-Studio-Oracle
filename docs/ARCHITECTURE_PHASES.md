@@ -96,3 +96,31 @@ add type checking and browser end-to-end tests when Node tooling is available.
   such as missing lineage do not silently publish anything.
 - The gallery shows the quality status and offers the export package only after
   approval.
+
+## Phase 6 — model registry and capability-aware preflight
+
+- `config/approved_models.json` is now the single approved model inventory.
+  Each entry records its public source, license link, backend, advertised
+  capabilities, minimum/recommended VRAM and revision pin status.  A `null`
+  revision is deliberately surfaced as **unpinned** rather than guessed.
+- `studio/model_registry.py` exposes read-only inventory rows and capability
+  matching.  `GET /api/models` and the monitoring tab show installation,
+  license, VRAM, backend and revision status without downloading or executing
+  anything.
+- Workflow catalog entries declare a task such as
+  `image.text_to_image`, `video.image_to_video` or `audio.text_to_speech`.
+  Workflow listings inherit model capability and VRAM metadata.
+- `studio/engines.py` provides a small adapter catalogue for the two supported
+  execution paths (`direct-cli` and the optional `comfyui` bridge).  The
+  adapters describe capabilities without moving render execution or adding a
+  new service dependency; `GET /api/engines` exposes the same contract.
+- Preflight accepts optional model/task/canvas inputs.  It checks registry
+  membership, advertised capability, local weight presence, revision pinning,
+  best-effort CUDA VRAM and model-specific canvas alignment before queueing.
+  Missing weights and unknown CUDA memory remain warnings; capability,
+  invalid canvas and insufficient detected VRAM are errors.
+
+The registry does not claim that a model is commercially usable solely because
+its source is public.  Operators must still review the model card and all
+dependency licenses before publishing output.  Exact model revisions should be
+recorded before production deployment.

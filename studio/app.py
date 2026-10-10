@@ -37,7 +37,9 @@ from fastapi.staticfiles import StaticFiles
 from . import database as db
 from .brief import PersonaBrief, PersonaCharacteristics, brief_dict, parse_brief_bytes, parse_persona_bytes
 from .comfy import ComfyClient, output_files, render_graph, validate_graph
+from .engines import get as get_engine, rows as engine_rows
 from .media import extension_for, read_limited, validate_image_bytes, validate_media_signature
+from .model_registry import get as get_model, rows as model_rows, workflow_model
 from .policies import AI_DISCLOSURE
 from .preflight import workflow_preflight
 from .provenance import manifest, media_metadata, quality_report, sha256_bytes
@@ -121,12 +123,25 @@ def workflow_list():
                 text = path.read_text(encoding="utf8")
                 installed.add(path.stem)
                 default_label, default_description = DEFAULT_WORKFLOW_LABELS.get(path.stem, (path.stem, "Verified API-format graph installed locally."))
-                entries.append({"id": path.stem, "label": default_label, "nodes": len(graph), "ready": True, "backend": "comfyui", "description": default_description, "requires_reference": "{{REFERENCE_IMAGE}}" in text, "requires_audio": "{{AUDIO_FILENAME}}" in text,
+                entries.append({"id": path.stem, "label": default_label, "nodes": len(graph), "ready": True, "backend": "comfyui", "model": "custom", "task": "video.image_to_video" if any(x in path.stem.lower() for x in ("video", "wan", "ltx", "talk", "lip")) else "image.text_to_image", "description": default_description, "requires_reference": "{{REFERENCE_IMAGE}}" in text, "requires_audio": "{{AUDIO_FILENAME}}" in text,
                                 "requires_checkpoint": "{{CHECKPOINT}}" in text,
                                 "supports_prompt": "{{PROMPT}}" in text, "category": "video" if any(x in path.stem.lower() for x in ("video", "wan", "ltx", "talk", "lip")) else "image"})
             except Exception:
                 continue
     entries.extend(item for item in workflow_catalog() if item.get("id") not in installed)
+    for item in entries:
+        model = get_model(item.get("model"))
+        if model:
+            item.setdefault("capabilities", model.get("capabilities", []))
+            item.setdefault("license", model.get("license"))
+            item.setdefault("min_vram_gb", model.get("min_vram_gb"))
+            item.setdefault("recommended_vram_gb", model.get("recommended_vram_gb"))
+            item.setdefault("revision", model.get("revision"))
+        engine = get_engine(item.get("backend"))
+        if engine:
+            item.setdefault("engine_label", engine.label)
+            item.setdefault("engine_description", engine.description)
+        item.setdefault("task", workflow_model(item)[2])
     return entries
 
 
@@ -135,29 +150,7 @@ def _monitor_status(ok: bool, detail: str, **extra):
 
 
 def _model_monitor_rows():
-    try:
-        registry = json.loads((ROOT / "config" / "approved_models.json").read_text(encoding="utf8"))
-    except (FileNotFoundError, json.JSONDecodeError):
-        registry = {}
-    rows = []
-    for model_id, metadata in registry.items():
-        directory = ROOT / "models" / model_id
-        try:
-            present = directory.is_dir() and any(directory.iterdir())
-            access_error = ""
-        except OSError as exc:
-            present = False
-            access_error = "; inaccessible: " + str(exc)[:120]
-        rows.append({
-            "id": model_id,
-            "label": metadata.get("role", model_id),
-            "status": "ready" if present else "warning",
-            "detail": "Local weights directory detected" if present else "Weights not downloaded" + access_error,
-            "path": str(directory),
-            "license": metadata.get("license", "verify model card"),
-            "gpu": metadata.get("gpu", "hardware dependent"),
-        })
-    return rows
+    return model_rows()
 
 
 def _runtime_monitor_rows():
@@ -284,6 +277,18 @@ async def checkpoints():
         return {"checkpoints": result}
     except Exception as e:
         return {"checkpoints": [], "error": str(e)[:200]}
+
+
+@app.get("/api/models")
+def models():
+    """Return approved models, capabilities and local installation status."""
+    return model_rows()
+
+
+@app.get("/api/engines")
+def engines():
+    """Return the render adapters understood by this control plane."""
+    return engine_rows()
 
 
 @app.get("/api/monitor")
@@ -616,10 +621,12 @@ async def create_job(payload: JobIn):
 
 
 @app.get("/api/preflight")
-def preflight(workflow_id: str | None = None):
+def preflight(workflow_id: str | None = None, model_id: str | None = None,
+              task: str | None = None, width: int | None = None,
+              height: int | None = None):
     """Run non-mutating checks before a render is queued."""
 
-    checks = workflow_preflight(workflow_id)
+    checks = workflow_preflight(workflow_id, model_id=model_id, task=task, width=width, height=height)
     statuses = [item["status"] for item in checks]
     overall = "error" if "error" in statuses else "degraded" if "warning" in statuses else "ready"
     return {"checked_at": now(), "overall": overall, "checks": checks}

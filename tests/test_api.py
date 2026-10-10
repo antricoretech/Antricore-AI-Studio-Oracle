@@ -93,6 +93,21 @@ def test_monitor_reports_control_plane_runtime_models_and_storage(client):
     assert 'active' in payload['queue']
 
 
+def test_phase6_model_registry_and_capability_preflight(client):
+    models = client.get('/api/models')
+    assert models.status_code == 200
+    flux = next(item for item in models.json() if item['id'] == 'flux2-klein-4b')
+    assert 'image.text_to_image' in flux['capabilities']
+    assert flux['revision_pinned'] is False
+    response = client.get('/api/preflight?workflow_id=flux2_klein_txt2img&width=769&height=1152')
+    assert response.status_code == 200
+    checks = {item['id']: item for item in response.json()['checks']}
+    assert checks['model_capability']['status'] == 'ready'
+    assert checks['canvas']['status'] == 'error'
+    engines = client.get('/api/engines').json()
+    assert {item['id'] for item in engines} >= {'direct-cli', 'comfyui'}
+
+
 def test_workflow_upload_requires_api_json(client):
     bad = client.post('/api/workflows',data={"label":"bad"},files={"file":("workflow.json", b'{"nodes":[]}',"application/json")})
     assert bad.status_code == 400

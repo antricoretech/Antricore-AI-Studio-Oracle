@@ -3,7 +3,7 @@
 
 export const state = {
   personas: [], workflows: [], checkpoints: [], assets: [], jobs: [], links: [],
-  series: [], monitoring: null, health: null,
+  series: [], models: [], monitoring: null, health: null,
 };
 
 export const names = {
