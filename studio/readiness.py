@@ -55,7 +55,9 @@ def evaluate(snapshot: dict, profile: str = "local", required_models: list[str] 
 
     for key in ("api", "database", "storage"):
         item = snapshot.get(key, {})
-        if item.get("status") == "error":
+        if profile == "cloud":
+            require(item.get("status") == "ready", key, item.get("detail", f"{key} is not ready"))
+        elif item.get("status") == "error":
             blockers.append({"code": key, "detail": item.get("detail", f"{key} check failed")})
 
     status = "blocked" if blockers else "warning" if warnings or snapshot.get("overall", {}).get("status") == "degraded" else "ready"
