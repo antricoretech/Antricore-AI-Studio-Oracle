@@ -1,0 +1,50 @@
+{
+  "flux2-klein-4b": {
+    "hf": "black-forest-labs/FLUX.2-klein-4B",
+    "github": "https://github.com/black-forest-labs/flux2",
+    "license": "Apache-2.0",
+    "role": "reference-conditioned photos",
+    "gpu": "~13 GB VRAM recommended for full-precision setup; offloading can trade memory for speed",
+    "default": true
+  },
+  "flux2-klein-base-4b": {
+    "hf": "black-forest-labs/FLUX.2-klein-base-4B",
+    "github": "https://github.com/black-forest-labs/flux2",
+    "license": "Apache-2.0",
+    "role": "persona LoRA training base",
+    "gpu": "GPU training requirements depend on trainer/quantization",
+    "default": false
+  },
+  "z-image-turbo": {
+    "hf": "Tongyi-MAI/Z-Image-Turbo",
+    "github": "https://github.com/Tongyi-MAI/Z-Image",
+    "license": "Apache-2.0",
+    "role": "fast text-to-image alternative",
+    "gpu": "~16GB according to maintainers",
+    "default": false
+  },
+  "wan22-ti2v-5b": {
+    "hf": "Wan-AI/Wan2.2-TI2V-5B",
+    "github": "https://github.com/Wan-Video/Wan2.2",
+    "license": "Apache-2.0",
+    "role": "text/image-to-video",
+    "gpu": "24GB reference CLI requirement with offloading",
+    "default": false
+  },
+  "wan21-t2v-1.3b": {
+    "hf": "Wan-AI/Wan2.1-T2V-1.3B",
+    "github": "https://github.com/Wan-Video/Wan2.1",
+    "license": "Apache-2.0",
+    "role": "lighter 480p text-to-video only",
+    "gpu": "smaller than Wan2.2 5B but real requirement depends on implementation",
+    "default": false
+  },
+  "kokoro-82m": {
+    "hf": "hexgrad/Kokoro-82M",
+    "github": "https://github.com/hexgrad/kokoro",
+    "license": "Apache-2.0",
+    "role": "local TTS narration",
+    "gpu": "CPU supported",
+    "default": false
+  }
+}

@@ -1,0 +1,10 @@
+# CPU-only isolated test environment; do not install these into the production venv.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.14.1+cpu
+diffusers==0.35.1
+transformers==4.52.4
+accelerate==1.2.1
+safetensors==0.8.0
+huggingface-hub==0.34.4
+Pillow>=10.0
+psutil>=6.0

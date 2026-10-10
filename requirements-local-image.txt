@@ -1,0 +1,6 @@
+# Install CUDA/CPU PyTorch first according to your platform: https://pytorch.org/get-started/locally/
+diffusers>=0.35
+transformers>=4.52
+accelerate>=1.2
+safetensors>=0.4
+huggingface-hub>=0.28

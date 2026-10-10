@@ -1,0 +1,7 @@
+# ComfyUI workflow guide — open-source-first edition
+
+The simplest ready-to-call workflow is `python -m studio.free_cli image ...` with Apache-2.0 FLUX.2 Klein 4B. ComfyUI is OPTIONAL for the standalone CLI. The dashboard includes a default recipe catalog (`config/workflow_catalog.json`) and ships two API-format starter graphs in `workflows/`: `default_image_api.json` and `wan22_ti2v_5b_default_api.json`. They appear as installed graphs automatically; the actual model files and compatible ComfyUI version must still be installed and checked in **Operations → Monitoring**.
+
+For ComfyUI, follow the official FLUX.2 Klein 4B and Wan2.2 examples at https://docs.comfy.org/. The shipped Wan graph follows the official Wan2.2 TI2V 5B node layout and expects the repackaged diffusion model, UMT5 text encoder and Wan VAE filenames. Test it in ComfyUI before production; if your installation uses different node names or filenames, export your tested graph in API format and import it into **Operations → Workflow manager**. The app replaces `{{PROMPT}}`, `{{NEGATIVE_PROMPT}}`, `{{SEED}}`, `{{WIDTH}}`, `{{HEIGHT}}` and `{{REFERENCE_IMAGE}}` at queue time.
+
+Do **not** import a non-commercial FLUX 9B checkpoint, FLUX.2 dev, ReActor model bundle, Inswapper_128, or unverified checkpoint; the dashboard's custom-workflow importer does not perform a complete embedded model/dependency license audit. `docs/FREE_MODEL_RESEARCH.md` explains the selected model alternatives.

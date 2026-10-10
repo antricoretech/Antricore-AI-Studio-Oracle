@@ -1,0 +1,90 @@
+{
+  "schema_version": "1.0",
+  "title": "Mira Vale - morning cafe reel",
+  "persona": {
+    "name": "Mira Vale",
+    "age": 25,
+    "appearance": "Adult fictional woman with warm olive skin, shoulder-length dark brown hair, hazel eyes, a softly angular face and a small beauty mark below the left eye.",
+    "description": "Calm, curious fashion, glamour and cafe-lifestyle creator. The tone can move from polished editorial glamour to grounded everyday storytelling while remaining clearly adult, fictional and disclosed.",
+    "consistency_anchor": "Keep the same facial geometry, hazel eyes, beauty mark, hair length and natural proportions in every shot.",
+    "characteristics": {
+      "face": {
+        "face_shape": "Softly angular oval face with a defined but natural jawline.",
+        "skin_tone": "Warm olive complexion with natural texture and a few subtle freckles.",
+        "eyes": "Hazel almond-shaped eyes, medium brown brows and a calm direct gaze.",
+        "hair": "Shoulder-length dark brown wavy hair, center part, loose face-framing strands.",
+        "distinguishing_features": "Small fictional beauty mark below the left eye; no tattoos or logos."
+      },
+      "physique": {
+        "height_and_build": "Average adult height with natural balanced proportions and a relaxed silhouette.",
+        "posture_and_movement": "Open shoulders, easy walk, small deliberate hand gestures.",
+        "age_cues": "Clearly adult presentation through mature styling and confident posture."
+      },
+      "style": {
+        "wardrobe": "Relaxed editorial layers: linen overshirts, simple tops, tailored trousers and clean sneakers.",
+        "materials_and_palette": "Linen, cotton and denim in cream, charcoal, muted olive and warm brown.",
+        "accessories_and_grooming": "Small silver hoops, canvas tote, minimal natural makeup and tidy nails.",
+        "glamour_direction": "Polished editorial glamour with room for bolder evening styling while staying clearly adult and non-explicit."
+      },
+      "personality": {
+        "traits": "Observant, warm, quietly witty, independent and curious.",
+        "interests_and_values": "Independent cafes, sustainable style, photography and thoughtful local travel.",
+        "speech_style": "Measured, conversational and specific; gentle humor without hype.",
+        "mannerisms": "Raises one eyebrow when amused, checks her surroundings before speaking and smiles with her eyes."
+      },
+      "world": {
+        "cultural_context": "Contemporary fictional urban creative life; use only details specified in the brief.",
+        "home_base": "A walkable, design-forward neighborhood with independent cafes and studio spaces.",
+        "recurring_locations": "Cafe window seats, a small photo studio, weekend markets and quiet city streets.",
+        "content_pillars": "Everyday fashion, cafe rituals, creative process and local discoveries."
+      },
+      "camera": {
+        "framing": "Vertical medium portrait or waist-up editorial framing with occasional full-body establishing shots.",
+        "lens_and_depth": "Natural 50mm perspective, moderate depth of field and stable facial detail.",
+        "lighting": "Soft north-window daylight with gentle shadow and no plastic skin smoothing.",
+        "color_grade": "Warm neutral editorial grade with restrained saturation and true-to-life skin tones."
+      }
+    }
+  },
+  "image": {
+    "enabled": true,
+    "model": "flux2-klein-4b",
+    "prompt": "Editorial glamour lifestyle portrait of Mira Vale, an original fictional adult woman aged 25, seated at a bright neighborhood cafe in the morning, polished fashion styling, natural window light, 50mm lens, relaxed confident expression, realistic skin texture, fashion magazine composition, non-explicit, no text.",
+    "negative_prompt": "blurry, deformed, extra fingers, duplicate person, watermark, logo, typography, child, teenager, minor, nudity, exposed genitals, explicit sexual activity, lingerie, real-person likeness",
+    "width": 768,
+    "height": 1152,
+    "seed": 18421,
+    "steps": 4,
+    "guidance": 1.0,
+    "reference_paths": [],
+    "output": "generated/mira_master.png"
+  },
+  "video": {
+    "enabled": true,
+    "model": "wan22-ti2v-5b",
+    "prompt": "Mira Vale, the same fictional adult character, gently lifts her coffee, looks toward the window, smiles naturally and turns back to camera. Stable identity and body proportions, subtle hand movement, realistic blinking, slow handheld camera drift, soft morning light, no text or logos.",
+    "size": "704*1280",
+    "output": "generated/mira_reel.mp4"
+  },
+  "voice": {
+    "enabled": true,
+    "text": "A slow morning, a warm coffee, and one small idea worth carrying into the day.",
+    "voice": "af_heart",
+    "lang": "a",
+    "output": "generated/mira_narration.wav"
+  },
+  "assembly": {
+    "enabled": true,
+    "output": "generated/mira_reel_with_voice.mp4",
+    "disclosure": "Fictional adult character. AI-generated synthetic media."
+  },
+  "review": {
+    "disclosure_required": true,
+    "checklist": [
+      "Confirm the character is fictional and an adult.",
+      "Confirm reference inputs are owned or permission-cleared.",
+      "Check identity continuity, anatomy, motion and audio timing.",
+      "Keep the AI-generated disclosure attached to the export."
+    ]
+  }
+}

@@ -1,0 +1,122 @@
+[
+  {
+    "id": "flux2_klein_txt2img",
+    "label": "FLUX.2 Klein 4B · text to image",
+    "category": "image",
+    "backend": "direct-cli",
+    "model": "flux2-klein-4b",
+    "description": "High-quality fictional-persona master image from a prompt.",
+    "ready": false,
+    "requires_reference": false,
+    "requires_checkpoint": false,
+    "requires_audio": false
+  },
+  {
+    "id": "flux2_klein_reference_image",
+    "label": "FLUX.2 Klein 4B · reference image",
+    "category": "image",
+    "backend": "direct-cli",
+    "model": "flux2-klein-4b",
+    "description": "Reference-conditioned image generation for identity continuity.",
+    "ready": false,
+    "requires_reference": true,
+    "requires_checkpoint": false,
+    "requires_audio": false
+  },
+  {
+    "id": "z_image_turbo_txt2img",
+    "label": "Z-Image Turbo · fast text to image",
+    "category": "image",
+    "backend": "direct-cli",
+    "model": "z-image-turbo",
+    "description": "Fast Apache-2.0 text-to-image alternative; no reference conditioning in the current CLI.",
+    "ready": false,
+    "requires_reference": false,
+    "requires_checkpoint": false,
+    "requires_audio": false
+  },
+  {
+    "id": "wan22_ti2v_image_to_video",
+    "label": "Wan2.2 TI2V 5B · image to video",
+    "category": "video",
+    "backend": "direct-cli",
+    "model": "wan22-ti2v-5b",
+    "description": "Animate an approved master image with identity-aware motion.",
+    "ready": false,
+    "requires_reference": true,
+    "requires_checkpoint": false,
+    "requires_audio": false
+  },
+  {
+    "id": "wan22_ti2v_text_to_video",
+    "label": "Wan2.2 TI2V 5B · text to video",
+    "category": "video",
+    "backend": "direct-cli",
+    "model": "wan22-ti2v-5b",
+    "description": "Text-to-video scene generation without a master reference.",
+    "ready": false,
+    "requires_reference": false,
+    "requires_checkpoint": false,
+    "requires_audio": false
+  },
+  {
+    "id": "wan21_t2v_lightweight",
+    "label": "Wan2.1 T2V 1.3B · lightweight fallback",
+    "category": "video",
+    "backend": "direct-cli",
+    "model": "wan21-t2v-1.3b",
+    "description": "Lower-capacity text-to-video fallback; not an identity-preserving image-to-video workflow.",
+    "ready": false,
+    "requires_reference": false,
+    "requires_checkpoint": false,
+    "requires_audio": false
+  },
+  {
+    "id": "kokoro_local_narration",
+    "label": "Kokoro · local narration",
+    "category": "audio",
+    "backend": "direct-cli",
+    "model": "kokoro-82m",
+    "description": "Generate an original synthetic narration WAV locally.",
+    "ready": false,
+    "requires_reference": false,
+    "requires_checkpoint": false,
+    "requires_audio": false
+  },
+  {
+    "id": "ffmpeg_audio_mux",
+    "label": "FFmpeg · video and narration assembly",
+    "category": "assembly",
+    "backend": "direct-cli",
+    "model": "ffmpeg",
+    "description": "Mux approved local video and narration into a final export with disclosure sidecar.",
+    "ready": false,
+    "requires_reference": false,
+    "requires_checkpoint": false,
+    "requires_audio": true
+  },
+  {
+    "id": "comfyui_custom_image_api",
+    "label": "ComfyUI · imported image API graph",
+    "category": "image",
+    "backend": "comfyui",
+    "model": "custom",
+    "description": "Use a verified ComfyUI API-format image graph imported below.",
+    "ready": false,
+    "requires_reference": false,
+    "requires_checkpoint": true,
+    "requires_audio": false
+  },
+  {
+    "id": "comfyui_custom_video_api",
+    "label": "ComfyUI · imported video API graph",
+    "category": "video",
+    "backend": "comfyui",
+    "model": "custom",
+    "description": "Use a verified ComfyUI API-format video graph imported below.",
+    "ready": false,
+    "requires_reference": true,
+    "requires_checkpoint": true,
+    "requires_audio": false
+  }
+]

@@ -1,0 +1,12 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "AI Influencer Studio (API + Dashboard)",
+      "type": "debugpy", "request": "launch", "module": "uvicorn",
+      "args": ["studio.app:app", "--reload", "--host", "127.0.0.1", "--port", "8000"],
+      "justMyCode": true,
+      "console": "integratedTerminal"
+    }
+  ]
+}

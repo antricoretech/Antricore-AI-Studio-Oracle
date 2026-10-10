@@ -1,0 +1,49 @@
+{
+  "schema_version": "persona-1.0",
+  "persona": {
+    "name": "Mira Vale",
+    "age": 25,
+    "appearance": "Adult fictional woman with warm olive skin, shoulder-length dark brown hair, hazel eyes, a softly angular face and a small beauty mark below the left eye.",
+    "description": "Calm, curious fashion, glamour and cafe-lifestyle creator. The persona can shift between polished editorial glamour and grounded everyday storytelling while remaining clearly adult, fictional and disclosed.",
+    "consistency_anchor": "Keep the same facial geometry, hazel eyes, beauty mark, hair length and natural proportions in every shot.",
+    "disclosure": "Fictional AI-generated adult persona",
+    "characteristics": {
+      "face": {
+        "face_shape": "Softly angular oval face with a defined but natural jawline.",
+        "skin_tone": "Warm olive complexion with natural texture and subtle freckles.",
+        "eyes": "Hazel almond-shaped eyes and medium brown brows.",
+        "hair": "Shoulder-length dark brown wavy hair with a center part.",
+        "distinguishing_features": "Small fictional beauty mark below the left eye; no logos."
+      },
+      "physique": {
+        "height_and_build": "Average adult height with natural balanced proportions.",
+        "posture_and_movement": "Open shoulders, easy walk and small deliberate hand gestures.",
+        "age_cues": "Clearly adult presentation through mature styling and confident posture."
+      },
+      "style": {
+        "wardrobe": "Linen overshirts, simple tops, tailored trousers and clean sneakers.",
+        "materials_and_palette": "Linen, cotton and denim in cream, charcoal, muted olive and warm brown.",
+        "accessories_and_grooming": "Small silver hoops, canvas tote and minimal natural makeup.",
+        "glamour_direction": "Polished editorial glamour with room for bolder evening styling while staying clearly adult and non-explicit."
+      },
+      "personality": {
+        "traits": "Observant, warm, quietly witty, independent and curious.",
+        "interests_and_values": "Independent cafes, sustainable style, photography and local travel.",
+        "speech_style": "Measured, conversational and specific; gentle humor without hype.",
+        "mannerisms": "Raises one eyebrow when amused and smiles with her eyes."
+      },
+      "world": {
+        "cultural_context": "Contemporary fictional urban creative life; use only creator-supplied details.",
+        "home_base": "A walkable design-forward neighborhood with independent cafes.",
+        "recurring_locations": "Cafe window seats, a small photo studio and weekend markets.",
+        "content_pillars": "Everyday fashion, cafe rituals, creative process and local discoveries."
+      },
+      "camera": {
+        "framing": "Vertical medium portrait with occasional full-body establishing shots.",
+        "lens_and_depth": "Natural 50mm perspective and moderate depth of field.",
+        "lighting": "Soft window daylight with gentle shadow and natural skin texture.",
+        "color_grade": "Warm neutral editorial grade with restrained saturation."
+      }
+    }
+  }
+}
