@@ -1,0 +1,2 @@
+# Optional browser-level smoke tests; not required by the API test suite.
+playwright>=1.45,<2

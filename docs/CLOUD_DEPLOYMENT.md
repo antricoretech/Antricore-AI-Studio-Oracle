@@ -429,6 +429,52 @@ Stop the download, remove only the incomplete/unneeded model directory, clear
 unused Hugging Face caches, and keep the core FLUX + Wan2.2 set. Do not delete
 the persistent volume or project root recursively.
 
+## 19A. Phase 7 deployment readiness and browser smoke checks
+
+After starting Uvicorn through the private SSH tunnel, run the explicit
+readiness gate:
+
+```bash
+export STUDIO_URL=http://127.0.0.1:8000
+.venv/bin/python scripts/deployment-readiness.py --url "$STUDIO_URL"
+```
+
+The cloud profile blocks when authentication, CUDA, FFmpeg, required model
+weights, model revisions or core storage checks are not ready. Set
+`STUDIO_REQUIRED_MODELS` on the server to override the default
+`flux2-klein-4b,wan22-ti2v-5b` selection. A model with an unpinned revision is
+deliberately not production-ready; record the exact Hugging Face commit/tag in
+`config/approved_models.json` after verifying the model card.
+
+The check is read-only. It does not queue work, download weights or call a
+hosted inference API. For a local source-only sanity check, omit `--url`.
+
+For browser-level verification, install the optional dependency and run the
+dashboard smoke test while the server is available through the same tunnel:
+
+```bash
+.venv/bin/pip install -r requirements-browser.txt
+.venv/bin/playwright install chromium
+.venv/bin/python scripts/browser-smoke-test.py --url "$STUDIO_URL"
+```
+
+The browser test checks the dashboard shell, grouped navigation, generation,
+workflow and monitoring panels. It does not create a persona, upload media or
+queue a render.
+
+The existing smoke script remains non-destructive by default. To intentionally
+run one GPU render using an already validated local brief, opt in explicitly:
+
+```bash
+RUN_RENDER_SMOKE=1 \
+STUDIO_RENDER_BRIEF=/mnt/ai-influencer-studio/app/config/generation_brief.example.json \
+STUDIO_RENDER_OFFLINE=1 \
+bash scripts/cloud-smoke-test.sh
+```
+
+This writes media and consumes GPU time; review and remove the generated test
+outputs after validation. Never enable it from an unattended startup hook.
+
 ## 20. Deployment completion criteria
 
 Deployment is complete only when all of the following are true:

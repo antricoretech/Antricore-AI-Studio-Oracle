@@ -130,6 +130,8 @@ module boundaries.
 - `docs/SERIES_GUIDE.md` — freeze personas, plan repeatable episodes and preserve continuity
 - `docs/NAVIGATION.md` — grouped menu, connected pipeline rail and stage hand-offs
 - `docs/MONITORING.md` — startup checks for API, GPU, models, runtimes, workflows and storage
+- `scripts/deployment-readiness.py` — read-only cloud/source deployment gate
+- `scripts/browser-smoke-test.py` + `requirements-browser.txt` — optional Playwright dashboard smoke test
 
 ## Tests
 

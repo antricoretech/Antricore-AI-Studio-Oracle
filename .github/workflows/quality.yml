@@ -1,0 +1,27 @@
+name: Studio quality
+
+on:
+  push:
+    branches: [main, phase1-phase2]
+  pull_request:
+
+jobs:
+  python-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-dev.txt
+      - name: Validate JSON configuration
+        run: |
+          python -m json.tool config/approved_models.json >/dev/null
+          python -m json.tool config/workflow_catalog.json >/dev/null
+          python -m json.tool config/generation_brief.example.json >/dev/null
+      - name: Compile Python
+        run: python -m compileall -q studio tests scripts
+      - name: Run tests
+        run: python -m pytest -q

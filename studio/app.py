@@ -44,6 +44,7 @@ from .policies import AI_DISCLOSURE
 from .preflight import workflow_preflight
 from .provenance import manifest, media_metadata, quality_report, sha256_bytes
 from .repositories import JobRepository, PersonaRepository, SeriesRepository
+from .readiness import evaluate as evaluate_readiness
 from .schemas import JobIn, LinkIn, PersonaIn, ReviewIn, SeriesEpisodeIn, SeriesIn, SeriesQueueIn, VoiceIn
 from .settings import get_settings
 
@@ -289,6 +290,13 @@ def models():
 def engines():
     """Return the render adapters understood by this control plane."""
     return engine_rows()
+
+
+@app.get("/api/readiness")
+async def readiness(profile: str = "local"):
+    """Return explicit local/cloud deployment blockers without starting work."""
+    snapshot = await monitor()
+    return evaluate_readiness(snapshot, profile=profile)
 
 
 @app.get("/api/monitor")

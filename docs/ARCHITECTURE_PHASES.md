@@ -124,3 +124,26 @@ The registry does not claim that a model is commercially usable solely because
 its source is public.  Operators must still review the model card and all
 dependency licenses before publishing output.  Exact model revisions should be
 recorded before production deployment.
+
+## Phase 7 — deployment readiness and verification
+
+- `/api/readiness?profile=local|cloud` converts the monitor snapshot into an
+  explicit gate.  Local mode keeps development usable with optional services
+  absent; cloud mode blocks missing auth, CUDA, FFmpeg, required model files,
+  unpinned revisions and core storage failures.
+- `scripts/deployment-readiness.py` can query a running private instance or
+  perform a source/dependency check without starting a render.  It exits
+  non-zero when a deployment is blocked or warning-only, unless explicitly
+  told to allow warnings.
+- `scripts/browser-smoke-test.py` is an optional Playwright check for the
+  dashboard shell, grouped navigation, generation, workflow and monitoring
+  panels.  It performs no uploads or queue operations.
+- `scripts/cloud-smoke-test.sh` remains non-destructive by default.  A real
+  GPU render is available only through the explicit `RUN_RENDER_SMOKE=1` and
+  `STUDIO_RENDER_BRIEF=...` opt-in variables.
+- `.github/workflows/quality.yml` runs configuration validation, Python
+  compilation and the test suite on branch pushes and pull requests; it does
+  not require a GPU or download model weights.
+
+Phase 7 verifies readiness; it does not replace a provider-specific soak test,
+backup/restore drill, or visual quality review on actual generated media.

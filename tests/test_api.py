@@ -106,6 +106,14 @@ def test_phase6_model_registry_and_capability_preflight(client):
     assert checks['canvas']['status'] == 'error'
     engines = client.get('/api/engines').json()
     assert {item['id'] for item in engines} >= {'direct-cli', 'comfyui'}
+    readiness = client.get('/api/readiness?profile=local')
+    assert readiness.status_code == 200
+    assert readiness.json()['profile'] == 'local'
+    assert readiness.json()['status'] in {'ready', 'warning', 'blocked'}
+    cloud_readiness = client.get('/api/readiness?profile=cloud')
+    assert cloud_readiness.status_code == 200
+    assert cloud_readiness.json()['status'] == 'blocked'
+    assert any(item['code'] == 'auth' for item in cloud_readiness.json()['blockers'])
 
 
 def test_workflow_upload_requires_api_json(client):

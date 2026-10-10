@@ -16,3 +16,11 @@ The tab checks:
 `READY` means the check responded successfully. `CHECK` means the application is usable but an optional integration, dependency, model or workflow still needs attention. `ERROR` indicates a core check failed. A degraded result is expected on a fresh worker before model downloads, FFmpeg/Kokoro installation, Wan2.2 setup or ComfyUI startup.
 
 The endpoint is read-only: `GET /api/monitor`. Monitoring does not download models, start GPU inference or send prompts to a hosted API. The dashboard refreshes the view when the tab is opened and every 30 seconds while it remains visible.
+
+For deployment gating, use `GET /api/readiness?profile=local` or
+`GET /api/readiness?profile=cloud`. The cloud profile turns missing
+authentication, CUDA, FFmpeg, required model files and unpinned model
+revisions into explicit blockers. Required models default to
+`flux2-klein-4b,wan22-ti2v-5b` and can be changed with
+`STUDIO_REQUIRED_MODELS=model-a,model-b`. This endpoint is also used by
+`scripts/deployment-readiness.py` and never starts a render.
