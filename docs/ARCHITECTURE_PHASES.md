@@ -67,3 +67,20 @@ private network. Do not publish the unauthenticated mode to the internet.
 The queue is still a single-process worker by design. A cross-machine durable
 queue and GPU lease are the next scale step, not an implicit dependency of the
 local workflow.
+
+## Phase 4 — frontend cleanup
+
+- The dashboard now runs as an ES module entrypoint instead of a legacy global
+  script. Shared DOM/state helpers live in `static/modules/core.js`.
+- HTTP parsing, authentication errors and JSON POST handling live in
+  `static/modules/api.js`.
+- Collapsible navigation and its persisted open state live in
+  `static/modules/navigation.js`.
+- Generation now exposes the Phase 3 preflight check before queueing, while
+  job cards expose cancel/retry actions and monitoring shows access security.
+- Static module delivery is covered by a frontend smoke test; the Python API
+  contract remains unchanged.
+
+No bundler or npm toolchain is required yet. This keeps the dashboard usable
+on the same lightweight local/cloud Python deployment; a later UI phase can
+add type checking and browser end-to-end tests when Node tooling is available.

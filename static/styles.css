@@ -199,6 +199,9 @@ h4 { margin-bottom: 14px; font-size: 14px; }
 .primary:hover { background: #a8b9ff; }
 .secondary { border: 1px solid var(--line-strong); background: var(--panel-raised); color: #e4e4e7; }
 .secondary:hover { border-color: #6675a8; color: var(--blue-soft); }
+.compact-action { padding: 5px 9px; font-size: 11px; }
+.job-actions, .queue-actions { display: flex; align-items: center; gap: 7px; }
+.generation-preflight { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: -4px 0 12px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel-soft); }
 .hero-proof { display: flex; flex-wrap: wrap; gap: 18px; margin-top: auto; padding-top: 29px; color: var(--subtle); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
 .hero-proof b { margin-right: 4px; color: var(--blue); }
 .hero-art { display: flex; flex-direction: column; overflow: hidden; padding: 20px 21px; background: #101117; }

@@ -1,37 +1,8 @@
 'use strict';
 
-const $ = (selector) => document.querySelector(selector);
-const state = { personas: [], workflows: [], checkpoints: [], assets: [], jobs: [], links: [], series: [], monitoring: null, health: null };
-const names = {
-  dashboard: 'Overview', personas: 'Persona Library', generate: 'Production Studio',
-  assets: 'Media Review', voice: 'Voice & Narration', funnels: 'Link Tracking', workflows: 'Workflow Manager', series: 'Series Studio', monitoring: 'Monitoring'
-};
-
-const navGroups = [
-  { label: 'Create', key: 'create', items: [
-    ['personas', 'persona-library', 'Persona library', '◎', '02'],
-    ['personas', 'new-persona', 'New persona', '+', '', 'persona-form'],
-    ['personas', 'reference-vault', 'Reference vault', '◇', '', 'reference-form'],
-    ['generate', 'generation-brief', 'Generation brief', '✦', '03', 'brief-import']
-  ] },
-  { label: 'Produce', key: 'produce', items: [
-    ['generate', 'image-studio', 'Image studio', '◉', '', 'job-form'],
-    ['generate', 'video-studio', 'Video studio', '▷', '', 'job-form'],
-    ['voice', 'voice-studio', 'Voice & narration', '◖', ''],
-    ['series', 'series-studio', 'Series studio', '↻', '']
-  ] },
-  { label: 'Review & export', key: 'review', items: [
-    ['assets', 'media-review', 'Media review', '▧', '04'],
-    ['assets', 'approval-queue', 'Approval queue', '✓', '', 'gallery'],
-    ['assets', 'export-packages', 'Export packages', '↓', '', 'gallery'],
-    ['funnels', 'link-tracking', 'Link tracking', '↗', '07']
-  ] },
-  { label: 'Operations', key: 'operations', items: [
-    ['workflows', 'workflow-manager', 'Workflow manager', '⌘', '06'],
-    ['monitoring', 'monitoring', 'Monitoring', '◌', '09']
-  ] }
-];
-const navGroupStorageKey = 'persona-studio.nav-groups.v1';
+import { $, clear, copyText, el, emptyAction, names, notify, options, readableValue, state } from './modules/core.js';
+import { api, post } from './modules/api.js';
+import { mountNavigation, setNavGroupOpen } from './modules/navigation.js';
 
 const CHATGPT_BRIEF_PROMPT = `You are a production planner for a local, self-hosted AI media pipeline.
 Return ONLY valid UTF-8 JSON matching config/generation_brief.example.json with schema_version "1.0". Do not add Markdown fences or commentary.
@@ -80,132 +51,6 @@ INPUTS TO PROVIDE:
 - Consistency anchor: traits that must never change:
 
 Return name, age, appearance, description, consistency_anchor, disclosure and a characteristics object containing face, physique, style, personality, world and camera sections.`;
-
-function notify(message, bad = false) {
-  const banner = $('#message');
-  banner.textContent = message;
-  banner.className = 'notice' + (bad ? ' error' : '');
-  clearTimeout(notify.timer);
-  notify.timer = setTimeout(() => banner.classList.add('hidden'), 6500);
-}
-
-async function copyText(text) {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    const helper = el('textarea', {}, text);
-    document.body.append(helper); helper.select(); document.execCommand('copy'); helper.remove();
-  }
-}
-
-function readableValue(value) {
-  if (value === null || value === undefined) return '';
-  if (typeof value === 'string') return value;
-  if (Array.isArray(value)) return value.map(readableValue).join('; ');
-  if (typeof value === 'object') {
-    const preferred = value.canonical_identity_prompt || value.public_disclosure || value.short_disclosure;
-    if (preferred) return readableValue(preferred);
-    return JSON.stringify(value);
-  }
-  return String(value);
-}
-
-async function api(url, options) {
-  const response = await fetch(url, options);
-  const text = await response.text();
-  let data;
-  try { data = JSON.parse(text); } catch { data = text; }
-  if (!response.ok) {
-    const detail = typeof data === 'object' ? (data.detail || data) : data;
-    throw new Error(String(detail).slice(0, 350));
-  }
-  return data;
-}
-
-const post = (url, data) => api(url, {
-  method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data)
-});
-
-function el(tag, attrs = {}, text = '') {
-  const node = document.createElement(tag);
-  for (const [key, value] of Object.entries(attrs)) {
-    if (key === 'class') node.className = value;
-    else node.setAttribute(key, value);
-  }
-  if (text) node.textContent = text;
-  return node;
-}
-
-function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
-
-function emptyAction(target, label) {
-  const button = el('button', { class: 'secondary go-tab', type: 'button' }, label);
-  button.dataset.target = target;
-  return button;
-}
-
-function options(selector, values, empty) {
-  const target = $(selector);
-  const previous = target.value;
-  clear(target);
-  if (empty) target.append(el('option', { value: '' }, empty));
-  for (const option of values) target.append(el('option', { value: option.value }, option.name));
-  if ([...target.options].some((option) => option.value === previous)) target.value = previous;
-  return target;
-}
-
-function buildNavButton(item) {
-  const [target, key, label, icon, shortcut, focus] = item;
-  const attrs = { 'data-tab': target, 'data-nav-key': key, class: 'nav nav-sub' };
-  if (focus) attrs['data-focus'] = focus;
-  const button = el('button', attrs);
-  button.append(el('span', { class: 'nav-icon', 'aria-hidden': 'true' }, icon), el('span', {}, label));
-  if (shortcut) button.append(el('kbd', {}, shortcut));
-  return button;
-}
-
-function readNavGroupState() {
-  try { return JSON.parse(localStorage.getItem(navGroupStorageKey) || '{}'); }
-  catch { return {}; }
-}
-
-function setNavGroupOpen(group, open, persist = true) {
-  if (!group) return;
-  group.classList.toggle('is-collapsed', !open);
-  const toggle = group.querySelector('.nav-group-toggle');
-  if (toggle) {
-    toggle.setAttribute('aria-expanded', String(open));
-    toggle.querySelector('.nav-group-chevron').textContent = open ? '⌄' : '›';
-  }
-  if (persist) {
-    const saved = readNavGroupState();
-    saved[group.dataset.navGroup] = open;
-    localStorage.setItem(navGroupStorageKey, JSON.stringify(saved));
-  }
-}
-
-function mountNavigation() {
-  const nav = $('.nav-list');
-  if (!nav || nav.dataset.grouped === 'true') return;
-  nav.dataset.grouped = 'true';
-  clear(nav);
-  nav.append(el('p', { class: 'nav-label' }, 'Workspace'));
-  const overview = el('button', { 'data-tab': 'dashboard', 'data-nav-key': 'overview', class: 'nav active', 'aria-current': 'page' });
-  overview.append(el('span', { class: 'nav-icon', 'aria-hidden': 'true' }, '⌂'), el('span', {}, 'Overview'), el('kbd', {}, '01'));
-  nav.append(overview);
-  const savedGroups = readNavGroupState();
-  for (const groupData of navGroups) {
-    const open = savedGroups[groupData.key] === true;
-    const group = el('div', { class: 'nav-group' + (open ? '' : ' is-collapsed'), 'data-nav-group': groupData.key });
-    const toggle = el('button', { class: 'nav-group-toggle', type: 'button', 'aria-expanded': String(open), 'aria-controls': 'nav-submenu-' + groupData.key });
-    toggle.append(el('span', { class: 'nav-group-chevron', 'aria-hidden': 'true' }, open ? '⌄' : '›'), el('span', {}, groupData.label));
-    toggle.addEventListener('click', () => setNavGroupOpen(group, group.classList.contains('is-collapsed')));
-    const submenu = el('div', { class: 'nav-submenu', id: 'nav-submenu-' + groupData.key });
-    groupData.items.forEach((item) => submenu.append(buildNavButton(item)));
-    group.append(toggle, submenu);
-    nav.append(group);
-  }
-}
 
 const pipelineSteps = [
   ['persona', 'Persona', 'personas', 'persona-library'],
@@ -458,7 +303,9 @@ function renderDashboardQueue() {
     row.append(el('span', { class: 'queue-status status-' + job.status }, job.status));
     const progressCell = el('span', { class: 'queue-progress' });
     const progressBar = el('i'); progressBar.style.setProperty('--progress', progress + '%'); progressCell.append(progressBar, el('small', {}, progress + '%'));
-    row.append(progressCell, el('button', { type: 'button', class: 'queue-more', 'aria-label': 'Open render details' }, '···'));
+    const actions = el('span', { class: 'queue-actions' });
+    appendJobActions(actions, state.jobs[index]);
+    row.append(progressCell, actions);
     table.append(row);
   });
   root.append(table);
@@ -594,8 +441,32 @@ function renderJobs() {
     row.append(el('strong', {}, job.persona_name + ' · ' + job.workflow_id), el('span', { class: 'pill ' + job.status }, job.status));
     box.append(row, el('small', {}, (job.prompt || '').slice(0, 160)));
     if (job.error) box.append(el('small', {}, 'Error: ' + job.error));
+    const actions = el('div', { class: 'job-actions' });
+    appendJobActions(actions, job);
+    if (actions.childElementCount) box.append(actions);
     root.append(box);
   }
+}
+
+function appendJobActions(target, job) {
+  if (!target || !job) return;
+  const active = ['queued', 'running', 'submitted', 'cancelling'].includes(job.status);
+  const retryable = ['failed', 'interrupted', 'cancelled'].includes(job.status);
+  if (!active && !retryable) return;
+  const action = el('button', { type: 'button', class: 'secondary compact-action' }, active ? 'Cancel' : 'Retry');
+  action.addEventListener('click', async () => {
+    action.disabled = true;
+    try {
+      const verb = active ? 'cancel' : 'retry';
+      const result = await api('/api/jobs/' + job.id + '/' + verb, { method: 'POST' });
+      notify(active ? 'Job cancelled' : 'Job queued for retry (attempt ' + result.attempt + ')');
+      await refresh();
+    } catch (error) {
+      notify(error.message, true);
+      action.disabled = false;
+    }
+  });
+  target.append(action);
 }
 
 function renderGallery() {
@@ -708,6 +579,7 @@ function renderMonitor() {
   overview.append(overviewCopy);
   overview.append(monitorPill(data.overall.status === 'ready' ? 'ready' : data.overall.status === 'degraded' ? 'degraded' : 'error'));
   clear($('#monitor-api')); $('#monitor-api').append(monitorRow({ label: 'Studio API', detail: data.api.detail + ' · v' + data.api.version, status: data.api.status }));
+  if (data.security) $('#monitor-api').append(monitorRow({ label: 'Access security', detail: data.security.detail, status: data.security.status }));
   clear($('#monitor-connections')); data.connections.forEach((item) => $('#monitor-connections').append(monitorRow(item)));
   clear($('#monitor-runtime')); data.runtime.forEach((item) => $('#monitor-runtime').append(monitorRow(item)));
   clear($('#monitor-models')); data.models.forEach((item) => $('#monitor-models').append(monitorRow({ ...item, detail: item.detail + ' · ' + item.license })));
@@ -1042,6 +914,30 @@ function mountBriefImporter() {
   });
 }
 
+function mountGenerationPreflight() {
+  const form = $('#job-form');
+  const workflow = $('#g-workflow');
+  if (!form || !workflow || $('#generation-preflight')) return;
+  const card = el('div', { id: 'generation-preflight', class: 'generation-preflight' });
+  const status = el('span', { class: 'fine muted', role: 'status' }, 'Run a read-only check before queueing.');
+  const button = el('button', { type: 'button', class: 'secondary compact-action' }, 'Run preflight');
+  card.append(status, button);
+  workflow.closest('label')?.insertAdjacentElement('afterend', card);
+  button.addEventListener('click', async () => {
+    if (!workflow.value) { status.textContent = 'Select a workflow first.'; status.className = 'fine error-text'; return; }
+    button.disabled = true;
+    try {
+      const result = await api('/api/preflight?workflow_id=' + encodeURIComponent(workflow.value));
+      const warning = result.checks.filter((item) => item.status !== 'ready');
+      status.textContent = result.overall === 'ready' ? 'Preflight ready.' : 'Preflight ' + result.overall + ': ' + warning.map((item) => item.detail).join(' · ');
+      status.className = 'fine ' + (result.overall === 'ready' ? 'ready-text' : 'muted');
+    } catch (error) {
+      status.textContent = error.message;
+      status.className = 'fine error-text';
+    } finally { button.disabled = false; }
+  });
+}
+
 function on(form, callback) {
   $(form).addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -1064,6 +960,7 @@ $('#r-persona').addEventListener('change', refreshReferences);
 mountPersonaImporter();
 mountPersonaDetails();
 mountBriefImporter();
+mountGenerationPreflight();
 // Safe default direction for new adult glamour jobs. The safety checker remains
 // enabled; these defaults only make the intended content lane explicit.
 $('#g-prompt').placeholder = 'Adult editorial glamour portrait, confident pose, polished fashion styling, tasteful non-explicit direction…';
