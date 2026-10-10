@@ -102,6 +102,19 @@ The Production Studio workflow selector includes default recipes for FLUX.2, Z-I
 
 Open `http://127.0.0.1:8000`. Persona/reference storage works immediately. Generation jobs in the dashboard require **a separately running ComfyUI and an imported compatible API-format workflow**; model weights and workflows are **not** included. The direct CLI path can be brought back into **Review & export → Media review → Import a completed pipeline output**, where the file remains pending until manual approval and disclosure confirmation. This mode is meant for testing custom graphs, not automatic model licensing guarantees. Standalone free CLI is the easiest base path.
 
+For a cloud worker or any non-loopback tunnel, configure an access token and
+strict media checks before starting Uvicorn:
+
+```powershell
+$env:STUDIO_AUTH_TOKEN = "use-a-long-random-secret"
+$env:STUDIO_STRICT_MEDIA = "1"
+.\.venv\Scripts\python.exe -m uvicorn studio.app:app --host 127.0.0.1 --port 8000
+```
+
+The dashboard's Operations → Monitoring panel reports whether authentication
+is configured. See `docs/ARCHITECTURE_PHASES.md` for Phase 1/2 hardening and
+module boundaries.
+
 ## Documentation
 
 - `docs/LOCAL_FREE_SETUP.md` — hardware, installations, model downloads and exact commands

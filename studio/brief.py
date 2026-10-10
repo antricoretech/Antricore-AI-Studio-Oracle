@@ -12,6 +12,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .policies import AI_DISCLOSURE, DEFAULT_NEGATIVE_PROMPT
+
 
 class BriefModel(BaseModel):
     """Allow ChatGPT to add useful nested detail without losing it on import."""
@@ -89,13 +91,7 @@ class ImageBrief(BaseModel):
     enabled: bool = True
     model: Literal["flux2-klein-4b", "z-image-turbo"] = "flux2-klein-4b"
     prompt: str = Field(min_length=5, max_length=3000)
-    negative_prompt: str = Field(
-        default=(
-            "blurry, deformed, extra fingers, duplicate person, watermark, typography, logo, "
-            "child, teenager, minor, nudity, exposed genitals, explicit sexual activity, lingerie, real-person likeness"
-        ),
-        max_length=2000,
-    )
+    negative_prompt: str = Field(default=DEFAULT_NEGATIVE_PROMPT, max_length=2000)
     width: int = Field(default=768, ge=256, le=2048)
     height: int = Field(default=1152, ge=256, le=2048)
     seed: int = Field(default=42, ge=0, le=9223372036854775807)
@@ -125,7 +121,7 @@ class AssemblyBrief(BaseModel):
     enabled: bool = True
     output: str = Field(default="generated/reel_with_voice.mp4", min_length=1, max_length=260)
     disclosure: str = Field(
-        default="Fictional adult character. AI-generated synthetic media.",
+        default=AI_DISCLOSURE,
         min_length=20,
         max_length=300,
     )

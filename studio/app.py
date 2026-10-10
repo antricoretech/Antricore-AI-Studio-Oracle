@@ -1,6 +1,7 @@
 """VS Code runnable control panel for ComfyUI-based fictional influencer creation.
 
-LOCAL DEVELOPMENT ONLY. No accounts, authentication, or public deployment support.
+Local-first by default. Configure ``STUDIO_AUTH_TOKEN`` before binding outside
+loopback or using a shared cloud worker.
 """
 from __future__ import annotations
 
@@ -13,6 +14,7 @@ import secrets
 import shutil
 import sys
 import uuid
+import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,15 +29,19 @@ DEFAULT_WORKFLOW_LABELS = {
 }
 load_dotenv(ROOT / ".env")
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Request
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from PIL import Image
-from pydantic import BaseModel, Field
-
 from . import database as db
 from .brief import PersonaBrief, PersonaCharacteristics, brief_dict, parse_brief_bytes, parse_persona_bytes
 from .comfy import ComfyClient, output_files, render_graph, validate_graph
+from .media import extension_for, read_limited, validate_image_bytes, validate_media_signature
+from .policies import AI_DISCLOSURE
+from .repositories import JobRepository, PersonaRepository, SeriesRepository
+from .schemas import JobIn, LinkIn, PersonaIn, ReviewIn, SeriesEpisodeIn, SeriesIn, SeriesQueueIn, VoiceIn
+from .settings import get_settings
+
+logger = logging.getLogger("studio")
 
 
 def now():
@@ -49,81 +55,34 @@ def uid():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db.initialize()
-    yield
+    app.state.job_tasks = set()
+    logger.info("studio_started", extra={"data_dir": str(db.DATA)})
+    try:
+        yield
+    finally:
+        tasks = list(getattr(app.state, "job_tasks", set()))
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        logger.info("studio_stopped", extra={"cancelled_tasks": len(tasks)})
 
 app = FastAPI(title="AI Influencer Studio", version="0.1.0", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
 
 
-class PersonaIn(BaseModel):
-    name: str = Field(min_length=2, max_length=80)
-    age: int = Field(ge=18, le=110)
-    description: str = Field(min_length=8, max_length=1500)
-    appearance: str = Field(min_length=8, max_length=1500)
-    disclosure: str = Field(default="Fictional AI-generated adult persona", min_length=10, max_length=250)
-    characteristics: PersonaCharacteristics = Field(default_factory=PersonaCharacteristics)
+@app.middleware("http")
+async def optional_token_auth(request: Request, call_next):
+    """Require a bearer token only when the operator explicitly configures one."""
 
-
-class JobIn(BaseModel):
-    persona_id: str
-    workflow_id: str = "sdxl_basic_api"
-    prompt: str = Field(min_length=5, max_length=3000)
-    video_prompt: str | None = Field(default=None, max_length=3000)
-    negative_prompt: str = Field(
-        default=(
-            "blurry, deformed, extra fingers, duplicate person, text, watermark, logo, "
-            "child, teenager, minor, nudity, exposed genitals, explicit sexual activity, lingerie, real-person likeness"
-        )
-    )
-    checkpoint: str = Field(default="", max_length=260)
-    reference_id: str | None = None
-    source_asset_id: str | None = None
-    audio_asset_id: str | None = None
-    width: int = Field(default=768, ge=256, le=2048)
-    height: int = Field(default=1152, ge=256, le=2048)
-    seed: int = Field(default_factory=lambda: secrets.randbelow(2147483647), ge=0, le=9223372036854775807)
-    rights_confirmed: bool = False
-
-
-class ReviewIn(BaseModel):
-    review: str
-
-
-class VoiceIn(BaseModel):
-    persona_id: str
-    text: str = Field(min_length=2, max_length=1200)
-    voice: str = Field(default="af_heart", pattern=r"^(af_|am_|bf_|bm_)[a-z0-9_]+$")
-
-
-class LinkIn(BaseModel):
-    label: str = Field(min_length=2, max_length=100)
-    destination: str = Field(min_length=10, max_length=1500)
-
-
-class SeriesEpisodeIn(BaseModel):
-    title: str = Field(min_length=2, max_length=120)
-    prompt: str = Field(min_length=5, max_length=3000)
-    video_prompt: str = Field(min_length=5, max_length=3000)
-
-
-class SeriesIn(BaseModel):
-    persona_id: str
-    title: str = Field(min_length=2, max_length=120)
-    description: str = Field(min_length=8, max_length=1200)
-    shared_prompt: str = Field(min_length=8, max_length=3000)
-    episodes: list[SeriesEpisodeIn] = Field(min_length=1, max_length=30)
-
-
-class SeriesQueueIn(BaseModel):
-    workflow_id: str
-    checkpoint: str = Field(default="", max_length=260)
-    reference_id: str | None = None
-    source_asset_id: str | None = None
-    audio_asset_id: str | None = None
-    width: int = Field(default=704, ge=256, le=2048)
-    height: int = Field(default=1280, ge=256, le=2048)
-    seed: int | None = Field(default=None, ge=0, le=9223372036854775807)
-    rights_confirmed: bool = False
+    settings = get_settings()
+    if settings.auth_token and (request.url.path.startswith("/api/") or request.url.path.startswith("/go/")):
+        supplied = request.headers.get("authorization", "")
+        token = supplied[7:].strip() if supplied.lower().startswith("bearer ") else request.headers.get("x-studio-token", "")
+        if token != settings.auth_token:
+            return JSONResponse({"detail": "Studio authentication required"}, status_code=401, headers={"WWW-Authenticate": "Bearer"})
+    return await call_next(request)
 
 
 def workflow_path(wid):
@@ -232,9 +191,10 @@ def index():
 @app.post("/api/briefs/validate")
 async def validate_brief(file: UploadFile = File(...)):
     """Validate a ChatGPT-authored generation brief without queuing work."""
-    raw = await file.read(1024 * 1024 + 1)
-    if len(raw) > 1024 * 1024:
-        raise HTTPException(413, "Generation briefs must be under 1 MB")
+    try:
+        raw = await read_limited(file, get_settings().brief_max_bytes)
+    except ValueError as exc:
+        raise HTTPException(413, str(exc)) from exc
     try:
         brief = parse_brief_bytes(raw)
     except ValueError as exc:
@@ -257,9 +217,16 @@ def persona_response(person):
 
 def store_persona(payload: PersonaIn):
     pid = uid()
-    db.write("INSERT INTO personas (id,name,age,description,appearance,disclosure,created_at,characteristics_json) VALUES (?,?,?,?,?,?,?,?)", (pid, payload.name.strip(), payload.age, payload.description.strip(),
-         payload.appearance.strip(), payload.disclosure.strip(), now(), json.dumps(brief_dict(payload.characteristics))))
-    return persona_response(db.row("SELECT * FROM personas WHERE id=?", (pid,)))
+    return persona_response(PersonaRepository.create(
+        persona_id=pid,
+        name=payload.name.strip(),
+        age=payload.age,
+        description=payload.description.strip(),
+        appearance=payload.appearance.strip(),
+        disclosure=payload.disclosure.strip(),
+        created_at=now(),
+        characteristics=brief_dict(payload.characteristics),
+    ))
 
 
 def persona_input_from_brief(brief: PersonaBrief):
@@ -283,9 +250,10 @@ def brief_disclosure(value):
 @app.post("/api/personas/import", status_code=201)
 async def import_persona(file: UploadFile = File(...)):
     """Validate and create one persona from a ChatGPT-authored JSON file."""
-    raw = await file.read(1024 * 1024 + 1)
-    if len(raw) > 1024 * 1024:
-        raise HTTPException(413, "Persona briefs must be under 1 MB")
+    try:
+        raw = await read_limited(file, get_settings().brief_max_bytes)
+    except ValueError as exc:
+        raise HTTPException(413, str(exc)) from exc
     try:
         brief = parse_persona_bytes(raw)
     except ValueError as exc:
@@ -317,6 +285,13 @@ async def checkpoints():
 async def monitor():
     """Return a read-only startup/readiness snapshot for the local/cloud worker."""
     checks = {"api": _monitor_status(True, "FastAPI control plane is responding", version=app.version)}
+    settings = get_settings()
+    checks["security"] = _monitor_status(
+        bool(settings.auth_token),
+        "Bearer token configured" if settings.auth_token else "Authentication disabled; keep the server on loopback or use an SSH tunnel",
+        auth_configured=bool(settings.auth_token),
+        strict_media_validation=settings.strict_media_validation,
+    )
     try:
         db.row("SELECT 1 AS ok")
         usage = shutil.disk_usage(db.DATA)
@@ -348,7 +323,7 @@ async def monitor():
     active_jobs = db.row("SELECT COUNT(*) AS n FROM jobs WHERE status IN ('queued','running','submitted')")
     failed_jobs = db.row("SELECT COUNT(*) AS n FROM jobs WHERE status='failed'")
     checks["queue"] = {"status": "warning" if failed_jobs["n"] else "ready", "detail": f"{active_jobs['n']} active job(s), {failed_jobs['n']} failed job(s)", "active": active_jobs["n"], "failed": failed_jobs["n"]}
-    all_statuses = [checks["api"]["status"], checks["database"]["status"], checks["storage"]["status"], comfy["status"], checks["workflows"]["status"], checks["queue"]["status"]] + [item["status"] for item in checks["runtime"]] + [item["status"] for item in checks["models"]]
+    all_statuses = [checks["api"]["status"], checks["database"]["status"], checks["storage"]["status"], checks["security"]["status"], comfy["status"], checks["workflows"]["status"], checks["queue"]["status"]] + [item["status"] for item in checks["runtime"]] + [item["status"] for item in checks["models"]]
     overall = "error" if "error" in all_statuses else "degraded" if "warning" in all_statuses else "ready"
     return {"checked_at": now(), "overall": {"status": overall, "detail": "Core app is healthy; review warnings before a GPU render" if overall == "degraded" else "All checked integrations are ready" if overall == "ready" else "A core monitoring check failed"}, **checks}
 
@@ -395,13 +370,14 @@ def create_series(payload: SeriesIn):
     if not person.get("identity_locked"):
         raise HTTPException(409, "Freeze the persona identity before creating a repeatable series")
     sid = uid()
-    db.write("INSERT INTO series (id,persona_id,title,description,shared_prompt,status,created_at) VALUES (?,?,?,?,?,?,?)",
-             (sid, person["id"], payload.title.strip(), payload.description.strip(), payload.shared_prompt.strip(), "planned", now()))
+    episodes = []
     for index, episode in enumerate(payload.episodes, start=1):
         prompt = f"{payload.shared_prompt.strip()}\nEpisode direction: {episode.prompt.strip()}"
         video_prompt = f"{payload.shared_prompt.strip()}\nEpisode motion: {episode.video_prompt.strip()}"
-        db.write("INSERT INTO series_episodes (id,series_id,episode_no,title,prompt,video_prompt,status,created_at) VALUES (?,?,?,?,?,?,?,?)",
-                 (uid(), sid, index, episode.title.strip(), prompt, video_prompt, "planned", now()))
+        episodes.append((uid(), index, episode.title.strip(), prompt, video_prompt, now()))
+    SeriesRepository.create(series_id=sid, persona_id=person["id"], title=payload.title.strip(),
+                            description=payload.description.strip(), shared_prompt=payload.shared_prompt.strip(),
+                            created_at=now(), episodes=episodes)
     return series_response(db.row("SELECT series.*, personas.name AS persona_name, personas.identity_locked, personas.identity_version FROM series JOIN personas ON personas.id=series.persona_id WHERE series.id=?", (sid,)))
 
 
@@ -439,16 +415,9 @@ async def add_reference(pid: str, file: UploadFile = File(...), label: str = For
         raise HTTPException(409, "Persona identity is frozen; create a new persona/version before changing its reference vault")
     if not rights_confirmed:
         raise HTTPException(400, "Confirm you have rights to this image and likeness")
-    raw = await file.read(20 * 1024 * 1024 + 1)
-    if len(raw) > 20 * 1024 * 1024:
-        raise HTTPException(413, "Images must be under 20 MB")
-    from io import BytesIO
     try:
-        with Image.open(BytesIO(raw)) as img:
-            if img.format not in {"PNG", "JPEG", "WEBP"} or img.width * img.height > 45_000_000:
-                raise ValueError("Unsupported image or size")
-            extension = {"PNG": ".png", "JPEG": ".jpg", "WEBP": ".webp"}[img.format]
-            img.verify()
+        raw = await read_limited(file, get_settings().reference_max_bytes)
+        extension = validate_image_bytes(raw)
     except Exception as e:
         raise HTTPException(400, f"Invalid PNG, JPEG, or WEBP image: {e}") from e
     rid = uid()
@@ -473,9 +442,10 @@ def get_workflows():
 
 @app.post("/api/workflows", status_code=201)
 async def import_workflow(file: UploadFile = File(...), label: str = Form("Custom")):
-    raw = await file.read(1024 * 1024 + 1)
-    if len(raw) > 1024 * 1024:
-        raise HTTPException(413, "Workflow maximum 1 MB")
+    try:
+        raw = await read_limited(file, get_settings().workflow_max_bytes)
+    except ValueError as exc:
+        raise HTTPException(413, str(exc)) from exc
     try:
         graph = json.loads(raw)
         validate_graph(graph)
@@ -517,7 +487,8 @@ def persona_characteristics_text(person):
 
 async def execute_job(job_id, payload: JobIn, person: dict):
     try:
-        db.write("UPDATE jobs SET status='running' WHERE id=?", (job_id,))
+        db.write("UPDATE jobs SET status='running', updated_at=? WHERE id=?", (now(), job_id))
+        logger.info("job_started", extra={"data": {"job_id": job_id, "persona_id": person.get("id"), "workflow_id": payload.workflow_id}})
         graph = json.loads(workflow_path(payload.workflow_id).read_text(encoding="utf8"))
         creative_prompt = payload.video_prompt if (payload.video_prompt and ("video" in payload.workflow_id.lower() or "wan" in payload.workflow_id.lower())) else payload.prompt
         profile_text = persona_characteristics_text(person)
@@ -547,14 +518,14 @@ async def execute_job(job_id, payload: JobIn, person: dict):
                 values["AUDIO_FILENAME"] = await client.upload_audio((db.OUTPUTS / audio["filename"]).read_bytes(), audio["filename"])
             graph = render_graph(graph, values)
             prompt_id = await client.submit(graph)
-            db.write("UPDATE jobs SET status='submitted', comfy_prompt_id=? WHERE id=?", (prompt_id, job_id))
-            outputs = await client.wait(prompt_id)
+            db.write("UPDATE jobs SET status='submitted', comfy_prompt_id=?, updated_at=? WHERE id=?", (prompt_id, now(), job_id))
+            outputs = await asyncio.wait_for(client.wait(prompt_id), timeout=get_settings().job_timeout_seconds)
             files = output_files(outputs)
             if not files:
                 raise RuntimeError("Workflow completed but no SaveImage / SaveVideo or compatible output was detected")
             for item in files[:20]:
                 content = await client.download(item)
-                if len(content) > 200 * 1024 * 1024:
+                if len(content) > get_settings().output_max_bytes:
                     raise ValueError("Generated output exceeds 200MB safety limit")
                 ext = Path(item["filename"]).suffix.lower()
                 if ext not in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm", ".wav", ".mp3", ".flac"}:
@@ -564,11 +535,13 @@ async def execute_job(job_id, payload: JobIn, person: dict):
                 (db.OUTPUTS / dest).write_bytes(content)
                 kind = "video" if ext in {".mp4", ".webm", ".gif"} else "audio" if ext in {".wav", ".mp3", ".flac"} else "image"
                 db.write("INSERT INTO assets (id,persona_id,job_id,filename,kind,prompt,rights_confirmed,disclosure,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
-                         (aid, person["id"], job_id, dest, kind, payload.prompt, 1, person.get("disclosure") or "Fictional adult character. AI-generated synthetic media.", now()))
-            db.write("UPDATE jobs SET status='completed', finished_at=? WHERE id=?", (now(), job_id))
+                         (aid, person["id"], job_id, dest, kind, payload.prompt, 1, person.get("disclosure") or AI_DISCLOSURE, now()))
+            db.write("UPDATE jobs SET status='completed', finished_at=?, updated_at=? WHERE id=?", (now(), now(), job_id))
             db.write("UPDATE series_episodes SET status='completed' WHERE job_id=?", (job_id,))
+            logger.info("job_completed", extra={"data": {"job_id": job_id, "outputs": len(files)}})
     except Exception as e:
-        db.write("UPDATE jobs SET status='failed', error=?, finished_at=? WHERE id=?", (str(e)[:1500], now(), job_id))
+        logger.exception("job_failed", extra={"data": {"job_id": job_id}})
+        db.write("UPDATE jobs SET status='failed', error=?, finished_at=?, updated_at=? WHERE id=?", (str(e)[:1500], now(), now(), job_id))
         db.write("UPDATE series_episodes SET status='failed' WHERE job_id=?", (job_id,))
 
 
@@ -607,9 +580,19 @@ async def create_job(payload: JobIn):
             raise HTTPException(400, "Narration asset is missing rights confirmation")
     jid = uid()
     category = "video" if "video" in payload.workflow_id.lower() or "wan" in payload.workflow_id.lower() else "image"
-    db.write("INSERT INTO jobs (id,persona_id,workflow_id,type,prompt,status,created_at) VALUES (?,?,?,?,?,?,?)",
-             (jid, person["id"], payload.workflow_id, category, payload.prompt, "queued", now()))
-    asyncio.create_task(execute_job(jid, payload, person))
+    try:
+        request_json = payload.model_dump_json()
+    except AttributeError:  # Pydantic v1 compatibility for older local installs.
+        request_json = payload.json()
+    created = now()
+    JobRepository.create(job_id=jid, persona_id=person["id"], workflow_id=payload.workflow_id,
+                         kind=category, prompt=payload.prompt, request_json=request_json, created_at=created)
+    task = asyncio.create_task(execute_job(jid, payload, person), name=f"studio-job-{jid}")
+    tasks = getattr(app.state, "job_tasks", None)
+    if tasks is not None:
+        tasks.add(task)
+        task.add_done_callback(tasks.discard)
+    logger.info("job_queued", extra={"data": {"job_id": jid, "persona_id": person["id"], "workflow_id": payload.workflow_id}})
     return {"id": jid, "status": "queued"}
 
 
@@ -629,7 +612,7 @@ async def import_asset(
     file: UploadFile = File(...),
     kind: str = Form("video"),
     prompt: str = Form("Imported local pipeline output"),
-    disclosure: str = Form("Fictional adult character. AI-generated synthetic media."),
+    disclosure: str = Form(AI_DISCLOSURE),
     rights_confirmed: bool = Form(False),
 ):
     person = must_persona(persona_id)
@@ -641,17 +624,16 @@ async def import_asset(
         raise HTTPException(400, "Describe the imported scene or pipeline output")
     if len(disclosure.strip()) < 20:
         raise HTTPException(400, "Include a clear AI-generated disclosure")
-    raw = await file.read(500 * 1024 * 1024 + 1)
-    if len(raw) > 500 * 1024 * 1024:
-        raise HTTPException(413, "Imported media must be under 500 MB")
-    suffix = Path(file.filename or "").suffix.lower()
-    extensions = {
-        "image": {".png", ".jpg", ".jpeg", ".webp"},
-        "video": {".mp4", ".webm", ".gif"},
-        "audio": {".wav", ".mp3", ".flac"},
-    }
-    if suffix not in extensions[kind]:
-        raise HTTPException(400, f"Unsupported {kind} file; accepted: {', '.join(sorted(extensions[kind]))}")
+    try:
+        raw = await read_limited(file, get_settings().asset_max_bytes)
+        suffix = extension_for(kind, file.filename or "")
+        if kind == "image":
+            # Images are always decoded so a renamed executable cannot enter the media vault.
+            suffix = validate_image_bytes(raw)
+        else:
+            validate_media_signature(raw, kind, strict=get_settings().strict_media_validation)
+    except ValueError as exc:
+        raise HTTPException(413 if "exceeds" in str(exc) else 400, str(exc)) from exc
     aid = uid()
     destination = aid + suffix
     db.OUTPUTS.mkdir(parents=True, exist_ok=True)
@@ -690,7 +672,7 @@ async def create_voice(payload: VoiceIn):
     except Exception as e:
         raise HTTPException(503, f"Voice generation unavailable: {str(e)[:250]}") from e
     db.write("INSERT INTO assets (id,persona_id,job_id,filename,kind,prompt,rights_confirmed,disclosure,created_at) VALUES (?,?,NULL,?,?,?,?,?,?)",
-             (aid, person["id"], aid + ".wav", "audio", payload.text, 1, person.get("disclosure") or "Fictional adult character. AI-generated synthetic media.", now()))
+             (aid, person["id"], aid + ".wav", "audio", payload.text, 1, person.get("disclosure") or AI_DISCLOSURE, now()))
     return {"id": aid, "url": f"/api/assets/{aid}/file"}
 
 

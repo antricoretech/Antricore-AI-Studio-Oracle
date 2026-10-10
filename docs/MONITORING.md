@@ -4,6 +4,8 @@ Open **Monitoring** after starting the application or reconnecting to the GPU se
 
 The tab checks:
 
+- **Security** — authentication configuration and strict media validation mode.
+
 - **API / database** — FastAPI control plane, SQLite response and database path.
 - **Connections** — optional local ComfyUI API URL, response status, devices and checkpoint count.
 - **Runtime** — CUDA/PyTorch visibility, FFmpeg, Kokoro dependencies, Wan2.2 checkout and its separate Python executable.

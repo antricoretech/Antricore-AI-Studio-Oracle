@@ -33,7 +33,8 @@ def initialize():
         CREATE TABLE IF NOT EXISTS jobs (
             id TEXT PRIMARY KEY, persona_id TEXT NOT NULL, workflow_id TEXT NOT NULL,
             type TEXT NOT NULL, prompt TEXT NOT NULL, status TEXT NOT NULL,
-            error TEXT, comfy_prompt_id TEXT, created_at TEXT NOT NULL, finished_at TEXT
+            error TEXT, comfy_prompt_id TEXT, created_at TEXT NOT NULL, finished_at TEXT,
+            request_json TEXT NOT NULL DEFAULT '{}', updated_at TEXT
         );
         CREATE TABLE IF NOT EXISTS assets (
             id TEXT PRIMARY KEY, persona_id TEXT NOT NULL, job_id TEXT,
@@ -60,6 +61,9 @@ def initialize():
             FOREIGN KEY(series_id) REFERENCES series(id),
             FOREIGN KEY(job_id) REFERENCES jobs(id)
         );
+        CREATE TABLE IF NOT EXISTS schema_meta (
+            key TEXT PRIMARY KEY, value TEXT NOT NULL
+        );
         """)
         columns = {row[1] for row in con.execute("PRAGMA table_info(personas)").fetchall()}
         if "characteristics_json" not in columns:
@@ -73,6 +77,22 @@ def initialize():
         asset_columns = {row[1] for row in con.execute("PRAGMA table_info(assets)").fetchall()}
         if "disclosure" not in asset_columns:
             con.execute("ALTER TABLE assets ADD COLUMN disclosure TEXT NOT NULL DEFAULT 'Fictional adult character. AI-generated synthetic media.'")
+        job_columns = {row[1] for row in con.execute("PRAGMA table_info(jobs)").fetchall()}
+        if "request_json" not in job_columns:
+            con.execute("ALTER TABLE jobs ADD COLUMN request_json TEXT NOT NULL DEFAULT '{}'")
+        if "updated_at" not in job_columns:
+            con.execute("ALTER TABLE jobs ADD COLUMN updated_at TEXT")
+        # Foreign-key and queue lookups are the hot paths for the control plane.
+        con.executescript("""
+        CREATE INDEX IF NOT EXISTS idx_reference_images_persona ON reference_images(persona_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_jobs_status_created ON jobs(status, created_at);
+        CREATE INDEX IF NOT EXISTS idx_jobs_persona_created ON jobs(persona_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_assets_persona_created ON assets(persona_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_assets_review_kind ON assets(review, kind);
+        CREATE INDEX IF NOT EXISTS idx_series_persona_created ON series(persona_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_series_episodes_job ON series_episodes(job_id);
+        """)
+        con.execute("INSERT INTO schema_meta(key,value) VALUES('schema_version','2') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
         con.execute("UPDATE jobs SET status='interrupted', error='App restarted during job; retry from Studio' WHERE status IN ('running','submitted','queued')")
 
 
@@ -105,3 +125,15 @@ def row(sql: str, args=()):
 def write(sql: str, args=()):
     with connection() as con:
         con.execute(sql, args)
+
+
+def write_many(statements):
+    """Run a group of writes in one transaction.
+
+    The route layer uses this for series creation and queue state changes so a
+    partial write cannot leave the control plane with an orphaned episode.
+    """
+
+    with connection() as con:
+        for sql, args in statements:
+            con.execute(sql, args)

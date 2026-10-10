@@ -14,6 +14,8 @@ import subprocess
 import sys
 from types import SimpleNamespace
 
+from .policies import AI_DISCLOSURE, DEFAULT_NEGATIVE_PROMPT
+
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / 'config' / 'approved_models.json'
 REGISTRY = json.loads(CONFIG.read_text(encoding='utf8'))
@@ -270,7 +272,7 @@ def pipeline(args):
 
     disclosure_file.parent.mkdir(parents=True, exist_ok=True)
     disclosure_file.write_text(
-        getattr(args, 'disclosure', 'Fictional adult character. AI-generated synthetic media.') + '\n',
+        getattr(args, 'disclosure', AI_DISCLOSURE) + '\n',
         encoding='utf8',
     )
     print(f'Local pipeline complete: {final_file}')
@@ -303,7 +305,7 @@ def cli(argv=None):
     sub.add_parser('doctor')
     dl=sub.add_parser('download');dl.add_argument('--model',required=True,choices=REGISTRY.keys());dl.add_argument('--yes',action='store_true')
     im=sub.add_parser('image');im.add_argument('--model',choices=['flux2-klein-4b','z-image-turbo'],default='flux2-klein-4b');im.add_argument('--prompt',required=True)
-    im.add_argument('--negative-prompt',default='blurry, deformed, extra fingers, duplicate person, watermark, typography, logo, child, teenager, minor, nudity, exposed genitals, explicit sexual activity, lingerie, real-person likeness')
+    im.add_argument('--negative-prompt',default=DEFAULT_NEGATIVE_PROMPT)
     im.add_argument('--reference',action='append',help='Repeat for each master reference (FLUX.2 only)')
     im.add_argument('--width',type=int,default=768);im.add_argument('--height',type=int,default=1152)
     im.add_argument('--seed',type=int,default=42);im.add_argument('--steps',type=int,default=4);im.add_argument('--guidance',type=float,default=1.0)
@@ -318,7 +320,7 @@ def cli(argv=None):
     mx=sub.add_parser('mux');mx.add_argument('--video',required=True);mx.add_argument('--audio',required=True);mx.add_argument('--output',default=str(OUTPUT_ROOT/'narrated_reel.mp4'))
     pp=sub.add_parser('pipeline', help='Run local image, video, optional voice and mux stages')
     pp.add_argument('--prompt', required=True, help='Master-image prompt for the fictional adult character')
-    pp.add_argument('--negative-prompt', default='blurry, deformed, extra fingers, duplicate person, watermark, typography, logo, child, teenager, minor, nudity, exposed genitals, explicit sexual activity, lingerie, real-person likeness')
+    pp.add_argument('--negative-prompt', default=DEFAULT_NEGATIVE_PROMPT)
     pp.add_argument('--video-prompt', help='Motion prompt; defaults to the image prompt')
     pp.add_argument('--narration', help='Optional narration text; omit to skip Kokoro and muxing')
     pp.add_argument('--voice', default='af_heart'); pp.add_argument('--lang', default='a')
@@ -335,7 +337,7 @@ def cli(argv=None):
     pp.add_argument('--video', default=str(OUTPUT_ROOT/'reel.mp4'))
     pp.add_argument('--audio', default=str(OUTPUT_ROOT/'narration.wav'))
     pp.add_argument('--output', default=str(OUTPUT_ROOT/'reel_with_voice.mp4'))
-    pp.add_argument('--disclosure', default='Fictional adult character. AI-generated synthetic media.')
+    pp.add_argument('--disclosure', default=AI_DISCLOSURE)
     pp.add_argument('--dry-run', action='store_true')
     br = sub.add_parser('brief', help='Validate and run a ChatGPT-authored generation brief')
     br.add_argument('--file', required=True, help='Path to generation brief JSON')
