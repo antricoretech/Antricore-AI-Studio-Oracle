@@ -64,6 +64,9 @@ def _model_checks(model_id: str | None, task: str | None, backend: str | None):
         checks.append({"id": "model_vram", "status": "ready", "detail": f"Detected {actual:.1f} GiB VRAM (minimum {required} GiB)", "required_vram_gb": required, "vram_gb": actual})
     return checks
 
+
+# End of read-only preflight helpers.
+
 def workflow_preflight(workflow_id: str | None = None, model_id: str | None = None,
                        task: str | None = None, width: int | None = None,
                        height: int | None = None):
