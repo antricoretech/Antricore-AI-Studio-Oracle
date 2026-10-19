@@ -122,27 +122,136 @@ def image_call(args, torch, pipeline):
 
 
 def make_image(args):
-    if args.model not in {'flux2-klein-4b','z-image-turbo'}:
-        raise ValueError('Image CLI supports FLUX.2 Klein 4B and Z-Image Turbo only')
+    if args.model not in {'flux2-klein-4b','z-image-turbo','pony-diffusion-v6-xl','cyberrealistic-xl','juggernaut-xl-v10'}:
+        raise ValueError('Image CLI supports FLUX.2 Klein 4B, Z-Image Turbo, Pony Diffusion V6 XL, CyberRealistic XL, and Juggernaut XL v10 only')
     import torch
-    from diffusers import DiffusionPipeline
-    if not torch.cuda.is_available():
-        raise RuntimeError('Image generation requires a supported GPU for this preset. Use doctor to check.')
+    from diffusers import DiffusionPipeline, StableDiffusionXLPipeline
+    if torch.cuda.is_available():
+        device = 'cuda'
+    elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        device = 'mps'
+    else:
+        raise RuntimeError('Image generation requires a supported GPU (CUDA or Apple Silicon Metal/MPS).')
     local=local_model(args.model)
     if args.offline and not local.is_dir():
         raise RuntimeError(f'Weights absent: {local}. Download the model before using --offline.')
     source=str(local) if local.is_dir() and any(local.iterdir()) else REGISTRY[args.model]['hf']
     if args.offline: os.environ['HF_HUB_OFFLINE']='1'
     print(f'Loading {args.model} from {source}; may require substantial VRAM and disk space')
-    pipe=DiffusionPipeline.from_pretrained(source, torch_dtype=torch.bfloat16, local_files_only=args.offline)
-    if args.cpu_offload:
+    dtype = torch.bfloat16 if device == 'cuda' else torch.float16
+    if args.model in {'pony-diffusion-v6-xl', 'cyberrealistic-xl', 'juggernaut-xl-v10'}:
+        safetensors_files = list(local.glob('*.safetensors')) if local.is_dir() else []
+        if safetensors_files:
+            pipe = StableDiffusionXLPipeline.from_single_file(str(safetensors_files[0]), torch_dtype=dtype, local_files_only=args.offline)
+        else:
+            raise RuntimeError(f"Weights absent in {local}. Run download command first.")
+    else:
+        pipe=DiffusionPipeline.from_pretrained(source, torch_dtype=dtype, local_files_only=args.offline)
+    if args.cpu_offload and device == 'cuda':
         pipe.enable_model_cpu_offload()
     else:
-        pipe.to('cuda')
+        pipe.to(device)
     if args.model == 'z-image-turbo':
         args.guidance=0.0  # distilled model: no CFG recommended
         if args.steps == 4: args.steps=9
-    result=image_call(args,torch,pipe)
+    elif args.model == 'pony-diffusion-v6-xl':
+        if args.steps == 4: args.steps = 25
+        if args.guidance == 1.0: args.guidance = 7.0
+    elif args.model == 'cyberrealistic-xl':
+        if args.steps == 4: args.steps = 28
+        if args.guidance == 1.0: args.guidance = 5.0
+    elif args.model == 'juggernaut-xl-v10':
+        if args.steps == 4: args.steps = 30
+        if args.guidance == 1.0: args.guidance = 5.0
+    
+    face_ref = getattr(args, 'face_ref', None)
+    if face_ref:
+        if args.model not in {'cyberrealistic-xl', 'pony-diffusion-v6-xl', 'juggernaut-xl-v10'}:
+            raise ValueError('FaceID identity locking requires an SDXL model (cyberrealistic-xl, pony-diffusion-v6-xl, or juggernaut-xl-v10)')
+        import cv2
+        from PIL import Image
+        import insightface
+        from insightface.app import FaceAnalysis
+        from insightface.utils import face_align
+        from ip_adapter.ip_adapter_faceid import IPAdapterFaceIDPlusXL, IPAdapterFaceIDXL
+
+        ref_path = verify_image(face_ref)
+        print(f"Extracting facial identity embedding from {ref_path}...")
+        face_app = FaceAnalysis(name="buffalo_l", providers=["CPUExecutionProvider"])
+        face_app.prepare(ctx_id=0, det_size=(640, 640))
+        img_cv2 = cv2.imread(str(ref_path))
+        faces = face_app.get(img_cv2)
+        if not faces:
+            raise ValueError(f"No face detected in reference image: {face_ref}")
+
+        faceid_embeds = torch.from_numpy(faces[0].normed_embedding).unsqueeze(0)
+        face_image = face_align.norm_crop(img_cv2, landmark=faces[0].kps, image_size=224)
+        face_image_pil = Image.fromarray(cv2.cvtColor(face_image, cv2.COLOR_BGR2RGB))
+
+        use_plus = getattr(args, 'faceid_plus', True)
+        face_scale = getattr(args, 'faceid_scale', 0.75)
+
+        if use_plus:
+            lora_path = Path("models/ip-adapter-faceid/ip-adapter-faceid-plusv2_sdxl_lora.safetensors")
+            if lora_path.exists():
+                print(f"Loading FaceID-PlusV2 LoRA...")
+                pipe.load_lora_weights(str(lora_path))
+                pipe.fuse_lora()
+
+            image_encoder_path = "laion/CLIP-ViT-H-14-laion2B-s32B-b79K"
+            ip_ckpt = "models/ip-adapter-faceid/ip-adapter-faceid-plusv2_sdxl.bin"
+            print("Activating IP-Adapter-FaceID-PlusV2 identity locking...")
+            ip_model = IPAdapterFaceIDPlusXL(
+                pipe,
+                image_encoder_path=image_encoder_path,
+                ip_ckpt=ip_ckpt,
+                device=device,
+                torch_dtype=dtype
+            )
+            images = ip_model.generate(
+                face_image=face_image_pil,
+                faceid_embeds=faceid_embeds,
+                prompt=args.prompt,
+                negative_prompt=getattr(args, 'negative_prompt', DEFAULT_NEGATIVE_PROMPT),
+                scale=face_scale,
+                s_scale=1.0,
+                shortcut=True,
+                num_samples=1,
+                width=args.width,
+                height=args.height,
+                num_inference_steps=args.steps,
+                guidance_scale=args.guidance,
+                seed=args.seed
+            )
+            result = images[0]
+        else:
+            lora_path = Path("models/ip-adapter-faceid/ip-adapter-faceid_sdxl_lora.safetensors")
+            if lora_path.exists():
+                pipe.load_lora_weights(str(lora_path))
+                pipe.fuse_lora()
+            ip_ckpt = "models/ip-adapter-faceid/ip-adapter-faceid_sdxl.bin"
+            print("Activating IP-Adapter-FaceID identity locking...")
+            ip_model = IPAdapterFaceIDXL(
+                pipe,
+                ip_ckpt=ip_ckpt,
+                device=device,
+                torch_dtype=dtype
+            )
+            images = ip_model.generate(
+                faceid_embeds=faceid_embeds,
+                prompt=args.prompt,
+                negative_prompt=getattr(args, 'negative_prompt', DEFAULT_NEGATIVE_PROMPT),
+                scale=face_scale,
+                num_samples=1,
+                width=args.width,
+                height=args.height,
+                num_inference_steps=args.steps,
+                guidance_scale=args.guidance,
+                seed=args.seed
+            )
+            result = images[0]
+    else:
+        result=image_call(args,torch,pipe)
     output=Path(args.output).expanduser().resolve()
     output.parent.mkdir(parents=True,exist_ok=True)
     result.save(output)
@@ -164,8 +273,210 @@ def download_model(args):
         options['allow_patterns']=['model_index.json','scheduler/**','text_encoder/**',
             'text_encoder_2/**','tokenizer/**','tokenizer_2/**','transformer/**',
             'vae/**','*.json']
+    elif args.model in {'cyberrealistic-xl', 'juggernaut-xl-v10'}:
+        options['allow_patterns']=['*.safetensors','*.md']
+    elif args.model == 'pony-diffusion-v6-xl':
+        options['allow_patterns']=['*.safetensors','*.json','*.md']
+    elif args.model == 'svd-xt':
+        options['allow_patterns']=['unet/config.json','unet/diffusion_pytorch_model.fp16.safetensors','vae/config.json','vae/diffusion_pytorch_model.fp16.safetensors','image_encoder/config.json','image_encoder/model.fp16.safetensors','scheduler/**','feature_extractor/**','model_index.json']
+    elif args.model == 'wan21-t2v-1.3b':
+        options['allow_patterns']=['transformer/**','vae/**','text_encoder/**','tokenizer/**','scheduler/**','model_index.json','*.json']
     snapshot_download(repo_id=repo, local_dir=str(local), **options)
     print('Downloaded. Check model card and dependency licenses before commercial use.')
+
+
+def make_video_svd(args):
+    """Image-to-Video generation using Stable Video Diffusion XT (unrestricted visual motion)."""
+    import torch
+    from diffusers import StableVideoDiffusionPipeline
+    from diffusers.utils import export_to_video, load_image
+
+    if torch.cuda.is_available():
+        device = 'cuda'
+    elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        device = 'mps'
+    else:
+        raise RuntimeError('Video generation requires a supported GPU (CUDA or Apple Silicon Metal/MPS).')
+
+    local = local_model('svd-xt')
+    source = str(local) if local.is_dir() and any(local.iterdir()) else REGISTRY['svd-xt']['hf']
+    dtype = torch.float16
+
+    print(f'Loading SVD-XT from {source} on {device}...')
+    try:
+        pipe = StableVideoDiffusionPipeline.from_pretrained(source, torch_dtype=dtype, variant='fp16', local_files_only=getattr(args, 'offline', False))
+    except Exception:
+        pipe = StableVideoDiffusionPipeline.from_pretrained(source, torch_dtype=dtype, local_files_only=getattr(args, 'offline', False))
+    pipe.to(device)
+
+    if device == 'mps':
+        class SafeMPSAttnProcessor:
+            def __call__(self, attn, hidden_states, encoder_hidden_states=None, attention_mask=None, **kwargs):
+                residual = hidden_states
+                input_ndim = hidden_states.ndim
+                if input_ndim == 4:
+                    batch_size, channel, height, width = hidden_states.shape
+                    hidden_states = hidden_states.view(batch_size, channel, height * width).transpose(1, 2)
+                batch_size, sequence_length, _ = hidden_states.shape
+                if encoder_hidden_states is None:
+                    encoder_hidden_states = hidden_states
+                query = attn.to_q(hidden_states)
+                key = attn.to_k(encoder_hidden_states)
+                value = attn.to_v(encoder_hidden_states)
+                inner_dim = key.shape[-1]
+                head_dim = inner_dim // attn.heads
+                query = query.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
+                key = key.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
+                value = value.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
+                scale = 1.0 / (head_dim ** 0.5)
+                scores = torch.matmul(query.float() * scale, key.float().transpose(-1, -2))
+                probs = torch.softmax(scores, dim=-1).to(value.dtype)
+                hidden_states = torch.matmul(probs, value)
+                hidden_states = hidden_states.transpose(1, 2).reshape(batch_size, -1, attn.heads * head_dim)
+                hidden_states = hidden_states.to(query.dtype)
+                hidden_states = attn.to_out[0](hidden_states)
+                hidden_states = attn.to_out[1](hidden_states)
+                if input_ndim == 4:
+                    hidden_states = hidden_states.transpose(-1, -2).reshape(batch_size, channel, height, width)
+                if attn.residual_connection:
+                    hidden_states = hidden_states + residual
+                hidden_states = hidden_states / attn.rescale_output_factor
+                return hidden_states
+
+        pipe.unet.set_attn_processor(SafeMPSAttnProcessor())
+        old_decode = pipe.decode_latents
+        pipe.decode_latents = lambda latents, num_frames, decode_chunk_size=14: old_decode(latents.to(pipe.vae.dtype), num_frames, decode_chunk_size)
+
+    if not args.reference:
+        raise ValueError('SVD-XT requires a reference master image (--reference path/to/image.png)')
+    ref_img = load_image(str(verify_image(args.reference)))
+
+    width = getattr(args, 'width', 512 if device == 'mps' else 1024)
+    height = getattr(args, 'height', 288 if device == 'mps' else 576)
+    ref_img = ref_img.resize((width, height))
+
+    motion_bucket = getattr(args, 'motion_bucket', 127)
+    fps = getattr(args, 'fps', 8)
+    steps = getattr(args, 'steps', 14 if device == 'mps' else 25)
+    num_frames = getattr(args, 'num_frames', 14 if device == 'mps' else 25)
+    seed = getattr(args, 'seed', 42)
+    generator = torch.Generator(device='cpu').manual_seed(seed)
+
+    print(f'Generating motion from reference image ({steps} steps, {num_frames} frames, {width}x{height}, motion_bucket={motion_bucket})...')
+    frames = pipe(
+        ref_img,
+        height=height,
+        width=width,
+        num_frames=num_frames,
+        decode_chunk_size=2,
+        generator=generator,
+        motion_bucket_id=motion_bucket,
+        num_inference_steps=steps,
+    ).frames[0]
+
+    out = Path(args.output).expanduser().resolve()
+    out.parent.mkdir(parents=True, exist_ok=True)
+    export_to_video(frames, str(out), fps=fps)
+    print(f'Saved SVD-XT video: {out}')
+    return str(out)
+
+
+def make_video_liveportrait(args):
+    """Zero-distortion photorealistic face & glamour portrait animation using LivePortrait."""
+    lp_dir = ROOT / 'LivePortrait'
+    if not lp_dir.is_dir():
+        raise FileNotFoundError(f"LivePortrait repository not found at {lp_dir}")
+
+    source = verify_image(args.reference) if getattr(args, 'reference', None) else OUTPUT_ROOT / 'portrait.png'
+    if not Path(source).is_file():
+        raise FileNotFoundError(f"Source reference image not found: {source}")
+
+    driving_arg = getattr(args, 'driving', None) or 'd0.mp4'
+    driving_path = Path(driving_arg)
+    if not driving_path.is_absolute():
+        if (lp_dir / driving_path).exists():
+            driving_path = lp_dir / driving_path
+        elif (lp_dir / 'assets' / 'examples' / 'driving' / driving_path).exists():
+            driving_path = lp_dir / 'assets' / 'examples' / 'driving' / driving_path
+        elif (lp_dir / 'assets' / 'examples' / 'driving' / f'{driving_arg}.mp4').exists():
+            driving_path = lp_dir / 'assets' / 'examples' / 'driving' / f'{driving_arg}.mp4'
+        elif (lp_dir / 'assets' / 'examples' / 'driving' / f'{driving_arg}.pkl').exists():
+            driving_path = lp_dir / 'assets' / 'examples' / 'driving' / f'{driving_arg}.pkl'
+        else:
+            driving_path = lp_dir / 'assets' / 'examples' / 'driving' / 'd0.mp4'
+
+    out_file = Path(args.output).expanduser().resolve()
+    out_dir = out_file.parent
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    env = os.environ.copy()
+    venv_bin = str(ROOT / '.venv' / 'bin')
+    env["PATH"] = venv_bin + os.pathsep + env.get("PATH", "")
+    env["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
+
+    cmd = [
+        sys.executable,
+        str(lp_dir / 'inference.py'),
+        '-s', str(source),
+        '-d', str(driving_path),
+        '-o', str(out_dir),
+    ]
+    print(f"Running LivePortrait: source={Path(source).name}, motion={driving_path.name}...")
+    subprocess.run(cmd, check=True, cwd=str(lp_dir), env=env)
+
+    expected = out_dir / f"{Path(source).stem}--{driving_path.stem}.mp4"
+    if expected.exists() and str(expected) != str(out_file):
+        shutil.copy2(expected, out_file)
+    print(f"Saved LivePortrait video: {out_file}")
+    return str(out_file)
+
+
+
+def make_video_wan21(args):
+    """Text-to-Video generation using Wan 2.1 1.3B."""
+    import torch
+    from diffusers import WanPipeline
+    from diffusers.utils import export_to_video
+
+    if torch.cuda.is_available():
+        device = 'cuda'
+    elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        device = 'mps'
+    else:
+        raise RuntimeError('Video generation requires a supported GPU (CUDA or Apple Silicon Metal/MPS).')
+
+    local = local_model('wan21-t2v-1.3b')
+    source = str(local) if local.is_dir() and any(local.iterdir()) else REGISTRY['wan21-t2v-1.3b']['hf']
+    dtype = torch.bfloat16 if device == 'cuda' else torch.float16
+
+    print(f'Loading Wan 2.1 1.3B from {source} on {device}...')
+    pipe = WanPipeline.from_pretrained(source, torch_dtype=dtype, local_files_only=getattr(args, 'offline', False))
+    pipe.to(device)
+
+    prompt = args.prompt
+    if not prompt:
+        raise ValueError('Wan 2.1 requires a text prompt (--prompt "...")')
+    negative_prompt = getattr(args, 'negative_prompt', 'Bright tones, overexposed, static, blurred details, subtitles, style, artwork, painting, picture, still, overall grayish, worst quality, low quality, JPEG artifacts')
+    seed = getattr(args, 'seed', 42)
+    generator = torch.Generator(device='cpu').manual_seed(seed)
+    steps = getattr(args, 'steps', 30)
+
+    print(f"Generating Wan 2.1 video: '{prompt[:60]}...'")
+    output = pipe(
+        prompt=prompt,
+        negative_prompt=negative_prompt,
+        height=480,
+        width=832,
+        num_frames=81,
+        num_inference_steps=steps,
+        generator=generator,
+    ).frames[0]
+
+    out = Path(args.output).expanduser().resolve()
+    out.parent.mkdir(parents=True, exist_ok=True)
+    export_to_video(output, str(out), fps=16)
+    print(f'Saved Wan 2.1 video: {out}')
+    return str(out)
 
 
 def video_command(args):
@@ -189,13 +500,22 @@ def video_command(args):
 
 
 def video(args):
-    cmd=video_command(args)
-    print('Running official Wan2.2 CLI with local weights, no Dashscope prompt extension.')
-    if args.dry_run:
-        print(json.dumps(cmd,indent=2))
+    if args.mode == 'liveportrait':
+        return make_video_liveportrait(args)
+    elif args.mode == 'svd-xt':
+        return make_video_svd(args)
+    elif args.mode == 'wan21-t2v-1.3b':
+        return make_video_wan21(args)
+    elif args.mode == 'wan22-ti2v-5b':
+        cmd=video_command(args)
+        print('Running official Wan2.2 CLI with local weights, no Dashscope prompt extension.')
+        if args.dry_run:
+            print(json.dumps(cmd,indent=2))
+        else:
+            subprocess.run(cmd,check=True,cwd=ROOT/'external'/'Wan22')
+            print(f'Saved video: {Path(args.output).resolve()}')
     else:
-        subprocess.run(cmd,check=True,cwd=ROOT/'external'/'Wan22')
-        print(f'Saved video: {Path(args.output).resolve()}')
+        raise ValueError(f"Unknown video mode: {args.mode}")
 
 
 def voice(args):
@@ -290,7 +610,9 @@ def doctor():
         if torch.cuda.is_available():
             props=torch.cuda.get_device_properties(0)
             print('CUDA:',props.name,'VRAM (GiB):',round(props.total_memory/(1024**3),1))
-        else: print('CUDA: unavailable; FLUX/Wan GPU render not ready')
+        elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+            print('Apple Silicon GPU (Metal/MPS): ready')
+        else: print('CUDA/Metal: unavailable; GPU render not ready')
     except ImportError: print('PyTorch: not installed in this environment')
     print('Approved models:')
     for key,item in REGISTRY.items():
@@ -304,16 +626,29 @@ def cli(argv=None):
     sub=parser.add_subparsers(dest='cmd',required=True)
     sub.add_parser('doctor')
     dl=sub.add_parser('download');dl.add_argument('--model',required=True,choices=REGISTRY.keys());dl.add_argument('--yes',action='store_true')
-    im=sub.add_parser('image');im.add_argument('--model',choices=['flux2-klein-4b','z-image-turbo'],default='flux2-klein-4b');im.add_argument('--prompt',required=True)
+    im=sub.add_parser('image');im.add_argument('--model',choices=['flux2-klein-4b','z-image-turbo','pony-diffusion-v6-xl','cyberrealistic-xl','juggernaut-xl-v10'],default='flux2-klein-4b');im.add_argument('--prompt',required=True)
     im.add_argument('--negative-prompt',default=DEFAULT_NEGATIVE_PROMPT)
     im.add_argument('--reference',action='append',help='Repeat for each master reference (FLUX.2 only)')
+    im.add_argument('--face-ref',help='Master face reference image for IP-Adapter FaceID consistency (SDXL)')
+    im.add_argument('--faceid-scale',type=float,default=0.75,help='Face identity influence (0.1 to 1.0, default 0.75)')
+    im.add_argument('--faceid-plus',action='store_true',default=True,help='Use FaceID-PlusV2 dual-embedding (default: True)')
     im.add_argument('--width',type=int,default=768);im.add_argument('--height',type=int,default=1152)
     im.add_argument('--seed',type=int,default=42);im.add_argument('--steps',type=int,default=4);im.add_argument('--guidance',type=float,default=1.0)
     im.add_argument('--cpu-offload',action='store_true');im.add_argument('--offline',action='store_true')
     im.add_argument('--output',default=str(OUTPUT_ROOT/'portrait.png'))
-    vid=sub.add_parser('video');vid.add_argument('--mode',choices=['wan22-ti2v-5b'],default='wan22-ti2v-5b')
-    vid.add_argument('--prompt',required=True);vid.add_argument('--reference');vid.add_argument('--size',choices=['1280*704','704*1280'],default='704*1280')
-    vid.add_argument('--python',help='Python executable in the Wan2.2 separate venv');vid.add_argument('--output',default=str(OUTPUT_ROOT/'reel.mp4'))
+    vid=sub.add_parser('video')
+    vid.add_argument('--mode',choices=['liveportrait','svd-xt','wan21-t2v-1.3b','wan22-ti2v-5b'],default='liveportrait')
+    vid.add_argument('--prompt',default='',help='Text prompt (required for Wan; optional for SVD/LivePortrait)')
+    vid.add_argument('--reference',help='Master reference image (required for SVD/LivePortrait; optional for Wan)')
+    vid.add_argument('--driving',default='d0',help='LivePortrait driving motion (d0, d11, wink, shy, laugh, or path to mp4/pkl)')
+    vid.add_argument('--motion-bucket',type=int,default=127,help='SVD motion bucket (1-255; higher=more motion)')
+    vid.add_argument('--fps',type=int,default=25,help='Output video frame rate')
+    vid.add_argument('--steps',type=int,default=25,help='Denoising inference steps')
+    vid.add_argument('--seed',type=int,default=42)
+    vid.add_argument('--offline',action='store_true')
+    vid.add_argument('--size',choices=['1280*704','704*1280','1024*576','576*1024'],default='1024*576')
+    vid.add_argument('--python',help='Python executable in the Wan2.2 separate venv')
+    vid.add_argument('--output',default=str(OUTPUT_ROOT/'glamour_motion.mp4'))
     vid.add_argument('--dry-run',action='store_true')
     vc=sub.add_parser('voice');vc.add_argument('--text',required=True);vc.add_argument('--voice',default='af_heart')
     vc.add_argument('--lang',default='a');vc.add_argument('--output',default=str(OUTPUT_ROOT/'voice.wav'))
@@ -324,14 +659,18 @@ def cli(argv=None):
     pp.add_argument('--video-prompt', help='Motion prompt; defaults to the image prompt')
     pp.add_argument('--narration', help='Optional narration text; omit to skip Kokoro and muxing')
     pp.add_argument('--voice', default='af_heart'); pp.add_argument('--lang', default='a')
-    pp.add_argument('--model', choices=['flux2-klein-4b', 'z-image-turbo'], default='flux2-klein-4b')
+    pp.add_argument('--model', choices=['cyberrealistic-xl', 'juggernaut-xl-v10', 'pony-diffusion-v6-xl', 'flux2-klein-4b', 'z-image-turbo'], default='cyberrealistic-xl')
     pp.add_argument('--reference', action='append', help='Optional existing references for master-image editing')
+    pp.add_argument('--face-ref', help='Master face reference image for IP-Adapter FaceID consistency')
+    pp.add_argument('--faceid-scale', type=float, default=0.75, help='Face identity influence (0.1 to 1.0, default 0.75)')
+    pp.add_argument('--faceid-plus', action='store_true', default=True, help='Use FaceID-PlusV2 dual-embedding (default: True)')
     pp.add_argument('--width', type=int, default=768); pp.add_argument('--height', type=int, default=1152)
-    pp.add_argument('--seed', type=int, default=42); pp.add_argument('--steps', type=int, default=4)
-    pp.add_argument('--guidance', type=float, default=1.0); pp.add_argument('--cpu-offload', action='store_true')
+    pp.add_argument('--seed', type=int, default=42); pp.add_argument('--steps', type=int, default=28)
+    pp.add_argument('--guidance', type=float, default=5.0); pp.add_argument('--cpu-offload', action='store_true')
     pp.add_argument('--offline', action='store_true')
-    pp.add_argument('--mode', choices=['wan22-ti2v-5b'], default='wan22-ti2v-5b')
-    pp.add_argument('--size', choices=['1280*704', '704*1280'], default='704*1280')
+    pp.add_argument('--mode', choices=['liveportrait', 'svd-xt', 'wan21-t2v-1.3b', 'wan22-ti2v-5b'], default='liveportrait')
+    pp.add_argument('--driving', default='d0', help='LivePortrait driving motion (d0, d11, wink, shy, laugh, or path)')
+    pp.add_argument('--size', choices=['1280*704', '704*1280', '1024*576'], default='1024*576')
     pp.add_argument('--python', help='Python executable in the separate Wan2.2 environment')
     pp.add_argument('--master', default=str(OUTPUT_ROOT/'master.png'))
     pp.add_argument('--video', default=str(OUTPUT_ROOT/'reel.mp4'))

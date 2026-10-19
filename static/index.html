@@ -1,58 +1,1304 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <meta name="theme-color" content="#0b0f14"/>
-  <title>AI Influencer Studio · Creator control room</title>
-  <link rel="stylesheet" href="/static/styles.css?v=14" onerror="this.onerror=null;this.href='styles.css?v=14'"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="theme-color" content="#070A0F"/>
+  <title>AI Influencer Studio · V2 Luxury Control Room</title>
+  <link rel="stylesheet" href="/static/styles.css?v=50"/>
 </head>
 <body>
-  <div class="app-shell">
-    <aside class="sidebar" aria-label="Studio navigation">
-      <div class="brand"><span class="brand-mark" aria-hidden="true">AI</span><span class="brand-copy"><strong>Persona Studio</strong><small>CREATOR CONTROL ROOM</small></span></div>
-      <div class="workspace-chip" aria-label="Current workspace"><span class="workspace-dot" aria-hidden="true"></span><span><strong>Cloud render workspace</strong><small>Local inference · no API credits</small></span></div>
-      <nav class="nav-list" aria-label="Primary">
-        <p class="nav-label">Workspace</p>
-        <button data-tab="dashboard" class="nav active" aria-current="page"><span class="nav-icon" aria-hidden="true">⌂</span><span>Overview</span><kbd>01</kbd></button>
-        <button data-tab="personas" class="nav"><span class="nav-icon" aria-hidden="true">◎</span><span>Persona library</span><kbd>02</kbd></button>
-        <button data-tab="generate" class="nav"><span class="nav-icon" aria-hidden="true">✦</span><span>Generation</span><kbd>03</kbd></button>
-        <button data-tab="assets" class="nav"><span class="nav-icon" aria-hidden="true">▧</span><span>Media review</span><kbd>04</kbd></button>
-        <p class="nav-label nav-label-spaced">Operations</p>
-        <button data-tab="voice" class="nav"><span class="nav-icon" aria-hidden="true">◖</span><span>Voice studio</span><kbd>05</kbd></button>
-        <button data-tab="workflows" class="nav"><span class="nav-icon" aria-hidden="true">⌘</span><span>Workflows</span><kbd>06</kbd></button>
-        <button data-tab="funnels" class="nav"><span class="nav-icon" aria-hidden="true">↗</span><span>Link tracking</span><kbd>07</kbd></button>
-      </nav>
-      <div class="sidebar-policy"><span class="policy-mark" aria-hidden="true">✓</span><div><strong>Review before publish</strong><small>Fictional adult identities only. Keep synthetic disclosure attached.</small></div></div>
-      <div class="sidebar-status"><span class="status-dot" id="status-dot" aria-hidden="true"></span><div><strong id="comfy-status">Checking render bridge</strong><small id="status-detail">127.0.0.1:8188</small></div></div>
-    </aside>
 
-    <main class="main">
-      <header class="topbar"><div class="breadcrumb"><span>Persona Studio</span><span class="breadcrumb-slash">/</span><strong id="page-title">Overview</strong></div><div class="topbar-actions"><span class="environment-pill"><span class="live-dot" aria-hidden="true"></span> LOCAL CONTROL PLANE</span><button id="refresh" class="icon-button" type="button" aria-label="Refresh workspace" title="Refresh workspace">↻</button></div></header>
-      <div id="message" class="notice hidden" role="alert"></div>
+  <!-- ==============================================================================
+       TOP HEADER NAVIGATION BAR (MATCHING OPTIONS 1 & 3)
+       ============================================================================== -->
+  <header class="top-header">
+    <div class="brand-section">
+      <div class="brand-badge">
+        <div class="brand-symbol">A</div>
+        <div class="brand-title">
+          <h1>AI Influencer Studio</h1>
+          <span>V2 LUXURY CONTROL ROOM</span>
+        </div>
+      </div>
 
-      <section id="dashboard" class="panel active">
-        <div class="overview-hero"><div class="hero-copy"><p class="eyebrow">FICTIONAL CHARACTER PIPELINE</p><h1>Make one character<br/><span>feel unmistakably yours.</span></h1><p class="hero-lede">Build a fictional adult persona, anchor the look with approved references, create motion locally on your GPU server, then review every frame before it leaves the studio.</p><div class="hero-actions"><button class="primary go-tab" data-target="personas" type="button">Create a persona <span aria-hidden="true">→</span></button><button class="secondary go-tab" data-target="generate" type="button">Open generation</button></div><div class="hero-proof"><span><b>01</b> Define</span><span><b>02</b> Anchor</span><span><b>03</b> Animate</span><span><b>04</b> Review</span></div></div><div class="hero-art" aria-label="Pipeline preview"><div class="art-topline"><span>RUNBOOK</span><span class="art-status">READY TO BUILD</span></div><div class="art-canvas"><div class="art-orbit orbit-one"></div><div class="art-orbit orbit-two"></div><div class="art-card art-card-main"><span class="art-card-label">MASTER REFERENCE</span><strong>Fictional adult<br/>identity capsule</strong><span class="art-card-meta">portrait · approved inputs</span></div><div class="art-card art-card-side"><span class="art-number">04</span><span>review<br/>every export</span></div></div><div class="art-footer"><span><i class="tiny-dot"></i> GPU path</span><span>96 GB VRAM target</span></div></div></div>
-        <div class="section-heading"><div><p class="eyebrow">THE CONTROL LOOP</p><h2>From idea to approved asset</h2></div><span class="section-note">One focused workspace, one connected route</span></div>
-        <div class="stage-grid"><button class="stage-card go-tab" data-target="personas" type="button"><span class="stage-index">01</span><span class="stage-icon">◎</span><strong>Define</strong><small>Shape the fictional identity and content lane.</small><span class="stage-link">Open library →</span></button><button class="stage-card go-tab" data-target="personas" type="button"><span class="stage-index">02</span><span class="stage-icon">◈</span><strong>Anchor</strong><small>Add approved reference images for continuity.</small><span class="stage-link">Add reference →</span></button><button class="stage-card go-tab" data-target="generate" type="button"><span class="stage-index">03</span><span class="stage-icon">✦</span><strong>Generate</strong><small>Render images, motion and scenes locally.</small><span class="stage-link">Open generator →</span></button><button class="stage-card go-tab" data-target="voice" type="button"><span class="stage-index">04</span><span class="stage-icon">◖</span><strong>Narrate</strong><small>Add optional synthetic voice and audio.</small><span class="stage-link">Open voice →</span></button><button class="stage-card go-tab" data-target="assets" type="button"><span class="stage-index">05</span><span class="stage-icon">✓</span><strong>Review</strong><small>Approve, reject and disclose every output.</small><span class="stage-link">Review gallery →</span></button></div>
-        <div class="dashboard-grid"><div class="card metric-card"><div class="card-heading"><div><p class="eyebrow">STUDIO PULSE</p><h3>Workspace at a glance</h3></div><span class="card-mark">LIVE</span></div><div class="metrics"><div><span>PERSONAS</span><strong id="m-personas">0</strong></div><div><span>RENDER JOBS</span><strong id="m-jobs">0</strong></div><div><span>MEDIA FILES</span><strong id="m-assets">0</strong></div><div><span>APPROVED</span><strong id="m-approved">0</strong></div><div><span>TRACKED CLICKS</span><strong id="m-clicks">0</strong></div></div></div><div class="card readiness-card"><div class="card-heading"><div><p class="eyebrow">SYSTEM READINESS</p><h3>Render stack</h3></div><span class="readiness-badge">LOCAL</span></div><div class="readiness-row"><span class="readiness-icon">⌁</span><div><strong>Control plane</strong><small>FastAPI + SQLite dashboard</small></div><span class="ready-check">Ready</span></div><div class="readiness-row"><span class="readiness-icon">✦</span><div><strong>GPU generation</strong><small>Direct CLI + optional ComfyUI bridge</small></div><span class="ready-check" id="readiness-gpu">Check</span></div><div class="readiness-row"><span class="readiness-icon">◖</span><div><strong>Disclosure gate</strong><small>Manual approval before export</small></div><span class="ready-check">Active</span></div></div></div>
-      </section>
+      <!-- Active Persona Switcher Pill (Matching Option 1) -->
+      <div class="persona-switcher-pill" id="persona-switcher-pill" title="Switch Active Persona Anchor">
+        <img src="/generated/master_persona_maya/maya_01_turnaround_front.png" alt="Persona Avatar" class="persona-avatar-mini" id="header-persona-avatar"/>
+        <select id="global-persona-select" class="persona-select-native" aria-label="Select Active Persona">
+          <option value="">Loading personas from database...</option>
+        </select>
+        <span style="font-size: 0.75rem; color: var(--gold-primary);">▾</span>
+      </div>
 
-      <section id="personas" class="panel"><div class="section-heading page-heading"><div><p class="eyebrow">02 / IDENTITY SYSTEM</p><h2>Persona library</h2><p class="muted">Define a canonical fictional adult identity, then keep the same character brief through every scene.</p></div><span class="section-note">Rights-cleared inputs only</span></div><div class="two-col persona-layout"><form id="persona-form" class="card form accent-card"><div class="card-heading"><div><p class="eyebrow">IDENTITY CAPSULE</p><h3>New fictional persona</h3></div><span class="step-badge">01</span></div><label>Name<input id="p-name" placeholder="e.g. Mira Vale" maxlength="80" required/></label><div class="twobox"><label>Age (18+)<input id="p-age" type="number" value="25" min="18" required/></label><label>Identity type<input disabled value="Fictional adult"/></label></div><label>Physical appearance<textarea id="p-appearance" required rows="4" placeholder="Facial geometry, hair, eyes, skin tone, distinguishing features…"></textarea></label><label>Personality & content focus<textarea id="p-description" required rows="3" placeholder="Lifestyle, tone, locations, recurring interests and story…"></textarea></label><button type="submit" class="primary">Save persona <span aria-hidden="true">→</span></button><p class="fine muted">Use an original character description. Do not upload a real person’s likeness without documented permission.</p></form><div class="card reference-card"><div class="card-heading"><div><p class="eyebrow">REFERENCE VAULT</p><h3>Characters & references</h3></div><span class="step-badge">02</span></div><div id="personas-list" class="stack"></div><hr/><form id="reference-form" class="form"><h4>Add master reference</h4><label>Persona<select id="r-persona" required></select></label><label>Image <span class="label-hint">PNG / JPEG / WEBP · max 20 MB</span><input type="file" id="r-file" accept="image/png,image/jpeg,image/webp" required/></label><label>Reference label<input id="r-label" value="Canonical front-facing reference"/></label><label class="check"><input type="checkbox" id="r-rights" required/> I own or have permission to use this image and likeness.</label><button class="secondary" type="submit">Upload reference</button></form><div id="reference-list" class="references"></div></div></div></section>
+      <button class="btn-header-delete-persona" id="btn-header-delete-persona" title="Delete or Archive Persona" style="background: rgba(239, 68, 68, 0.14); border: 1px solid rgba(239, 68, 68, 0.4); color: #FCA5A5; border-radius: 6px; padding: 0.35rem 0.65rem; font-size: 0.8rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px; transition: all 0.2s;">
+        <span>🗑</span> <span>Delete</span>
+      </button>
+    </div>
 
-      <section id="generate" class="panel"><div class="section-heading page-heading"><div><p class="eyebrow">03 / LOCAL RENDER PIPELINE</p><h2>Generation workspace</h2><p class="muted">Prepare the image, motion and review inputs. Inference stays on the connected local/cloud GPU.</p></div><span class="section-note">No hosted generation credits</span></div><div class="pipeline-strip"><span class="pipeline-step active"><b>01</b> Character</span><span class="pipeline-line"></span><span class="pipeline-step"><b>02</b> Reference</span><span class="pipeline-line"></span><span class="pipeline-step"><b>03</b> Render</span><span class="pipeline-line"></span><span class="pipeline-step"><b>04</b> Review</span></div><div class="two-col wide-left"><form class="card form generation-card" id="job-form"><div class="card-heading"><div><p class="eyebrow">NEW RENDER JOB</p><h3>Creative setup</h3></div><span class="local-badge">LOCAL ONLY</span></div><div class="twobox"><label>Persona<select id="g-persona" required></select></label><label>Workflow<select id="g-workflow" required></select></label></div><label>Checkpoint <span class="label-hint">for checkpoint-loader workflows</span><select id="g-checkpoint"><option value="">Choose a local checkpoint</option></select></label><label>Reference image<select id="g-reference"><option value="">No reference supplied</option></select></label><label>Audio input <span class="label-hint">for speech-to-video workflows</span><select id="g-audio"><option value="">No audio selected</option></select></label><label>Creative direction<textarea id="g-prompt" rows="5" required placeholder="A natural daytime café portrait, looking off-camera, candid editorial styling…"></textarea></label><label>Negative prompt<input id="g-negative" value="blurry, extra fingers, facial distortion, watermark, typography"/></label><div class="twobox"><label>Canvas<select id="g-ratio"><option value="768x1152">Portrait · 2:3</option><option value="720x1280">Vertical · 9:16</option><option value="1024x1024">Square · 1:1</option><option value="1280x720">Landscape · 16:9</option></select></label><label>Seed <span class="label-hint">blank = random</span><input id="g-seed" placeholder="Random" type="number" min="0"/></label></div><label class="check"><input type="checkbox" id="g-rights" required/> I confirm this is a fictional adult persona, source inputs are rights-cleared and outputs will be disclosed as AI-generated.</label><button class="primary" type="submit">Queue generation <span aria-hidden="true">→</span></button><p class="muted fine">The direct CLI pipeline is the primary cloud path. Dashboard queue jobs require a compatible ComfyUI API workflow.</p></form><div class="card queue-card"><div class="card-heading"><div><p class="eyebrow">RENDER MONITOR</p><h3>Live queue</h3></div><span class="queue-indicator"><i></i> Polling</span></div><div id="job-list" class="stack"></div><button class="secondary full-button" type="button" id="jobs-refresh">Refresh jobs <span aria-hidden="true">↻</span></button></div></div></section>
+    <!-- Center 5 Navigation Tabs (New Order: Tab 1 = Master Vault, Tab 2 = Generate) -->
+    <nav class="tabs-nav" aria-label="Primary Navigation">
+      <button class="tab-btn active" data-tab="tab-vault" id="nav-btn-vault">
+        <span>◈ 1. Master Vault</span>
+      </button>
+      <button class="tab-btn" data-tab="tab-orchestrator" id="nav-btn-orchestrator">
+        <span>✦ 2. Generate</span>
+      </button>
+      <button class="tab-btn" data-tab="tab-story" id="nav-btn-story">
+        <span>★ 3. Story Studio</span>
+      </button>
+      <button class="tab-btn" data-tab="tab-gallery" id="nav-btn-gallery">
+        <span>▧ 4. Media Gallery</span>
+      </button>
+      <button class="tab-btn" data-tab="tab-telemetry" id="nav-btn-telemetry">
+        <span>⌁ 5. System</span>
+      </button>
+    </nav>
 
-      <section id="assets" class="panel"><div class="section-heading page-heading"><div><p class="eyebrow">05 / HUMAN REVIEW</p><h2>Media gallery</h2><p class="muted">Review each asset for identity consistency, anatomy, rights and disclosure before publishing.</p></div><span class="section-note">Approve deliberately</span></div><div class="review-banner"><span class="review-icon">✓</span><div><strong>Nothing publishes from here automatically.</strong><small>Approve only work that represents the fictional persona accurately and carries the appropriate synthetic-media disclosure.</small></div></div><div id="gallery" class="gallery"></div></section>
+    <!-- Header Right Hardware Telemetry Pill (Option 1 GPU Gauge) -->
+    <div class="header-telemetry">
+      <div class="telemetry-chip" id="header-vram-chip">
+        <span class="telemetry-dot"></span>
+        <span id="header-vram-text">Hardware: Loading MPS...</span>
+      </div>
+    </div>
+  </header>
 
-      <section id="voice" class="panel"><div class="section-heading page-heading"><div><p class="eyebrow">04 / OPTIONAL NARRATION</p><h2>Voice studio</h2><p class="muted">Generate local narration with Kokoro, then attach it to a compatible video workflow or mux it with FFmpeg.</p></div><span class="section-note">Synthetic voice only</span></div><div class="two-col"><form id="voice-form" class="card form accent-card"><div class="card-heading"><div><p class="eyebrow">NARRATION PASS</p><h3>Write the voice layer</h3></div><span class="step-badge">04</span></div><label>Persona<select id="v-persona" required></select></label><label>Voice<select id="v-voice"><option value="af_heart">American feminine · Heart</option><option value="af_bella">American feminine · Bella</option><option value="am_michael">American masculine · Michael</option><option value="bf_emma">British feminine · Emma</option><option value="bm_george">British masculine · George</option></select></label><label>Script<textarea id="v-text" rows="7" required placeholder="Hey! Today I'm taking you along to my favorite café…"></textarea></label><button class="primary" type="submit">Generate WAV narration <span aria-hidden="true">→</span></button><p class="fine muted">Kokoro uses an existing synthetic voice pack; it is not a real-person voice clone.</p></form><div class="card chain-card"><div class="card-heading"><div><p class="eyebrow">AUDIO CHAIN</p><h3>Where narration fits</h3></div><span class="step-badge">04</span></div><div class="chain-list"><div><span>01</span><p><strong>Generate WAV</strong><small>Local Kokoro voice output</small></p></div><div><span>02</span><p><strong>Animate or mux</strong><small>Use a compatible video workflow or FFmpeg</small></p></div><div><span>03</span><p><strong>Review timing</strong><small>Audio mux is not automatic lip-sync</small></p></div></div><p class="callout">A ready-wired lip-sync graph is not bundled. Add only model/dependency stacks with separately verified licenses.</p></div></div></section>
+  <!-- ==============================================================================
+       MAIN WORKSPACE CONTAINER
+       ============================================================================== -->
+  <main class="main-wrapper">
 
-      <section id="funnels" class="panel"><div class="section-heading page-heading"><div><p class="eyebrow">07 / OPERATIONS</p><h2>Link tracking</h2><p class="muted">Create redirect links for controlled testing. Public campaigns require secure hosting, consent-aware analytics and platform compliance.</p></div><span class="section-note">Local testing only</span></div><div class="two-col"><form class="card form" id="link-form"><div class="card-heading"><div><p class="eyebrow">CAMPAIGN ROUTE</p><h3>Create tracked link</h3></div></div><label>Campaign label<input id="l-label" required placeholder="Profile bio → landing page"/></label><label>Destination URL<input id="l-destination" required type="url" placeholder="https://example.com/landing"/></label><button class="primary" type="submit">Create link <span aria-hidden="true">→</span></button></form><div class="card"><div class="card-heading"><div><p class="eyebrow">LINK INVENTORY</p><h3>Existing campaign links</h3></div></div><div id="link-list" class="stack"></div></div></div></section>
+    <!-- ==============================================================================
+         TAB 1: MASTER PERSONA VAULT (OPTION 3: ATELIER NORDIC GLASS)
+         ============================================================================== -->
+    <section id="tab-vault" class="tab-panel active">
 
-      <section id="workflows" class="panel"><div class="section-heading page-heading"><div><p class="eyebrow">06 / RENDER GRAPH</p><h2>Workflow manager</h2><p class="muted">Import verified ComfyUI API-format graphs when you need dashboard queue execution.</p></div><span class="section-note">Optional layer</span></div><div class="two-col"><div class="card"><div class="card-heading"><div><p class="eyebrow">INSTALLED GRAPHS</p><h3>Available workflow templates</h3></div></div><div id="workflow-list" class="stack"></div></div><form id="workflow-form" class="card form"><div class="card-heading"><div><p class="eyebrow">IMPORT</p><h3>Add a workflow</h3></div></div><label>Workflow label<input id="w-label" required placeholder="wan22_image_to_video"/></label><label>API workflow JSON<input type="file" id="w-file" accept=".json,application/json" required/></label><button type="submit" class="primary">Import API workflow <span aria-hidden="true">→</span></button><p class="muted fine">Use exact placeholders such as <code>{{PROMPT}}</code>, <code>{{REFERENCE_IMAGE}}</code>, <code>{{SEED}}</code>, <code>{{WIDTH}}</code> and <code>{{HEIGHT}}</code>. Do not install untrusted custom nodes.</p></form></div></section>
+      <!-- Tab 1 Sub-Navigation Control Deck -->
+      <div class="story-subnav-bar">
+        <div class="subnav-segmented-group">
+          <button class="subnav-btn active" data-vaultview="subview-vault-inspector" id="btn-vault-sub-inspector">
+            <span class="subnav-btn-icon">◈</span> Master Vault Inspector (Nordic Glass)
+          </button>
+          <button class="subnav-btn" data-vaultview="subview-vault-generator" id="btn-vault-sub-generator">
+            <span class="subnav-btn-icon">✦</span> Generate Master Persona (DNA Synthesizer)
+          </button>
+        </div>
+        <div class="subnav-actions-group">
+          <div class="active-anchor-badge">
+            <span class="active-anchor-tag">ACTIVE ANCHOR</span>
+            <strong id="vault-active-anchor-lbl">Maya Bhutia</strong>
+          </div>
+          <button class="btn-new-persona" id="btn-quick-new-persona">+ New Persona</button>
+          <button class="btn-delete-persona" id="btn-delete-active-persona" title="Archive and delete this persona">🗑 Delete Persona</button>
+        </div>
+      </div>
 
-      <footer><span>Persona Studio</span><span>Local research implementation</span><span>Generated media should be rights-cleared and transparently disclosed.</span></footer>
-    </main>
+      <!-- --------------------------------------------------------------------------
+           SUB-VIEW 1: MASTER VAULT INSPECTOR (OPTION 3 ATELIER NORDIC GLASS)
+           -------------------------------------------------------------------------- -->
+      <div id="subview-vault-inspector" class="vault-subview active">
+        <!-- Title Bar (Option 3 Layout) -->
+        <div class="panel-header-bar-option3">
+          <div class="vault-title-group">
+            <h2>MASTER PERSONA VAULT / <span id="vault-persona-name">LOADING...</span></h2>
+            <p id="vault-persona-desc">Connecting to Master Persona Database...</p>
+          </div>
+          <div>
+            <span class="ringfence-badge" id="inspector-rf-badge" style="padding: 0.45rem 0.9rem; font-size: 0.75rem;">
+              ✓ 100% Unique Diversity Ringfence
+            </span>
+          </div>
+        </div>
+
+        <div class="vault-container-opt3">
+          <!-- 1. Spatial Turnaround Pack (4 Angles) -->
+          <div class="turnaround-grid-opt3" id="vault-turnaround-grid">
+            <!-- Populated dynamically via app.js -->
+          </div>
+
+          <!-- 2. Bottom Row: Persona Biometrics & High-Fashion Categories -->
+          <div>
+            <div class="bottom-sections-header-opt3">
+              <span class="section-label-opt3">PERSONA BIOMETRICS & MICRO-MACRO</span>
+              <span class="section-label-opt3">APPROVED CATEGORY BASELINES (06–09)</span>
+            </div>
+
+            <div class="biometrics-categories-row-opt3">
+              <!-- Left: Persona Biometrics Card with 3D Wireframe Silhouette -->
+              <div class="biometrics-card-opt3">
+                <div class="bio-silhouette-wrap">
+                  <svg viewBox="0 0 100 180" class="bio-silhouette-svg" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                      <linearGradient id="wireGlow" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="#38BDF8" stop-opacity="0.95"/>
+                        <stop offset="50%" stop-color="#818CF8" stop-opacity="0.8"/>
+                        <stop offset="100%" stop-color="#D4AF37" stop-opacity="0.9"/>
+                      </linearGradient>
+                      <filter id="glow">
+                        <feGaussianBlur stdDeviation="1.5" result="coloredBlur"/>
+                        <feMerge>
+                          <feMergeNode in="coloredBlur"/>
+                          <feMergeNode in="SourceGraphic"/>
+                        </feMerge>
+                      </filter>
+                    </defs>
+                    <!-- Head -->
+                    <path d="M 50 15 C 44 15, 42 20, 42 26 C 42 32, 44 37, 50 37 C 56 37, 58 32, 58 26 C 58 20, 56 15, 50 15 Z" stroke="url(#wireGlow)" stroke-width="1.3" filter="url(#glow)"/>
+                    <path d="M 48 37 L 48 44 M 52 37 L 52 44" stroke="url(#wireGlow)" stroke-width="1.2"/>
+                    <!-- Hourglass Contour -->
+                    <path d="M 48 44 C 40 46, 31 51, 30 60 C 29 70, 38 74, 38 79 C 38 85, 34 93, 33 102 C 31 112, 33 130, 36 148 L 40 175 M 52 44 C 60 46, 69 51, 70 60 C 71 70, 62 74, 62 79 C 62 85, 66 93, 67 102 C 69 112, 67 130, 64 148 L 60 175" stroke="url(#wireGlow)" stroke-width="1.5" filter="url(#glow)"/>
+                    <!-- Scan Rings -->
+                    <ellipse cx="50" cy="62" rx="15" ry="4" stroke="url(#wireGlow)" stroke-width="0.9" stroke-dasharray="2 2"/>
+                    <ellipse cx="50" cy="79" rx="9" ry="2.5" stroke="url(#wireGlow)" stroke-width="1"/>
+                    <ellipse cx="50" cy="102" rx="14" ry="3.5" stroke="url(#wireGlow)" stroke-width="0.9" stroke-dasharray="2 2"/>
+                    <ellipse cx="50" cy="135" rx="9" ry="2.5" stroke="url(#wireGlow)" stroke-width="0.8"/>
+                    <line x1="50" y1="44" x2="50" y2="165" stroke="url(#wireGlow)" stroke-width="0.8" stroke-dasharray="3 3"/>
+                  </svg>
+                </div>
+
+                <!-- Biometrics Data Specifications Table -->
+                <div class="bio-data-col">
+                  <div class="bio-data-header" id="bio-header-line">
+                    ACTIVE PERSONA BIOMETRICS
+                  </div>
+                  <div class="bio-specs-grid">
+                    <div class="bio-spec-item">
+                      <span class="bio-spec-label">HEIGHT</span>
+                      <span class="bio-spec-value" id="bio-val-height">-</span>
+                    </div>
+                    <div class="bio-spec-item">
+                      <span class="bio-spec-label">ETHNICITY</span>
+                      <span class="bio-spec-value" id="bio-val-ethnicity">-</span>
+                    </div>
+                    <div class="bio-spec-item">
+                      <span class="bio-spec-label">FIGURE</span>
+                      <span class="bio-spec-value" id="bio-val-figure" style="color: var(--gold-light);">-</span>
+                    </div>
+                    <div class="bio-spec-item">
+                      <span class="bio-spec-label">SKIN</span>
+                      <span class="bio-spec-value" id="bio-val-skin">-</span>
+                    </div>
+                    <div class="bio-spec-item">
+                      <span class="bio-spec-label">WEIGHT</span>
+                      <span class="bio-spec-value" id="bio-val-weight">-</span>
+                    </div>
+                    <div class="bio-spec-item">
+                      <span class="bio-spec-label">HAIR</span>
+                      <span class="bio-spec-value" id="bio-val-hair">-</span>
+                    </div>
+                  </div>
+
+                  <!-- Micro-Detailing Macro Card (Image 05) -->
+                  <div class="vault-macro-card-opt3" id="vault-macro-card" style="margin-top: 1rem; display: flex; gap: 0.85rem; align-items: center; background: rgba(14, 20, 32, 0.7); border: 1px solid rgba(212, 175, 55, 0.25); border-radius: 10px; padding: 0.75rem;">
+                    <img id="vault-macro-img" src="" alt="Macro" style="width: 64px; height: 64px; border-radius: 8px; object-fit: cover; border: 1px solid var(--gold-primary); flex-shrink: 0;"/>
+                    <div>
+                      <span style="font-size: 0.68rem; text-transform: uppercase; color: var(--gold-light); font-weight: 700;">Section 02 · Micro-Detailing Macro</span>
+                      <strong id="vault-macro-title" style="display: block; font-size: 0.8rem; color: #FFFFFF; margin: 0.15rem 0;">100mm f/2.8 Macro Beauty Close-Up</strong>
+                      <small id="vault-macro-desc" style="color: var(--text-muted); font-size: 0.7rem; display: block; line-height: 1.3;">Authentic epidermal micro-pores, natural catchlights, and hydrated lip sheen</small>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Right: High-Fashion Categories Grid (Numerals 06, 07, 08, 09) -->
+              <div class="categories-showcase-grid-opt3" id="vault-categories-grid">
+                <!-- Populated dynamically via app.js -->
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. Section 4: Adult Intimate & Erotic Baselines (10-13) (Collapsible / Default Collapsed) -->
+          <div style="margin-top: 1.5rem; background: rgba(14, 20, 32, 0.45); border: 1px solid rgba(168, 85, 247, 0.25); border-radius: 12px; padding: 1rem 1.25rem; transition: all 0.2s ease;">
+            <div id="vault-adult-header" style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none;">
+              <div style="display: flex; align-items: center; gap: 0.65rem;">
+                <span id="vault-adult-chevron" style="color: var(--purple-light); font-size: 0.95rem; transition: transform 0.2s ease; display: inline-block;">▾</span>
+                <span class="section-label-opt3" style="margin: 0; color: #FFFFFF;">ADULT & INTIMATE BASELINES (SECTIONS 10–13 UNCENSORED)</span>
+                <span style="font-size: 0.68rem; background: rgba(168, 85, 247, 0.15); color: var(--purple-light); border: 1px solid rgba(168, 85, 247, 0.3); border-radius: 4px; padding: 0.15rem 0.5rem; font-weight: 500;">18+ Master Nude Vault</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <span style="font-size: 0.72rem; color: var(--purple-light); font-weight: 600;">APPROVED MASTER REFERENCE VAULT</span>
+                <button type="button" class="btn-glass" id="btn-toggle-vault-adult" style="padding: 0.3rem 0.75rem; font-size: 0.74rem; color: var(--purple-light); border-color: rgba(168, 85, 247, 0.4);">
+                  ▾ Expand
+                </button>
+              </div>
+            </div>
+            <div class="categories-showcase-grid-opt3" id="vault-adult-grid" style="display: none; margin-top: 1.25rem;">
+              <!-- Populated dynamically via app.js -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- --------------------------------------------------------------------------
+           SUB-VIEW 2: GENERATE MASTER PERSONA STUDIO (DNA SYNTHESIZER)
+           -------------------------------------------------------------------------- -->
+      <div id="subview-vault-generator" class="vault-subview" style="display: none;">
+        <!-- Redesigned High-Visibility Hero Banner -->
+        <div class="vault-hero-banner">
+          <div class="vault-hero-content">
+            <div class="vault-hero-tag">ATELIER SYNTHESIZER · ACTIVE WORKSPACE</div>
+            <h2 class="vault-hero-title">GENERATE MASTER PERSONA / <span>DNA SYNTHESIZER</span></h2>
+            <p class="vault-hero-subtitle">Establish permanent biometric anchors & frozen 13-image vault for ANY custom narrative or aesthetic</p>
+          </div>
+          <div class="vault-hero-status">
+            <span class="telemetry-pill-active">● Juggernaut XL v10 Pipeline Online</span>
+          </div>
+        </div>
+
+        <!-- 3-Column Balanced Studio Dashboard (Zero Empty Space, Zero Infinite Scrolling) -->
+        <div class="synth-studio-grid">
+          
+          <!-- COLUMN 1: Ingestion & Control Deck (~400px) -->
+          <div class="synth-col-ingestion">
+            <div class="synth-panel-card">
+              <div class="synth-card-header">
+                <span class="synth-card-badge">INPUT</span>
+                <h3 class="synth-card-title">Persona Narrative & DNA Ingestion</h3>
+              </div>
+
+              <textarea id="vault-narrative-input" rows="8" class="synth-narrative-textarea" placeholder="Describe ANY custom persona: e.g. 23 year Italian girl, blonde with natural loose waves, striking hazel-green almond eyes, 36-24-30 hourglass figure, radiant porcelain skin with fine micro-pores, sculpted cheekbones, plush natural lips, wearing black ribbed top..."></textarea>
+
+              <div id="synth-live-status" class="synth-status-row">
+                <span class="telemetry-dot" id="synth-status-dot" style="background: var(--gold-primary);"></span>
+                <span id="synth-live-status-text" class="synth-status-text">Enter persona narrative above to synthesize biometrics.</span>
+              </div>
+
+              <button class="btn-gold-action" id="btn-parse-narrative">
+                ⚡ Synthesize Persona DNA & Prompts
+              </button>
+
+              <!-- Mandatory Diversity Ringfence Box -->
+              <div class="diversity-ringfence-card">
+                <div class="ringfence-header">
+                  <span class="telemetry-dot" style="background: var(--gold-primary);"></span>
+                  <strong class="ringfence-title">MANDATORY DIVERSITY RINGFENCE</strong>
+                </div>
+                <p class="ringfence-desc">
+                  Guarantees zero wardrobe, pose, or geographic backdrop recycling across personas.
+                </p>
+                <div class="ringfence-specs">
+                  <div class="ringfence-spec-row">
+                    <span class="ringfence-spec-label">Wardrobe Signature:</span>
+                    <strong id="rf-wardrobe-sig" class="ringfence-spec-val">Deep Mineral Teal, Oat-Stone Linen & Oxblood Accents</strong>
+                  </div>
+                  <div class="ringfence-spec-row">
+                    <span class="ringfence-spec-label">World Setting:</span>
+                    <strong id="rf-world-sig" class="ringfence-spec-val-blue">North Lantern Studio & Harborline Promenade</strong>
+                  </div>
+                </div>
+                <div class="ringfence-verified-tag">
+                  ✓ 100% Unique & Diversity Verified
+                </div>
+              </div>
+
+              <button class="btn-freeze-vault-cta" id="btn-freeze-master-vault">
+                ✦ Generate & Freeze 13-Image Master Vault
+              </button>
+              <div id="freeze-live-status" class="freeze-status-box" style="display: none;"></div>
+            </div>
+          </div>
+
+          <!-- COLUMN 2: Synthesized Persona DNA & Biometrics + Canonical Prompt (~1fr) -->
+          <div class="synth-col-biometrics">
+            <div class="synth-panel-card">
+              <div class="synth-card-header">
+                <span class="synth-card-badge">IDENTITY</span>
+                <h3 class="synth-card-title">Synthesized Persona DNA & Biometrics (36-24-30 Standard)</h3>
+              </div>
+
+              <div class="synth-bio-main-card">
+                <div class="bio-silhouette-wrap">
+                  <svg viewBox="0 0 100 180" class="bio-silhouette-svg" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M 50 15 C 44 15, 42 20, 42 26 C 42 32, 44 37, 50 37 C 56 37, 58 32, 58 26 C 58 20, 56 15, 50 15 Z" stroke="url(#wireGlow)" stroke-width="1.3" filter="url(#glow)"/>
+                    <path d="M 48 37 L 48 44 M 52 37 L 52 44" stroke="url(#wireGlow)" stroke-width="1.2"/>
+                    <path d="M 48 44 C 40 46, 31 51, 30 60 C 29 70, 38 74, 38 79 C 38 85, 34 93, 33 102 C 31 112, 33 130, 36 148 L 40 175 M 52 44 C 60 46, 69 51, 70 60 C 71 70, 62 74, 62 79 C 62 85, 66 93, 67 102 C 69 112, 67 130, 64 148 L 60 175" stroke="url(#wireGlow)" stroke-width="1.5" filter="url(#glow)"/>
+                    <ellipse cx="50" cy="62" rx="15" ry="4" stroke="url(#wireGlow)" stroke-width="0.9" stroke-dasharray="2 2"/>
+                    <ellipse cx="50" cy="79" rx="9" ry="2.5" stroke="url(#wireGlow)" stroke-width="1"/>
+                    <ellipse cx="50" cy="102" rx="14" ry="3.5" stroke="url(#wireGlow)" stroke-width="0.9" stroke-dasharray="2 2"/>
+                  </svg>
+                </div>
+
+                <div class="bio-data-col">
+                  <div class="bio-data-header" id="synth-bio-header">
+                    ARIA VANCE | 23 YRS | 168 cm (5'6") | International
+                  </div>
+                  <div class="synth-specs-grid">
+                    <div class="synth-spec-card">
+                      <span class="synth-spec-label">FIGURE</span>
+                      <span class="synth-spec-value synth-spec-val-gold" id="synth-val-figure">36-24-30 (Hourglass Standard)</span>
+                    </div>
+                    <div class="synth-spec-card">
+                      <span class="synth-spec-label">BUST PROJECTION</span>
+                      <span class="synth-spec-value" id="synth-val-bust">36D Sculpted Natural Full Projection</span>
+                    </div>
+                    <div class="synth-spec-card">
+                      <span class="synth-spec-label">WAIST & HIPS</span>
+                      <span class="synth-spec-value" id="synth-val-waist">24" Slender Hourglass / 30" Petite Athletic</span>
+                    </div>
+                    <div class="synth-spec-card">
+                      <span class="synth-spec-label">COMPLEXION</span>
+                      <span class="synth-spec-value" id="synth-val-complexion">Radiant natural skin with fine micro-pores</span>
+                    </div>
+                    <div class="synth-spec-card">
+                      <span class="synth-spec-label">EYES & IRIS</span>
+                      <span class="synth-spec-value" id="synth-val-eyes">Striking expressive almond eyes with detailed irises</span>
+                    </div>
+                    <div class="synth-spec-card">
+                      <span class="synth-spec-label">HAIR DNA</span>
+                      <span class="synth-spec-value" id="synth-val-hair">Silky natural shoulder-length waves</span>
+                    </div>
+                    <div class="synth-spec-card">
+                      <span class="synth-spec-label">FACIAL STRUCTURE & JAWLINE</span>
+                      <span class="synth-spec-value" id="synth-val-facial">Sculpted high cheekbones with a defined elegant jawline</span>
+                    </div>
+                    <div class="synth-spec-card">
+                      <span class="synth-spec-label">LIPS & EXPRESSION</span>
+                      <span class="synth-spec-value" id="synth-val-lips">Naturally full lips with defined cupid's bow</span>
+                    </div>
+                    <div class="synth-spec-card">
+                      <span class="synth-spec-label">SKIN MICRO-TEXTURE</span>
+                      <span class="synth-spec-value" id="synth-val-skin">Natural epidermal micro-pores, fine skin texture</span>
+                    </div>
+                    <div class="synth-spec-card">
+                      <span class="synth-spec-label">SILHOUETTE & BUILD</span>
+                      <span class="synth-spec-value" id="synth-val-silhouette">Sculpted athletic hourglass, toned collarbones</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Canonical Prompt Section directly in Center Column -->
+              <div class="synth-prompt-section">
+                <div class="synth-prompt-header">
+                  <div style="display: flex; align-items: center; gap: 0.65rem;">
+                    <span class="synth-card-badge">PROMPT</span>
+                    <span class="synth-prompt-title">CANONICAL IDENTITY PROMPT (CLIP 77-TOKEN BUDGETED)</span>
+                  </div>
+                  <button type="button" class="btn-copy-prompt" id="btn-copy-canonical-prompt" title="Copy canonical prompt to clipboard">
+                    📋 Copy Prompt
+                  </button>
+                </div>
+                <div id="synth-canonical-prompt" class="synth-prompt-content">
+                  8k raw photograph, direct front eye-level view at 0 degrees, standing medium portrait of 23yo International woman Aria Vance from International, radiant natural skin with fine micro-pores, striking expressive almond eyes with detailed irises, silky natural shoulder-length waves, sculpted high cheekbones with a defined elegant jawline, naturally full lips with defined cupid's bow, 36D sculpted natural bust, 24" slender hourglass waist, 30" petite athletic hips, wearing black ribbed sleeveless knit top, neutral soft studio lighting, light grey cyclorama, 50mm f/1.4 lens, natural skin micro-pores
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- COLUMN 3: 13-Image Target Manifest & Inference Engine Telemetry (~1.35fr - Fills Right Side!) -->
+          <div class="synth-col-targets">
+            <div class="synth-panel-card">
+
+              <!-- Live Vault Generation Progress & Telemetry Panel (Prominently at top of Column 3!) -->
+              <div id="vault-gen-telemetry-panel" class="vault-gen-telemetry-box">
+                <div class="telemetry-box-top">
+                  <div class="telemetry-box-heading">
+                    <span class="telemetry-dot-pulsing" id="telemetry-status-dot"></span>
+                    <strong>13-IMAGE IDENTITY INFERENCE ENGINE</strong>
+                  </div>
+                  <div class="telemetry-box-chips">
+                    <span id="vault-gen-step-badge" class="telemetry-chip-gold">Pack 0/13</span>
+                    <span id="vault-gen-percent-badge" class="telemetry-chip-emerald">0% Complete</span>
+                  </div>
+                </div>
+
+                <!-- Animated Progress Bar Track -->
+                <div class="telemetry-progress-track">
+                  <div id="vault-gen-progress-bar" class="telemetry-progress-fill" style="width: 0%;"></div>
+                </div>
+
+                <!-- Real-time metrics grid -->
+                <div class="telemetry-metrics-grid">
+                  <div class="telemetry-metric-cell">
+                    <div class="telemetry-metric-lbl">Current Pipeline Step</div>
+                    <div id="vault-gen-cur-step" class="telemetry-metric-val">Standby · Ready to Synthesize</div>
+                  </div>
+                  <div class="telemetry-metric-cell">
+                    <div class="telemetry-metric-lbl">Started At</div>
+                    <div id="vault-gen-time-started" class="telemetry-metric-val-blue">--:--:--</div>
+                  </div>
+                  <div class="telemetry-metric-cell">
+                    <div class="telemetry-metric-lbl">Elapsed Time</div>
+                    <div id="vault-gen-time-elapsed" class="telemetry-metric-val-amber">0s</div>
+                  </div>
+                  <div class="telemetry-metric-cell">
+                    <div class="telemetry-metric-lbl">Est. Remaining</div>
+                    <div id="vault-gen-time-remaining" class="telemetry-metric-val-purple">--</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Header Bar for Targets Manifest -->
+              <div class="synth-targets-top-bar">
+                <div>
+                  <span class="synth-card-badge">FROZEN VAULT TARGETS</span>
+                  <h3 class="synth-card-title">13-Image Target Manifest</h3>
+                </div>
+                <span id="vault-pack-completion-summary" class="synth-completion-badge">
+                  0 / 13 Generated
+                </span>
+              </div>
+
+              <!-- 13 Targets Grid (Rich Visual Cards Matrix) -->
+              <div id="vault-targets-grid" class="synth-targets-matrix">
+                <!-- 01 Front -->
+                <div class="vault-target-cell" id="pack-target-1">
+                  <div class="target-thumb-preview" id="thumb-pack-1">
+                    <span class="target-thumb-num">01</span>
+                    <span class="target-thumb-aspect">1:1</span>
+                  </div>
+                  <div class="target-cell-meta">
+                    <div class="target-cell-header">
+                      <span class="vault-target-title">01 Front (0°)</span>
+                      <span class="pack-status-badge badge-pending" id="badge-pack-1">No</span>
+                    </div>
+                    <div class="target-cell-desc">Turnaround baseline · Direct eye-level</div>
+                  </div>
+                </div>
+
+                <!-- 02 Left -->
+                <div class="vault-target-cell" id="pack-target-2">
+                  <div class="target-thumb-preview" id="thumb-pack-2">
+                    <span class="target-thumb-num">02</span>
+                    <span class="target-thumb-aspect">1:1</span>
+                  </div>
+                  <div class="target-cell-meta">
+                    <div class="target-cell-header">
+                      <span class="vault-target-title">02 Left (-90°)</span>
+                      <span class="pack-status-badge badge-pending" id="badge-pack-2">No</span>
+                    </div>
+                    <div class="target-cell-desc">Turnaround baseline · Left side profile</div>
+                  </div>
+                </div>
+
+                <!-- 03 Right -->
+                <div class="vault-target-cell" id="pack-target-3">
+                  <div class="target-thumb-preview" id="thumb-pack-3">
+                    <span class="target-thumb-num">03</span>
+                    <span class="target-thumb-aspect">1:1</span>
+                  </div>
+                  <div class="target-cell-meta">
+                    <div class="target-cell-header">
+                      <span class="vault-target-title">03 Right (+90°)</span>
+                      <span class="pack-status-badge badge-pending" id="badge-pack-3">No</span>
+                    </div>
+                    <div class="target-cell-desc">Turnaround baseline · Right side profile</div>
+                  </div>
+                </div>
+
+                <!-- 04 Back -->
+                <div class="vault-target-cell" id="pack-target-4">
+                  <div class="target-thumb-preview" id="thumb-pack-4">
+                    <span class="target-thumb-num">04</span>
+                    <span class="target-thumb-aspect">1:1</span>
+                  </div>
+                  <div class="target-cell-meta">
+                    <div class="target-cell-header">
+                      <span class="vault-target-title">04 Back (180°)</span>
+                      <span class="pack-status-badge badge-pending" id="badge-pack-4">No</span>
+                    </div>
+                    <div class="target-cell-desc">Turnaround baseline · Rear silhouette</div>
+                  </div>
+                </div>
+
+                <!-- 05 Macro -->
+                <div class="vault-target-cell" id="pack-target-5">
+                  <div class="target-thumb-preview" id="thumb-pack-5">
+                    <span class="target-thumb-num">05</span>
+                    <span class="target-thumb-aspect">1:1</span>
+                  </div>
+                  <div class="target-cell-meta">
+                    <div class="target-cell-header">
+                      <span class="vault-target-title">05 Macro Eyes & Lips</span>
+                      <span class="pack-status-badge badge-pending" id="badge-pack-5">No</span>
+                    </div>
+                    <div class="target-cell-desc">Micro-detailing · Epidermal pores & iris</div>
+                  </div>
+                </div>
+
+                <!-- 06 High Fashion -->
+                <div class="vault-target-cell" id="pack-target-6">
+                  <div class="target-thumb-preview" id="thumb-pack-6">
+                    <span class="target-thumb-num">06</span>
+                    <span class="target-thumb-aspect">4:5</span>
+                  </div>
+                  <div class="target-cell-meta">
+                    <div class="target-cell-header">
+                      <span class="vault-target-title">06 High Fashion</span>
+                      <span class="pack-status-badge badge-pending" id="badge-pack-6">No</span>
+                    </div>
+                    <div class="target-cell-desc">Editorial couture · Raw silk suiting</div>
+                  </div>
+                </div>
+
+                <!-- 07 Athleisure -->
+                <div class="vault-target-cell" id="pack-target-7">
+                  <div class="target-thumb-preview" id="thumb-pack-7">
+                    <span class="target-thumb-num">07</span>
+                    <span class="target-thumb-aspect">4:5</span>
+                  </div>
+                  <div class="target-cell-meta">
+                    <div class="target-cell-header">
+                      <span class="vault-target-title">07 Athleisure</span>
+                      <span class="pack-status-badge badge-pending" id="badge-pack-7">No</span>
+                    </div>
+                    <div class="target-cell-desc">Fitness baseline · Sculpted athletic run</div>
+                  </div>
+                </div>
+
+                <!-- 08 Casual Street -->
+                <div class="vault-target-cell" id="pack-target-8">
+                  <div class="target-thumb-preview" id="thumb-pack-8">
+                    <span class="target-thumb-num">08</span>
+                    <span class="target-thumb-aspect">4:5</span>
+                  </div>
+                  <div class="target-cell-meta">
+                    <div class="target-cell-header">
+                      <span class="vault-target-title">08 Casual Street</span>
+                      <span class="pack-status-badge badge-pending" id="badge-pack-8">No</span>
+                    </div>
+                    <div class="target-cell-desc">Metropolitan lifestyle · Espresso candid</div>
+                  </div>
+                </div>
+
+                <!-- 09 Resortwear -->
+                <div class="vault-target-cell" id="pack-target-9">
+                  <div class="target-thumb-preview" id="thumb-pack-9">
+                    <span class="target-thumb-num">09</span>
+                    <span class="target-thumb-aspect">4:5</span>
+                  </div>
+                  <div class="target-cell-meta">
+                    <div class="target-cell-header">
+                      <span class="vault-target-title">09 Resortwear</span>
+                      <span class="pack-status-badge badge-pending" id="badge-pack-9">No</span>
+                    </div>
+                    <div class="target-cell-desc">Golden hour promenade · Cobalt swimwear</div>
+                  </div>
+                </div>
+
+                <!-- 10 Boudoir Half -->
+                <div class="vault-target-cell target-cell-adult" id="pack-target-10">
+                  <div class="target-thumb-preview target-thumb-adult" id="thumb-pack-10">
+                    <span class="target-thumb-num">10</span>
+                    <span class="target-thumb-aspect">4:5</span>
+                  </div>
+                  <div class="target-cell-meta">
+                    <div class="target-cell-header">
+                      <span class="vault-target-title target-accent-purple">10 Boudoir Half (18+)</span>
+                      <span class="pack-status-badge badge-pending" id="badge-pack-10">No</span>
+                    </div>
+                    <div class="target-cell-desc">Intimate baseline · Champagne satin slip</div>
+                  </div>
+                </div>
+
+                <!-- 11 Boudoir Full -->
+                <div class="vault-target-cell target-cell-adult" id="pack-target-11">
+                  <div class="target-thumb-preview target-thumb-adult" id="thumb-pack-11">
+                    <span class="target-thumb-num">11</span>
+                    <span class="target-thumb-aspect">4:5</span>
+                  </div>
+                  <div class="target-cell-meta">
+                    <div class="target-cell-header">
+                      <span class="vault-target-title target-accent-purple">11 Boudoir Full (18+)</span>
+                      <span class="pack-status-badge badge-pending" id="badge-pack-11">No</span>
+                    </div>
+                    <div class="target-cell-desc">Intimate baseline · Artistic sheer silhouette</div>
+                  </div>
+                </div>
+
+                <!-- 12 Lingerie Half -->
+                <div class="vault-target-cell target-cell-adult" id="pack-target-12">
+                  <div class="target-thumb-preview target-thumb-adult" id="thumb-pack-12">
+                    <span class="target-thumb-num">12</span>
+                    <span class="target-thumb-aspect">4:5</span>
+                  </div>
+                  <div class="target-cell-meta">
+                    <div class="target-cell-header">
+                      <span class="vault-target-title target-accent-purple">12 Lingerie Half (18+)</span>
+                      <span class="pack-status-badge badge-pending" id="badge-pack-12">No</span>
+                    </div>
+                    <div class="target-cell-desc">Intimate baseline · Sheer lace balconette</div>
+                  </div>
+                </div>
+
+                <!-- 13 Lingerie Full -->
+                <div class="vault-target-cell target-cell-adult" id="pack-target-13">
+                  <div class="target-thumb-preview target-thumb-adult" id="thumb-pack-13">
+                    <span class="target-thumb-num">13</span>
+                    <span class="target-thumb-aspect">4:5</span>
+                  </div>
+                  <div class="target-cell-meta">
+                    <div class="target-cell-header">
+                      <span class="vault-target-title target-accent-purple">13 Lingerie & Stockings (18+)</span>
+                      <span class="pack-status-badge badge-pending" id="badge-pack-13">No</span>
+                    </div>
+                    <div class="target-cell-desc">Intimate baseline · Full stockings & corset</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ==============================================================================
+         TAB 2: GENERATE & PHOTOSHOOT ORCHESTRATOR
+         ============================================================================== -->
+    <section id="tab-orchestrator" class="tab-panel">
+      <div class="panel-header-bar-option3">
+        <div class="vault-title-group">
+          <h2>PHOTOSHOOT ORCHESTRATOR / <span>UNRESTRICTED</span></h2>
+          <p>Local SDXL Direct Inference · Juggernaut XL v10 (RunDiffusion NSFW Edition)</p>
+        </div>
+        <div style="display: flex; gap: 0.5rem;">
+          <span class="telemetry-chip" style="background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.3); color: var(--emerald);">
+            ● Juggernaut XL v10 Loaded
+          </span>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 460px 1fr; gap: 2.25rem; margin-top: 1rem;">
+        <!-- Left: Generation Controls (38%) -->
+        <div class="creator-sidebar-opt1">
+          <!-- Generation Mode Tabs -->
+          <div class="format-toggle-grid-opt1" style="margin-bottom: 1.25rem;">
+            <button class="format-btn-opt1 active" id="btn-orch-mode-txt" data-orchmode="txt2img">
+              <span>✦</span> Text-to-Image
+            </button>
+            <button class="format-btn-opt1" id="btn-orch-mode-img" data-orchmode="img2img">
+              <span>🖼</span> Image-to-Image
+            </button>
+          </div>
+
+          <!-- Prompt Box -->
+          <div>
+            <div class="sidebar-section-title-opt1">Uncensored Prompt Workspace</div>
+            <textarea id="orch-prompt-input" rows="4" style="width: 100%; padding: 0.85rem; background: rgba(11, 15, 23, 0.7); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 10px; color: #FFFFFF; font-size: 0.85rem; line-height: 1.5;">standing medium portrait of Maya Bhutia wearing lavender ribbed sleeveless knit crop top, mountain veranda, natural skin texture, 50mm portrait lens</textarea>
+          </div>
+
+          <!-- Image-to-Image Drag-and-Drop Area (Conditional) -->
+          <div id="orch-img2img-box" style="display: none; margin-top: 1rem; border: 1px dashed rgba(212, 175, 55, 0.3); border-radius: 10px; padding: 1rem; text-align: center; background: rgba(14, 20, 32, 0.5);">
+            <div style="font-size: 0.85rem; color: #FFFFFF; margin-bottom: 0.5rem;">Drop Reference Image or Facial Anchor</div>
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 0.75rem;">
+              <span style="font-size: 0.78rem; color: var(--text-muted);">Denoising Strength:</span>
+              <span id="denoising-val-lbl" style="font-size: 0.8rem; font-weight: 700; color: var(--gold-light);">0.65</span>
+            </div>
+            <input type="range" id="orch-denoising-slider" min="0.10" max="0.95" step="0.05" value="0.65" style="width: 100%; margin-top: 0.4rem;"/>
+          </div>
+
+          <!-- Model Auto-Recommendation -->
+          <div style="margin-top: 1.25rem;">
+            <div class="sidebar-section-title-opt1">Model Selection</div>
+            <div style="display: flex; gap: 0.5rem;">
+              <select id="orch-model-select" class="custom-select" style="flex: 1; padding: 0.75rem; background: rgba(11, 15, 23, 0.7); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; color: #FFFFFF; font-size: 0.82rem;">
+                <option value="juggernaut-xl-v10" selected>Juggernaut XL v10 (RunDiffusion NSFW)</option>
+                <option value="sdxl-base-1.0">SDXL Base 1.0 (Refiner Active)</option>
+                <option value="flux-1-schnell">Flux.1 Schnell (Fast MPS)</option>
+                <option value="svd-xt">Stable Video Diffusion (SVD-XT)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Photoshoot Scene Settings -->
+          <div style="margin-top: 1.25rem;">
+            <div class="sidebar-section-title-opt1">Photoshoot Scene Orchestrator</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+              <div>
+                <label style="font-size: 0.75rem; color: var(--text-dim); display: block; margin-bottom: 0.25rem;">Framing & Angle</label>
+                <select id="orch-framing-select" class="custom-select" style="width: 100%; padding: 0.6rem; background: rgba(11, 15, 23, 0.7); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; color: #FFFFFF; font-size: 0.78rem;">
+                  <option value="Extreme Close-up">Extreme Close-up</option>
+                  <option value="Medium Portrait" selected>Waist-up / Medium</option>
+                  <option value="Full Body Standing">Full-Body Standing</option>
+                  <option value="Low Angle Heroic">Low-Angle Heroic</option>
+                  <option value="Overhead Intimate">Overhead Intimate</option>
+                </select>
+              </div>
+              <div>
+                <label style="font-size: 0.75rem; color: var(--text-dim); display: block; margin-bottom: 0.25rem;">Lens & DOF</label>
+                <select id="orch-lens-select" class="custom-select" style="width: 100%; padding: 0.6rem; background: rgba(11, 15, 23, 0.7); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; color: #FFFFFF; font-size: 0.78rem;">
+                  <option value="35mm street prime">35mm street prime</option>
+                  <option value="50mm natural eye" selected>50mm natural eye</option>
+                  <option value="85mm f/1.8 beauty portrait">85mm f/1.8 beauty</option>
+                  <option value="100mm f/2.8 macro">100mm f/2.8 macro</option>
+                </select>
+              </div>
+            </div>
+
+            <div style="margin-top: 0.75rem;">
+              <label style="font-size: 0.75rem; color: var(--text-dim); display: block; margin-bottom: 0.25rem;">Lighting Environment</label>
+              <select id="orch-lighting-select" class="custom-select" style="width: 100%; padding: 0.6rem; background: rgba(11, 15, 23, 0.7); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; color: #FFFFFF; font-size: 0.78rem;">
+                <option value="Golden hour sunset with warm rim flare" selected>Golden hour sunset</option>
+                <option value="3-point softbox luxury studio">3-point studio softbox</option>
+                <option value="Moody candlelight bedroom intimate">Moody candlelight intimate</option>
+                <option value="Cyberpunk neon rim light">Cyberpunk neon rim</option>
+                <option value="Diffuse cloudy mountain daylight">Diffuse mountain daylight</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- AI Scene Variations -->
+          <div style="margin-top: 1.25rem;">
+            <button class="btn-glass" id="btn-suggest-scenes" style="width: 100%; justify-content: center;">
+              ✦ AI Suggest Top 3 Diverse Scenes
+            </button>
+            <div id="orch-scene-chips-container" style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.75rem;">
+              <!-- Generated scenes inserted dynamically -->
+            </div>
+          </div>
+
+          <!-- Aspect Ratio Presets -->
+          <div style="margin-top: 1.25rem;">
+            <div class="sidebar-section-title-opt1">Aspect Ratio Presets</div>
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem;">
+              <button class="aspect-btn active" data-ar="9:16">9:16 (Story)</button>
+              <button class="aspect-btn" data-ar="4:5">4:5 (Feed)</button>
+              <button class="aspect-btn" data-ar="1:1">1:1 (Square)</button>
+              <button class="aspect-btn" data-ar="16:9">16:9 (Wide)</button>
+            </div>
+          </div>
+
+          <button class="btn-gold" id="btn-orch-generate" style="width: 100%; justify-content: center; padding: 1rem; margin-top: 1.5rem;">
+            ✦ Queue High-Res Photoshoot Render
+          </button>
+        </div>
+
+        <!-- Right: Live 4K Stage Canvas (62%) -->
+        <div class="preview-card-opt1">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+              <span class="telemetry-dot" style="background: var(--emerald);"></span>
+              <strong style="font-size: 0.82rem; color: #FFFFFF;">4K Live Stage Canvas</strong>
+            </div>
+            <div style="display: flex; gap: 0.5rem;">
+              <button class="subnav-btn active" id="btn-canvas-toggle-clean" style="padding: 0.3rem 0.65rem; font-size: 0.72rem;">Clean Visual</button>
+              <button class="subnav-btn" id="btn-canvas-toggle-editorial" style="padding: 0.3rem 0.65rem; font-size: 0.72rem;">Editorial Overlay</button>
+            </div>
+          </div>
+
+          <div class="canvas-stage-wrapper-opt1" style="height: 680px; position: relative;">
+            <img src="/generated/master_persona_maya/maya_06_baseline_fashion.png" alt="Render" class="stage-image" id="orch-canvas-image" style="width: 100%; height: 100%; object-fit: cover; border-radius: 10px;"/>
+            
+            <!-- Simulated Vector Editorial Overlay (Method B) -->
+            <div id="orch-canvas-editorial-overlay" style="display: none; position: absolute; inset: 0; pointer-events: none; padding: 1.5rem; display: flex; flex-direction: column; justify-content: space-between;">
+              <div style="font-family: var(--font-title); font-size: 2.2rem; letter-spacing: 0.15em; color: #FFFFFF; text-shadow: 0 4px 12px rgba(0,0,0,0.8); text-align: center;">V O G U E</div>
+              <div style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px); padding: 0.75rem 1.25rem; border-radius: 8px; border: 1px solid rgba(212,175,55,0.3); color: #FEF08A; font-size: 0.95rem; font-family: var(--font-hook);">
+                "The quietest corner of Gangtok you've never seen ✦"
+              </div>
+            </div>
+          </div>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; font-size: 0.78rem; color: var(--text-muted);">
+            <div>Resolution: <strong style="color: #FFFFFF;">2160 × 3840 (4K Raw)</strong> · Seed: <strong style="color: var(--gold-light);">8824</strong></div>
+            <button class="btn-glass" id="btn-download-orch-render" style="padding: 0.4rem 0.85rem; font-size: 0.75rem;">⬇ Download 4K Asset</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==============================================================================
+         TAB 3: STORY & BLOG STUDIO (OPTION 1 CREATOR & OPTION 2 CALENDAR)
+         ============================================================================== -->
+    <section id="tab-story" class="tab-panel">
+      <!-- 3-Way Sub-Navigation Bar -->
+      <div class="story-subnav-bar">
+        <div style="display: flex; gap: 0.75rem;">
+          <button class="subnav-btn active" data-subview="subview-creator" id="btn-sub-creator">
+            ✦ Creator Studio (Option 1)
+          </button>
+          <button class="subnav-btn" data-subview="subview-feed" id="btn-sub-feed">
+            📑 Persona Feed & Archive
+          </button>
+          <button class="subnav-btn" data-subview="subview-calendar" id="btn-sub-calendar">
+            📅 Content Calendar & Inspector (Option 2)
+          </button>
+        </div>
+        <span style="font-size: 0.85rem; color: var(--text-muted);">Active Anchor: <strong id="story-active-persona-lbl" style="color: var(--gold-light);">Maya Bhutia</strong></span>
+      </div>
+
+      <!-- --------------------------------------------------------------------------
+           SUB-VIEW 1: CREATOR STUDIO (OPTION 1 OBSIDIAN & CHAMPAGNE GOLD LUXURY)
+           -------------------------------------------------------------------------- -->
+      <div id="subview-creator" class="story-subview active">
+        <div class="story-creator-layout-opt1">
+
+          <!-- Left Sidebar Controls -->
+          <div class="creator-sidebar-opt1">
+            <!-- Format Toggle -->
+            <div>
+              <div class="sidebar-section-title-opt1">Format Toggle</div>
+              <div class="format-toggle-grid-opt1">
+                <button class="format-btn-opt1 active" id="btn-format-single" data-format="single">
+                  <span>🖼</span> Single Image
+                </button>
+                <button class="format-btn-opt1" id="btn-format-carousel" data-format="carousel">
+                  <span>📑</span> Carousel
+                </button>
+              </div>
+            </div>
+
+            <!-- Intent Mode Selection -->
+            <div>
+              <div class="sidebar-section-title-opt1">Intent Mode Selection</div>
+              <div class="mode-selector-stack-opt1">
+                <button class="mode-pill-opt1 mode-personal active" id="btn-mode-personal" data-mode="personal">
+                  <span>Personal Lifestyle Blog</span>
+                  <span class="mode-pill-code">#5C2D91</span>
+                </button>
+                <button class="mode-pill-opt1 mode-commercial" id="btn-mode-commercial" data-mode="commercial">
+                  <span>Commercial Niche & Campaign</span>
+                  <span class="mode-pill-code">#D4AF37</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Commercial Fields -->
+            <div id="commercial-fields-wrap" class="commercial-fields-block" style="display: none;">
+              <div class="sidebar-section-title-opt1">Market Niches (AI Influencer Products)</div>
+              <div class="field-group-opt1">
+                <label for="story-niche-select">Commercial Niche Category</label>
+                <select id="story-niche-select" class="custom-select">
+                  <option value="Fashion & Clothing" selected>Fashion & Luxury Clothing</option>
+                  <option value="Cosmetics & Skincare">Cosmetics & Skincare</option>
+                  <option value="Food & Dining">Food, Dining & Culinary</option>
+                  <option value="IT, Tech & Gadgets">IT, Tech & Smart Gadgets</option>
+                  <option value="Medicine & Well-Being">Medicine, Health & Well-Being</option>
+                  <option value="E-Commerce Products">E-Commerce Brand Promotions</option>
+                  <option value="Adult Boudoir & Intimate">Adult Boudoir & Intimate Glamour</option>
+                </select>
+              </div>
+
+              <div class="field-group-opt1">
+                <label for="story-brand-name">Brand / Product Name</label>
+                <input type="text" id="story-brand-name" class="custom-input" placeholder="e.g. Radiance Botanicals"/>
+              </div>
+
+              <div class="field-group-opt1">
+                <label for="story-promo-code">Promo Code / Call to Action</label>
+                <input type="text" id="story-promo-code" class="custom-input" placeholder="e.g. MAYA20 (20% OFF)"/>
+              </div>
+            </div>
+
+            <!-- Viral Hook Generator -->
+            <div>
+              <div class="sidebar-section-title-opt1">Viral Hook Engine</div>
+              <button class="btn-gold" id="btn-generate-hooks" style="width: 100%; justify-content: center; margin-bottom: 0.85rem;">
+                ✦ Generate Viral Hooks & Captions
+              </button>
+
+              <div class="hooks-stack-opt1" id="story-hooks-container">
+                <div class="hook-card-opt1 selected" data-hook-idx="0">
+                  <span class="hook-badge-opt1">Hook #1 (Curiosity Anchor)</span>
+                  <p class="hook-text-opt1" id="hook-text-0">
+                    "The hardest part about leaving the mountains... what no one tells you ✦"
+                  </p>
+                </div>
+                <div class="hook-card-opt1" data-hook-idx="1">
+                  <span class="hook-badge-opt1">Hook #2 (POV Story)</span>
+                  <p class="hook-text-opt1" id="hook-text-1">
+                    "POV: You caught me completely off-guard at breakfast in Gangtok..."
+                  </p>
+                </div>
+                <div class="hook-card-opt1" data-hook-idx="2">
+                  <span class="hook-badge-opt1">Hook #3 (Engagement Question)</span>
+                  <p class="hook-text-opt1" id="hook-text-2">
+                    "Do I stay for another week or pack my bags? Need your honest opinion 👇"
+                  </p>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Center Stage Preview Card -->
+          <div class="preview-card-opt1">
+            <div class="stage-header-bar-opt1">
+              <div class="persona-identity-tag-opt1">
+                <span class="anchor-bullet-opt1"></span>
+                <span>Active Anchor: <strong id="stage-overlay-persona">Maya Bhutia</strong></span>
+              </div>
+              <div class="stage-actions-opt1">
+                <button class="btn-glass" id="btn-download-clean">Clean</button>
+                <button class="btn-glass" id="btn-download-editorial">Editorial</button>
+                <button class="btn-gold" id="btn-schedule-this-post">Schedule Post</button>
+              </div>
+            </div>
+
+            <!-- Visual Stage Canvas -->
+            <div class="canvas-stage-wrapper-opt1">
+              <img src="/generated/master_persona_maya/maya_06_baseline_fashion.png" alt="Story Visual" class="stage-image" id="stage-main-image"/>
+
+              <!-- Editorial Typography Vector Overlay -->
+              <div class="editorial-vector-overlay-opt1" id="stage-overlay-container">
+                <div class="editorial-top-masthead">
+                  <span class="editorial-brand-mark">V O G U E</span>
+                  <span class="editorial-issue-tag">AUTUMN EDITORIAL · SIKKIM HIGHLANDS</span>
+                </div>
+
+                <div class="editorial-bottom-deck">
+                  <h3 class="editorial-main-hook" id="overlay-hook-display">
+                    "The hardest part about leaving the mountains... what no one tells you ✦"
+                  </h3>
+                  <p class="editorial-deck-sub" id="overlay-deck-display">
+                    A candid day in the life of Maya Bhutia · 8k Raw Editorial Fashion
+                  </p>
+                </div>
+              </div>
+
+              <!-- Carousel Pagination Slider Controls -->
+              <div class="carousel-nav-controls-opt1" id="carousel-nav-wrap" style="display: none;">
+                <button class="carousel-arrow-btn" id="btn-prev-slide" aria-label="Previous Slide">‹</button>
+                <span class="carousel-slide-indicator" id="carousel-slide-indicator">Slide 1 of 4</span>
+                <button class="carousel-arrow-btn" id="btn-next-slide" aria-label="Next Slide">›</button>
+              </div>
+            </div>
+
+            <!-- Micro-Blog Caption Preview -->
+            <div class="caption-preview-block-opt1">
+              <div class="caption-header-row-opt1">
+                <span class="caption-header-title-opt1">Micro-Blog Story Caption & Tiered Hashtags</span>
+                <button class="btn-glass" id="btn-copy-caption">Copy Caption</button>
+              </div>
+              <p class="caption-preview-text" id="caption-preview-text">
+                Quiet mornings like this are rare. Sitting on the veranda with a cup of warm tea, watching the Himalayan mist roll over the pine trees...
+              </p>
+            </div>
+
+          </div>
+
+        </div>
+      </div>
+
+      <!-- --------------------------------------------------------------------------
+           SUB-VIEW 2: PERSONA FEED & CONTENT ARCHIVE
+           -------------------------------------------------------------------------- -->
+      <div id="subview-feed" class="story-subview" style="display: none;">
+        <div class="panel-header-bar-option3">
+          <div class="vault-title-group">
+            <h2>PERSONA FEED & CONTENT ARCHIVE / <span id="feed-persona-name">MAYA BHUTIA</span></h2>
+            <p>Chronological library of generated single posts, multi-slide carousels, and viral hooks</p>
+          </div>
+          <!-- Filter Chips -->
+          <div style="display: flex; gap: 0.5rem;">
+            <button class="subnav-btn active" data-feedfilter="all">All Posts</button>
+            <button class="subnav-btn" data-feedfilter="single">Single</button>
+            <button class="subnav-btn" data-feedfilter="carousel">Carousel</button>
+            <button class="subnav-btn" data-feedfilter="personal" style="color: var(--purple-light);">🟣 Personal</button>
+            <button class="subnav-btn" data-feedfilter="commercial" style="color: var(--gold-light);">🟡 Commercial</button>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.5rem; margin-top: 1.25rem;" id="persona-feed-grid">
+          <!-- Populated dynamically via app.js -->
+        </div>
+      </div>
+
+      <!-- --------------------------------------------------------------------------
+           SUB-VIEW 3: CONTENT CALENDAR & INSPECTOR (OPTION 2 LINEAR SLATE PRO)
+           -------------------------------------------------------------------------- -->
+      <div id="subview-calendar" class="story-subview" style="display: none;">
+        <div class="calendar-workspace-layout-opt2">
+
+          <!-- Left: Main Calendar View -->
+          <div class="calendar-main-pane-opt2">
+            <!-- Calendar Header Toolbar -->
+            <div class="cal-toolbar-opt2">
+              <div class="cal-title-group-opt2">
+                <h3>October 2026</h3>
+                <span class="cal-subtitle-opt2">Persona: Maya Bhutia · Himalayan Editorial Schedule</span>
+              </div>
+
+              <!-- 70/30 Content Balance Tracker Gauge -->
+              <div class="balance-gauge-card-opt2">
+                <div class="gauge-header-row-opt2">
+                  <span class="gauge-label-opt2">70/30 Content Balance</span>
+                  <span class="gauge-ratio-val-opt2" id="gauge-ratio-text">75% Personal / 25% Commercial</span>
+                </div>
+                <div class="gauge-bar-track-opt2">
+                  <div class="gauge-fill-personal-opt2" id="gauge-fill-personal" style="width: 75%;"></div>
+                  <div class="gauge-fill-commercial-opt2" id="gauge-fill-commercial" style="width: 25%;"></div>
+                </div>
+                <small class="gauge-status-msg-opt2" id="gauge-status-msg">Optimal Balance: High audience trust & retention</small>
+              </div>
+            </div>
+
+            <!-- Calendar Days Columns Grid -->
+            <div class="cal-days-grid-opt2" id="calendar-days-columns">
+              <!-- Rendered via app.js -->
+            </div>
+          </div>
+
+          <!-- Right: Story Studio Slide-out Inspector Card -->
+          <div class="story-inspector-card-opt2">
+            <div class="inspector-header-opt2">
+              <h4>Slide out inspector</h4>
+              <span style="color: var(--text-dim); cursor: pointer;">✕</span>
+            </div>
+
+            <div class="inspector-inner-layout-opt2">
+              <div class="inspector-thumb-wrap-opt2">
+                <img src="/generated/master_persona_maya/maya_06_baseline_fashion.png" alt="Preview" id="insp-thumb-side"/>
+              </div>
+
+              <div class="inspector-details-stack-opt2">
+                <div class="prompt-dna-block-opt2">
+                  <strong>Prompt DNA</strong>
+                  <div style="display: flex; align-items: center; gap: 0.65rem; margin-top: 0.25rem;">
+                    <img src="/generated/master_persona_maya/maya_01_turnaround_front.png" alt="Avatar" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover; border: 1px solid var(--gold-primary);"/>
+                    <div>
+                      <span style="font-size: 0.85rem; font-weight: 700; color: #FFFFFF;" id="insp-side-name">Maya Bhutia</span><br/>
+                      <small style="color: var(--text-muted); font-size: 0.72rem;">Model in Character</small>
+                    </div>
+                  </div>
+                  <p style="margin-top: 0.5rem; font-size: 0.8rem; color: var(--text-muted);" id="insp-side-prompt">
+                    "8k raw photo of Maya Bhutia standing in tailored ivory blazer dress, soft morning light, 85mm fashion lens."
+                  </p>
+                </div>
+
+                <div style="display: flex; flex-direction: column; gap: 0.4rem; border-top: 1px solid var(--border-subtle); padding-top: 0.85rem;">
+                  <strong style="font-size: 0.8rem; color: var(--text-dim); text-transform: uppercase;">Viral Hooks</strong>
+                  <ul class="hooks-bullet-list-opt2" id="insp-side-hooks">
+                    <li>"The 30-second secret to glass skin at 5,000 feet..."</li>
+                    <li>"POV: You caught me off-guard at breakfast..."</li>
+                    <li>"The quietest corner of Gangtok you've never seen ✦"</li>
+                  </ul>
+                </div>
+
+                <div style="display: flex; justify-content: space-between; border-top: 1px solid var(--border-subtle); padding-top: 0.85rem; font-size: 0.8rem;">
+                  <span style="color: var(--text-dim);">Story Metrics</span>
+                  <strong style="color: #FFFFFF;">5.00 ★</strong>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.8rem;">
+                  <span style="color: var(--text-dim);">Retention Rate</span>
+                  <strong style="color: var(--emerald);">76.4%</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ==============================================================================
+         TAB 4: MEDIA VAULT / GALLERY
+         ============================================================================== -->
+    <section id="tab-gallery" class="tab-panel">
+      <div class="panel-header-bar-option3">
+        <div class="vault-title-group">
+          <h2>MEDIA GALLERY / <span>ASSET HUB</span></h2>
+          <p>Approved Master Turnaround Sets & Editorial Renders with Deep Metadata</p>
+        </div>
+        <div style="display: flex; gap: 0.65rem; align-items: center;">
+          <button class="btn-glass" id="btn-gallery-toggle-archive" style="color: var(--gold-light); border-color: rgba(212, 175, 55, 0.4);">
+            📦 View Archive (<span id="archive-count-badge">0</span>)
+          </button>
+          <button class="btn-glass" id="btn-gallery-refresh">↻ Refresh Assets</button>
+        </div>
+      </div>
+
+      <!-- Active Media Gallery View -->
+      <div id="gallery-active-container" style="display: grid; grid-template-columns: 240px 1fr; gap: 1.75rem; margin-top: 1.25rem;">
+        <!-- Left Filter Sidebar -->
+        <div class="creator-sidebar-opt1" style="height: fit-content;">
+          <div class="sidebar-section-title-opt1">Filters</div>
+          
+          <div style="margin-bottom: 1rem;">
+            <label style="font-size: 0.75rem; color: var(--text-dim); display: block; margin-bottom: 0.25rem;">Persona</label>
+            <select id="gallery-filter-persona" class="custom-select" style="width: 100%; padding: 0.6rem; background: rgba(11, 15, 23, 0.7); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; color: #FFFFFF; font-size: 0.78rem;">
+              <option value="all">All Personas (Database)</option>
+            </select>
+          </div>
+
+          <div style="margin-bottom: 1rem;">
+            <label style="font-size: 0.75rem; color: var(--text-dim); display: block; margin-bottom: 0.25rem;">Category</label>
+            <select id="gallery-filter-category" class="custom-select" style="width: 100%; padding: 0.6rem; background: rgba(11, 15, 23, 0.7); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; color: #FFFFFF; font-size: 0.78rem;">
+              <option value="all">All Categories</option>
+              <option value="High Fashion">High Fashion</option>
+              <option value="Fitness & Athleisure">Fitness & Athleisure</option>
+              <option value="Casual Streetwear">Casual Streetwear</option>
+              <option value="Resort & Swimwear">Resort & Swimwear</option>
+              <option value="Adult Boudoir">Adult Boudoir</option>
+            </select>
+          </div>
+
+          <div style="margin-bottom: 1rem;">
+            <label style="font-size: 0.75rem; color: var(--text-dim); display: block; margin-bottom: 0.25rem;">Aspect Ratio</label>
+            <select id="gallery-filter-ar" class="custom-select" style="width: 100%; padding: 0.6rem; background: rgba(11, 15, 23, 0.7); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; color: #FFFFFF; font-size: 0.78rem;">
+              <option value="all">All Formats</option>
+              <option value="9:16">9:16 Vertical Story</option>
+              <option value="4:5">4:5 Feed Portrait</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Right Masonry Grid -->
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem;" id="gallery-grid">
+          <!-- Rendered via app.js -->
+        </div>
+      </div>
+
+      <!-- Archived Personas & Assets Container -->
+      <div id="gallery-archive-container" style="display: none; margin-top: 1.25rem;">
+        <div style="background: rgba(14, 20, 32, 0.7); border: 1px solid rgba(212, 175, 55, 0.2); border-radius: 12px; padding: 1.25rem 1.5rem; margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <h3 style="font-size: 1.1rem; color: #FFFFFF; margin-bottom: 0.25rem;">📦 Archived Personas & Safe Asset Storage</h3>
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0;">Deleted personas and their associated assets are safely retained here. Click "Retrieve Persona" to restore any persona back to active studio.</p>
+          </div>
+          <button class="btn-glass" id="btn-gallery-back-active" style="padding: 0.5rem 1rem; font-size: 0.8rem;">← Back to Active Assets</button>
+        </div>
+
+        <div id="gallery-archive-list" style="display: flex; flex-direction: column; gap: 1.5rem;">
+          <!-- Rendered via app.js -->
+        </div>
+      </div>
+
+      <!-- Deep Metadata Inspector Modal -->
+      <div id="gallery-meta-modal" style="display: none; position: fixed; inset: 0; background: rgba(7, 10, 15, 0.85); backdrop-filter: blur(16px); z-index: 1000; align-items: center; justify-content: center; padding: 2rem;">
+        <div style="background: rgba(14, 20, 32, 0.95); border: 1px solid rgba(212, 175, 55, 0.3); border-radius: 14px; max-width: 900px; width: 100%; max-height: 90vh; overflow-y: auto; padding: 2rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 1rem; margin-bottom: 1.5rem;">
+            <h3 id="modal-meta-title" style="font-family: var(--font-title); color: #FFFFFF;">Deep Metadata Inspector</h3>
+            <span id="btn-close-meta-modal" style="cursor: pointer; color: var(--text-muted); font-size: 1.25rem;">✕</span>
+          </div>
+          <div style="display: grid; grid-template-columns: 360px 1fr; gap: 2rem;">
+            <div>
+              <img id="modal-meta-thumb" src="" alt="Asset" style="width: 100%; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1);"/>
+            </div>
+            <div style="font-size: 0.82rem; display: flex; flex-direction: column; gap: 0.75rem;">
+              <div><span style="color: var(--text-dim);">Persona:</span> <strong id="modal-meta-persona" style="color: var(--gold-light);"></strong></div>
+              <div><span style="color: var(--text-dim);">Model:</span> <strong id="modal-meta-model" style="color: #FFFFFF;"></strong></div>
+              <div><span style="color: var(--text-dim);">Sampler & Seed:</span> <strong id="modal-meta-seed" style="color: #38BDF8;"></strong></div>
+              <div>
+                <span style="color: var(--text-dim); display: block; margin-bottom: 0.25rem;">Prompt:</span>
+                <p id="modal-meta-prompt" style="padding: 0.65rem; background: rgba(0,0,0,0.5); border-radius: 6px; color: var(--text-muted);"></p>
+              </div>
+              <div style="display: flex; gap: 0.75rem; margin-top: 1rem;">
+                <button class="btn-gold" id="btn-modal-use-story">★ Send to Story Studio</button>
+                <button class="btn-glass" id="btn-modal-use-img2img">🖼 Send to Img2Img</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==============================================================================
+         TAB 5: SYSTEM TELEMETRY
+         ============================================================================== -->
+    <section id="tab-telemetry" class="tab-panel">
+      <div class="panel-header-bar-option3">
+        <div class="vault-title-group">
+          <h2>SYSTEM MONITORING / <span>HARDWARE ACCELERATION</span></h2>
+          <p>Apple Metal Performance Shaders (MPS) Unified Memory & Model Health</p>
+        </div>
+        <div>
+          <button class="btn-glass" id="btn-purge-vram">🧹 Purge VRAM Cache</button>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.75rem; margin-top: 1.25rem;">
+        <div class="preview-card-opt1">
+          <span style="font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase;">MPS Unified Memory</span>
+          <div style="font-size: 2.2rem; font-weight: 800; font-family: var(--font-display); color: #FFFFFF; margin: 0.5rem 0;" id="sys-vram-gb">18.2 / 24 GB</div>
+          <small style="color: var(--emerald);" id="sys-vram-status">Optimal Zero-Copy Buffer Active</small>
+        </div>
+        <div class="preview-card-opt1">
+          <span style="font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase;">Primary Generation Engine</span>
+          <div style="font-size: 1.3rem; font-weight: 700; color: var(--gold-light); margin: 0.5rem 0;">Juggernaut XL v10</div>
+          <small style="color: var(--text-muted);">RunDiffusion NSFW Edition · Active</small>
+        </div>
+        <div class="preview-card-opt1">
+          <span style="font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase;">Method B Vector Overlay</span>
+          <div style="font-size: 2.2rem; font-weight: 800; color: #34D399; margin: 0.5rem 0;">&lt; 0.20s</div>
+          <small style="color: var(--text-muted);">High-DPI Pure Vector Math (Zero Broken Glyphs)</small>
+        </div>
+      </div>
+
+      <!-- Task Queue & Console Logs -->
+      <div class="preview-card-opt1" style="margin-top: 1.75rem;">
+        <div class="sidebar-section-title-opt1">Active Inference Task Queue</div>
+        <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.5rem;">
+          <span id="queue-task-label">IDLE · Ready to generate</span>
+          <span id="queue-count-label" style="color: var(--emerald);">0 Tasks in Queue</span>
+        </div>
+        <div style="height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden; margin-bottom: 1rem;">
+          <div id="queue-progress-bar" style="height: 100%; width: 0%; background: var(--gold-primary); transition: width 0.4s ease;"></div>
+        </div>
+
+        <!-- Dynamic Active Job Details Card -->
+        <div id="queue-active-details" style="display: none; background: rgba(255,255,255,0.03); border: 1px solid rgba(212,175,55,0.25); border-radius: 8px; padding: 0.85rem 1rem; margin-bottom: 1.25rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <span class="telemetry-dot" style="background: var(--gold-primary); animation: pulse 1.5s infinite;"></span>
+              <strong id="queue-active-job-title" style="color: #FFFFFF; font-size: 0.88rem;">Master Persona Vault Generation</strong>
+            </div>
+            <span id="queue-active-job-pct" style="font-weight: 700; color: var(--gold-primary); font-size: 0.9rem;">0%</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; color: var(--text-dim); font-size: 0.78rem;">
+            <span id="queue-active-job-pack">Current: Initializing...</span>
+            <span>Elapsed: <strong id="queue-active-job-elapsed" style="color: var(--text-main);">0s</strong> · Est. Remaining: <strong id="queue-active-job-remaining" style="color: var(--gold-light);">--</strong></span>
+          </div>
+        </div>
+
+        <div class="sidebar-section-title-opt1" style="margin-top: 1.5rem;">Real-time Telemetry & Pipeline Log Stream</div>
+        <pre id="sys-log-stream" style="background: rgba(7, 10, 15, 0.9); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 1rem; font-family: monospace; font-size: 0.75rem; color: #94A3B8; height: 180px; overflow-y: auto;">
+[MPS Runtime] Apple M-Series Metal Performance Shaders initialized.
+[Pipeline] Juggernaut XL v10 checkpoint mapped to memory.
+[Engine] Method B Dynamic Typography Engine online (Italiana, Cinzel, Montserrat).
+[Vault] Master Persona Vault loaded with 3 canonical anchors.
+[System] System ready. All inference workers idle.
+        </pre>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ==============================================================================
+       MODAL: DELETE / ARCHIVE PERSONA CONFIRMATION
+       ============================================================================== -->
+  <div id="modal-delete-persona" style="display: none; position: fixed; inset: 0; background: rgba(7, 10, 15, 0.88); backdrop-filter: blur(16px); z-index: 2000; align-items: center; justify-content: center; padding: 1.5rem;">
+    <div style="background: linear-gradient(180deg, #161D2B 0%, #0D131F 100%); border: 1.5px solid rgba(239, 68, 68, 0.45); border-radius: 14px; max-width: 520px; width: 100%; padding: 1.75rem; box-shadow: 0 24px 60px rgba(0,0,0,0.7), 0 0 35px rgba(239, 68, 68, 0.15);">
+      <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 0.85rem; margin-bottom: 1.25rem;">
+        <div style="display: flex; align-items: center; gap: 0.65rem;">
+          <span style="display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; background: rgba(239, 68, 68, 0.2); color: #EF4444; font-size: 1.1rem;">🗑</span>
+          <h3 style="margin: 0; font-size: 1.15rem; color: #FFFFFF; font-family: var(--font-display);">Archive &amp; Delete Persona</h3>
+        </div>
+        <span id="btn-close-delete-modal" style="cursor: pointer; color: var(--text-muted); font-size: 1.4rem; line-height: 1;">✕</span>
+      </div>
+
+      <div style="margin-bottom: 1.15rem;">
+        <label style="display: block; font-size: 0.78rem; text-transform: uppercase; color: var(--text-dim); margin-bottom: 0.4rem; letter-spacing: 0.05em;">Select Persona to Archive &amp; Delete:</label>
+        <select id="del-modal-persona-select" class="persona-select-native" style="width: 100%; padding: 0.65rem 0.85rem; background: rgba(0, 0, 0, 0.4); border: 1.5px solid rgba(255, 255, 255, 0.15); border-radius: 8px; color: #FFFFFF; font-size: 0.92rem; font-weight: 600;">
+        </select>
+      </div>
+
+      <div style="display: flex; gap: 1rem; align-items: center; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.07); border-radius: 10px; padding: 0.85rem 1rem; margin-bottom: 1.25rem;">
+        <img id="del-modal-avatar" src="" alt="Persona Avatar" style="width: 56px; height: 56px; border-radius: 8px; object-fit: cover; border: 1.5px solid rgba(212, 175, 55, 0.4);" />
+        <div>
+          <h4 id="del-modal-name" style="margin: 0 0 0.2rem 0; font-size: 1rem; color: #FFFFFF;">Persona Name</h4>
+          <p id="del-modal-meta" style="margin: 0; font-size: 0.82rem; color: var(--text-dim);">21 YRS · Origin</p>
+        </div>
+      </div>
+
+      <div style="font-size: 0.85rem; color: #CBD5E1; line-height: 1.5; margin-bottom: 1.5rem;">
+        <div style="color: var(--text-dim); font-size: 0.82rem; background: rgba(239, 68, 68, 0.08); border-left: 3px solid #EF4444; padding: 0.65rem 0.85rem; border-radius: 4px;">
+          <strong style="color: #FCA5A5;">Vault Protection:</strong> The persona and all its assets will be safely stored in the <em>Archive Vault</em> (accessible from Media Gallery) and can be restored back to active studio at any time.
+        </div>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+        <button class="btn-glass" id="btn-cancel-delete-modal" style="padding: 0.6rem 1.25rem; font-size: 0.88rem;">Cancel</button>
+        <button class="btn-delete-persona" id="btn-confirm-delete-modal" style="padding: 0.6rem 1.35rem; background: #DC2626; color: #FFFFFF; border: none; font-weight: 700; font-size: 0.88rem; cursor: pointer;">
+          🗑 Confirm &amp; Archive
+        </button>
+      </div>
+    </div>
   </div>
-  <script type="module" src="/static/app.js?v=16"></script>
+
+  <script src="/static/app.js?v=53"></script>
 </body>
 </html>

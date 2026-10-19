@@ -349,3 +349,43 @@ def test_phase5_asset_manifest_and_approved_export_package(client):
     assert package.status_code == 200
     with zipfile.ZipFile(io.BytesIO(package.content)) as archive:
         assert {'manifest.json', 'AI-DISCLOSURE.txt'} <= set(archive.namelist())
+
+
+def test_photo_studio_presets(client):
+    res = client.get('/api/photo-studio/presets')
+    assert res.status_code == 200
+    data = res.json()
+    assert 'locations' in data
+    assert 'costumes' in data
+    assert 'expressions' in data
+    assert 'angles' in data
+    assert 'aspect_ratios' in data
+    assert len(data['locations']) >= 4
+    assert len(data['costumes']) >= 4
+
+
+def test_photo_studio_compile_prompt(client):
+    persona = client.post('/api/personas', json={
+        'name': 'Lena Hartmann', 'age': 27,
+        'appearance': 'hazel-green eyes with amber flecks, tiny crescent freckle below left eye, wavy dark chestnut hair, defined cheekbones',
+        'description': 'fictional German creator'
+    }).json()
+
+    res = client.post('/api/photo-studio/compile-prompt', json={
+        'persona_id': persona['id'],
+        'location': 'Amalfi beach',
+        'costume': 'black string bikini',
+        'expression': 'confident editorial gaze',
+        'angle': 'full body editorial shot',
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert 'Lena Hartmann' in data['prompt']
+    assert '27yo woman' in data['prompt']
+    assert 'black string bikini' in data['prompt']
+    assert 'Amalfi beach' in data['prompt']
+    assert 'crescent freckle' in data['prompt']
+    assert 'anime' in data['negative_prompt']
+    assert 'cartoon' in data['negative_prompt']
+    assert data['token_estimate'] > 10
+

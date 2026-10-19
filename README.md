@@ -4,6 +4,92 @@
 
 > IMPORTANT — “Free” never means “no license.” Apache-2.0, MIT and GPL-3.0 all have legally binding terms. You must respect required notices and third-party dependencies. You pay for your hardware, electricity, disk capacity and internet bandwidth if applicable. GitHub generally hosts **code**, while large **model weights** are distributed free from public Hugging Face repositories. This project does not bundle model weights.
 
+---
+
+## 🧠 Neural Models & Persona Generation Architecture
+
+> **Git-Ignore Notice**: Large model weights (`.safetensors`, `.bin`, `.gguf`, `.onnx`, `models/`) are strictly excluded from git tracking via [.gitignore](file:///.gitignore) to keep the repository lightweight. Model weights are stored locally in the `models/` directory according to the specifications below.
+
+AI Influencer Studio utilizes a multi-model neural pipeline tailored for ultra-consistent, photorealistic virtual influencer synthesis, multi-angle biometric identity freezing, and video animation.
+
+### 1. Primary Persona Synthesis Checkpoint: Juggernaut XL v10 (RunDiffusion NSFW Edition)
+* **Local Checkpoint Path**: `models/juggernaut-xl-v10/Juggernaut-X-RunDiffusion-NSFW.safetensors`
+* **Base Architecture**: Stable Diffusion XL (SDXL) Base 1.0 (Dual CLIP text encoders: OpenCLIP ViT-bigG/14 + OpenAI ViT-L/14, 77-token budgeting)
+* **Inference Precision**: `fp16` on Apple Silicon Metal Performance Shaders (MPS) or NVIDIA CUDA
+* **Scheduler**: `DPMSolverMultistepScheduler` (Karras sigmas), 20–30 inference steps, Guidance Scale (CFG): 5.0–7.0
+* **Target Resolutions**: 768×1152 (2:3 portrait standard), 832×1216 (9:16 vertical story), 1024×1024 (1:1 square)
+* **Why this model**: Juggernaut XL v10 by RunDiffusion is specifically trained for hyper-realistic human skin micro-pores, natural catchlights, fine facial bone structures, and anatomically precise body proportions (e.g. 36-24-30 standard, athletic hourglass curves).
+* **Role in Master Persona Vault**: Generates all **13 Frozen Vault Reference Packs**:
+  1. `01 Front (0° Turnaround)` — Direct eye-level canonical portrait
+  2. `02 Left (-90° Turnaround)` — Left side profile anchor
+  3. `03 Right (+90° Turnaround)` — Right side profile anchor
+  4. `04 Back (180° Turnaround)` — Rear silhouette, neck & cascading hair anchor
+  5. `05 Macro Eyes & Lips` — Extreme close-up epidermal texture & iris striations
+  6. `06 High Fashion` — Editorial tailored styling
+  7. `07 Athleisure` — Sculpted fitness & dynamic gym posture
+  8. `08 Casual Street` — Metropolitan candid lifestyle
+  9. `09 Resortwear` — Golden hour poolside promenade
+  10. `10 Boudoir Half (18+)` — Intimate satin baseline
+  11. `11 Boudoir Full (18+)` — Artistic full silhouette
+  12. `12 Lingerie Half (18+)` — Sheer lace intimate baseline
+  13. `13 Lingerie & Stockings (18+)` — Full stockings & corset baseline
+
+---
+
+### 2. Facial Identity Anchor: IP-Adapter FaceID PlusV2 SDXL
+* **Local Weights Path**:
+  * `models/ip-adapter-faceid/ip-adapter-faceid-plusv2_sdxl.bin`
+  * `models/ip-adapter-faceid/ip-adapter-faceid-plusv2_sdxl_lora.safetensors`
+* **Identity Extractor**: InsightFace `buffalo_l` (512-dimensional normalized facial embedding vector)
+* **Role**: Ingests the 0° canonical front portrait and projects face-id vectors into the cross-attention layers of the SDXL UNet. This mathematically forces identical bone structure, eye shape, nose bridge, and lip curves across all subsequent photoshoot generations and diverse camera angles.
+
+---
+
+### 3. Alternative Checkpoints & Benchmark Engines
+* **CyberRealistic XL Play v10.0 FP16** (`models/cyberrealistic-xl/CyberRealisticXLPlay_V10.0_FP16.safetensors`): Specialized for softer daylight illumination and European/Mediterranean facial features.
+* **Pony Diffusion V6 XL** (`models/pony-diffusion-v6-xl/ponyDiffusionV6XL_v6StartWithThisOne.safetensors`): High-aesthetic artistic baseline testing.
+* **FLUX.1-dev Q4_K_S GGUF** (`models/flux-1-dev-gguf/flux1-dev-Q4_K_S.gguf`) with `scg-anatomy-female-v2` LoRA (`models/flux-lora/`): 12B flow-matching transformer for next-generation biometric benchmark rendering.
+
+---
+
+### 4. Motion, Story & Video Engines
+* **Stable Video Diffusion XT (SVD-XT 1.1)** (`models/svd-xt/`): Converts frozen 13-pack master persona keyframes into cinematic 25-frame vertical reel clips without face distortion.
+* **LivePortrait Engine** (`LivePortrait/`): Landmark-guided neural facial animation for Story Studio talking head videos and dynamic speech synchronization.
+
+---
+
+### 5. Local Models Directory Layout
+
+Place downloaded weights in the following structure:
+
+```
+models/
+├── juggernaut-xl-v10/
+│   └── Juggernaut-X-RunDiffusion-NSFW.safetensors   # (Primary Master Persona Checkpoint ~6.6 GB)
+├── ip-adapter-faceid/
+│   ├── ip-adapter-faceid-plusv2_sdxl.bin           # (FaceID adapter weights)
+│   └── ip-adapter-faceid-plusv2_sdxl_lora.safetensors # (FaceID LoRA weights)
+├── cyberrealistic-xl/
+│   └── CyberRealisticXLPlay_V10.0_FP16.safetensors  # (Alternative photorealism)
+├── pony-diffusion-v6-xl/
+│   ├── ponyDiffusionV6XL_v6StartWithThisOne.safetensors
+│   └── sdxl_vae.safetensors
+├── flux-1-dev-gguf/
+│   └── flux1-dev-Q4_K_S.gguf
+├── flux-lora/
+│   └── scg-anatomy-female-v2.safetensors
+└── svd-xt/
+    ├── unet/diffusion_pytorch_model.fp16.safetensors
+    ├── image_encoder/model.fp16.safetensors
+    └── vae/diffusion_pytorch_model.fp16.safetensors
+```
+
+### 6. Hardware Acceleration
+* **Apple Silicon (M1/M2/M3/M4 Max/Ultra)**: Accelerated via PyTorch Metal Performance Shaders (`torch.backends.mps`) with FP16 zero-copy unified memory. Recommended: 24 GB+ unified memory.
+* **NVIDIA RTX GPUs**: Accelerated via PyTorch CUDA with FP16 or BF16. Recommended: 16 GB–24 GB VRAM (RTX 3090, 4080, 4090, or A100/H100).
+
+---
+
 ## What is actually runnable?
 
 - ✅ Existing **FastAPI + SQLite dashboard**, persona reference library, manual review and ComfyUI API bridge.

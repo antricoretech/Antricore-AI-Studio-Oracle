@@ -45,7 +45,12 @@ from .preflight import workflow_preflight
 from .provenance import manifest, media_metadata, quality_report, sha256_bytes
 from .repositories import JobRepository, PersonaRepository, SeriesRepository
 from .readiness import evaluate as evaluate_readiness
-from .schemas import JobIn, LinkIn, PersonaIn, ReviewIn, SeriesEpisodeIn, SeriesIn, SeriesQueueIn, VoiceIn
+from .schemas import (
+    JobIn, LinkIn, PersonaIn, ReviewIn, SeriesEpisodeIn, SeriesIn, SeriesQueueIn, VoiceIn, PhotoStudioPromptIn, PhotoStudioGenerateIn,
+    OrchestratorCompilePersonaIn, OrchestratorCreatePersonaIn, OrchestratorRenderAnchorIn, OrchestratorLockAnchorIn,
+    OrchestratorSynthesizeScenesIn, OrchestratorBatchGenerateIn
+)
+from . import orchestrator
 from .settings import get_settings
 
 logger = logging.getLogger("studio")
@@ -78,6 +83,10 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="AI Influencer Studio", version="0.1.0", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
+app.mount("/generated", StaticFiles(directory=ROOT / "generated"), name="generated")
+
+from .api_v2 import router as v2_router
+app.include_router(v2_router, prefix="/api/v2")
 
 
 @app.middleware("http")
@@ -873,3 +882,534 @@ def summary():
     return {"personas": count("personas"), "jobs": count("jobs"), "assets": count("assets"),
             "approved": count("assets", "WHERE review='approved'"),
             "clicks": db.row("SELECT COALESCE(SUM(clicks),0) AS n FROM links")["n"]}
+
+
+PHOTO_STUDIO_PRESETS = {
+    "locations": [
+        {"id": "med_beach", "label": "🏖️ Mediterranean Beach", "prompt": "sunlit Mediterranean beach in Amalfi, azure sea waves, warm golden sunlight, soft white sand, coastal cliffs backdrop"},
+        {"id": "luxury_loft", "label": "🏢 Minimalist Modern Loft", "prompt": "modern minimalist architectural loft, floor-to-ceiling glass windows, soft afternoon diffused natural light, concrete and warm oak interior"},
+        {"id": "paris_cafe", "label": "☕ Parisian Café Terrace", "prompt": "quaint Parisian sidewalk café terrace, cobblestones, warm ambient bistro glow, blurred street bokeh, elegant outdoor table"},
+        {"id": "penthouse_balcony", "label": "🌆 Penthouse Balcony Twilight", "prompt": "luxury high-rise penthouse glass balcony, dramatic city skyline at twilight, architectural glass railing, sophisticated ambient mood lighting"},
+        {"id": "tropical_resort", "label": "🌿 Tropical Private Villa", "prompt": "private tropical infinity pool villa, lush palm fronds, turquoise water reflections, bright sun-drenched resort atmosphere"},
+        {"id": "art_studio", "label": "🏛️ High-End Art Gallery", "prompt": "contemporary minimalist art gallery, polished concrete floors, dramatic museum spotlighting, clean architectural lines"},
+    ],
+    "costumes": [
+        {"id": "black_bikini", "label": "👙 Designer String Bikini", "prompt": "minimalist designer black string bikini, sheer unbuttoned white linen oversized shirt draped over shoulders, delicate gold body chain"},
+        {"id": "emerald_slip", "label": "👗 Emerald Silk Slip Dress", "prompt": "emerald green backless silk slip dress, thin delicate straps, fluid luxurious fabric, floor-length minimalist silhouette"},
+        {"id": "oversized_blazer", "label": "🧥 Tailored Oversized Blazer", "prompt": "chic oversized charcoal wool blazer, minimalist black silk bralette underneath, high-waisted tailored trousers"},
+        {"id": "ribbed_swimsuit", "label": "🏊 White Ribbed Swimsuit", "prompt": "sporty white ribbed one-piece swimsuit, high-cut leg, scoop back, clean athletic elegance"},
+        {"id": "cashmere_denim", "label": "👚 Off-Shoulder Cashmere", "prompt": "relaxed off-shoulder ivory cashmere knit sweater, vintage high-waist denim, effortless Parisian casual chic"},
+        {"id": "crochet_resort", "label": "✨ Terracotta Crochet Set", "prompt": "terracotta crochet bikini set with matching sheer macramé resort cover-up skirt, golden summer resort fashion"},
+    ],
+    "expressions": [
+        {"id": "confident_gaze", "label": "✨ Confident Editorial Gaze", "prompt": "confident poised editorial gaze directly into lens, subtle parted lips, composed magnetic expression"},
+        {"id": "candid_smile", "label": "😊 Warm Candid Smile", "prompt": "spontaneous radiant candid smile, crinkled hazel-green eyes with warmth, joyful relaxed natural expression"},
+        {"id": "seductive_moody", "label": "🌙 Seductive & Mysterious", "prompt": "seductive intense gaze over shoulder, moody alluring expression, dramatic captivating eyes"},
+        {"id": "thoughtful_calm", "label": "💭 Thoughtful & Observant", "prompt": "thoughtful serene gaze looking slightly away from camera, soft contemplative resting expression"},
+    ],
+    "angles": [
+        {"id": "full_body", "label": "📸 Full Body Editorial", "prompt": "full body fashion editorial shot, head to toe framing, standing poised, natural posture, clean perspective"},
+        {"id": "medium_shot", "label": "👤 Medium Shot (Waist-Up)", "prompt": "medium shot waist-up portrait, balanced framing capturing wardrobe styling and facial expressions"},
+        {"id": "close_up", "label": "🔍 Intimate Close-Up Portrait", "prompt": "intimate close-up portrait, focusing on sharp hazel-green eyes with amber flecks, natural skin pores, crescent freckle, subtle parted lips"},
+        {"id": "candid_35mm", "label": "📐 35mm Candid Dynamic", "prompt": "candid 35mm street photography framing, slightly low angle dynamic composition, cinematic depth of field"},
+    ],
+    "aspect_ratios": [
+        {"id": "portrait_2_3", "label": "Portrait (2:3 · 768×1152)", "width": 768, "height": 1152},
+        {"id": "vertical_9_16", "label": "Story / Vertical (9:16 · 704×1280)", "width": 704, "height": 1280},
+        {"id": "standard_3_4", "label": "Standard (3:4 · 832×1104)", "width": 832, "height": 1104},
+        {"id": "square_1_1", "label": "Square (1:1 · 1024×1024)", "width": 1024, "height": 1024},
+    ],
+}
+
+
+def build_photo_studio_prompt(person: dict, payload: PhotoStudioPromptIn) -> tuple[str, str]:
+    name = person.get("name", "Adult model")
+    age = person.get("age", 25)
+    shot = payload.angle.strip() or "Raw candid 35mm photograph, full body editorial shot"
+    subject = f"{age}yo woman {name}"
+    costume = payload.costume.strip() or "designer minimalist swimwear"
+    expression = payload.expression.strip() or "confident editorial gaze"
+    location = payload.location.strip() or "sunlit Mediterranean terrace"
+    custom = f", {payload.custom_direction.strip()}" if payload.custom_direction.strip() else ""
+
+    primary = f"{shot} of {subject}, wearing {costume}, {expression}, {location}{custom}."
+
+    appearance = person.get("appearance", "")
+    anchor_bits = []
+    if "crescent" in appearance.lower():
+        anchor_bits.append("fictional tiny crescent freckle below left eye")
+    if "hazel" in appearance.lower() or "green" in appearance.lower():
+        anchor_bits.append("hazel-green eyes with amber flecks")
+    if "chestnut" in appearance.lower() or "dark" in appearance.lower():
+        anchor_bits.append("wavy dark chestnut hair")
+    if "cheekbones" in appearance.lower() or "oval" in appearance.lower():
+        anchor_bits.append("defined cheekbones, soft oval face")
+
+    anchor_str = (", ".join(anchor_bits) + ".") if anchor_bits else "natural realistic facial features."
+    tech_suffix = "Sharp focus on eyes and natural skin pores, natural skin texture, soft diffused golden hour lighting, 8k dslr, photographic masterpiece, 35mm film grain, masterpiece, highly detailed."
+
+    full_prompt = f"{primary} {anchor_str} {tech_suffix}"
+    negative_prompt = (
+        "anime, cartoon, graphic, 3d render, cgi, illustration, drawing, painting, "
+        "stylized, doll, plastic skin, oversaturated, deformed iris, blurry, bad anatomy, "
+        "bad hands, missing fingers, extra limbs, extra fingers, watermark, text, signature, "
+        "low quality, child, teenager, minor, real-person likeness"
+    )
+    return full_prompt, negative_prompt
+
+
+@app.get("/api/photo-studio/presets")
+def get_photo_studio_presets():
+    return PHOTO_STUDIO_PRESETS
+
+
+@app.post("/api/photo-studio/compile-prompt")
+def compile_photo_studio_prompt(payload: PhotoStudioPromptIn):
+    person = must_persona(payload.persona_id)
+    prompt, negative_prompt = build_photo_studio_prompt(person, payload)
+    return {
+        "persona_id": person["id"],
+        "persona_name": person["name"],
+        "prompt": prompt,
+        "negative_prompt": negative_prompt,
+        "token_estimate": len(prompt.split()),
+        "model_id": payload.model_id,
+    }
+
+
+@app.post("/api/photo-studio/generate", status_code=201)
+async def photo_studio_generate(payload: PhotoStudioGenerateIn):
+    person = must_persona(payload.persona_id)
+    if not payload.rights_confirmed:
+        raise HTTPException(400, "Rights confirmation required")
+
+    aid = uid()
+    filename = f"photo_studio_{aid}.png"
+    destination = db.OUTPUTS / filename
+    seed = payload.seed if payload.seed is not None else secrets.randbelow(1_000_000_000)
+
+    from types import SimpleNamespace
+    from .free_cli import make_image
+
+    args = SimpleNamespace(
+        prompt=payload.prompt,
+        negative_prompt=payload.negative_prompt or "anime, cartoon, 3d render, illustration, blurry, bad anatomy, plastic skin",
+        model=payload.model,
+        width=payload.width,
+        height=payload.height,
+        steps=payload.steps,
+        guidance=payload.guidance,
+        seed=seed,
+        output=str(destination),
+        reference=None,
+        cpu_offload=False,
+        offline=True,
+    )
+
+    try:
+        await asyncio.to_thread(make_image, args)
+    except Exception as exc:
+        logger.exception("photo_studio_generate_failed")
+        raise HTTPException(500, f"Image generation failed: {str(exc)[:300]}") from exc
+
+    if not destination.is_file():
+        raise HTTPException(500, "Image generation produced no output file")
+
+    raw = destination.read_bytes()
+    disclosure = person.get("disclosure") or AI_DISCLOSURE
+    metadata = media_metadata(raw, "image", filename)
+    quality = quality_report(destination, "image", disclosure)
+
+    db.write(
+        "INSERT INTO assets (id, persona_id, job_id, filename, kind, prompt, review, rights_confirmed, disclosure, created_at, sha256, metadata_json, quality_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (aid, person["id"], None, filename, "image", payload.prompt, "approved", 1, disclosure, now(), sha256_bytes(raw), json.dumps(metadata), json.dumps(quality)),
+    )
+
+    ref_dest = db.UPLOADS / filename
+    shutil.copy2(destination, ref_dest)
+    rid = uid()
+    label = f"Photo Studio: {payload.prompt[:35]}..."
+    db.write(
+        "INSERT INTO reference_images (id, persona_id, filename, label, created_at) VALUES (?,?,?,?,?)",
+        (rid, person["id"], filename, label, now()),
+    )
+
+    return {
+        "id": aid,
+        "reference_id": rid,
+        "filename": filename,
+        "url": f"/api/assets/{aid}/file",
+        "prompt": payload.prompt,
+        "negative_prompt": payload.negative_prompt,
+        "seed": seed,
+        "width": payload.width,
+        "height": payload.height,
+        "model": payload.model,
+        "created_at": now(),
+    }
+
+
+# =====================================================================
+# PERSONA ORCHESTRATION PIPELINE API
+# =====================================================================
+
+@app.get("/api/orchestrator/presets")
+def orchestrator_presets():
+    return orchestrator.get_orchestrator_presets()
+
+
+@app.get("/api/orchestrator/personas")
+def orchestrator_list_personas():
+    with db.connection() as con:
+        rows = con.execute("SELECT id, name, age, description, appearance, disclosure, characteristics_json, identity_locked, locked_at FROM personas ORDER BY created_at DESC").fetchall()
+        personas = []
+        for r in rows:
+            pid = r[0]
+            # Check for locked master anchor in reference_images
+            ref_row = con.execute("SELECT id, filename, label FROM reference_images WHERE persona_id = ? AND (label LIKE '%Master%' OR label LIKE '%Anchor%') ORDER BY created_at DESC LIMIT 1", (pid,)).fetchone()
+            anchor_info = None
+            if ref_row:
+                anchor_info = {
+                    "id": ref_row[0],
+                    "filename": ref_row[1],
+                    "label": ref_row[2],
+                    "url": f"/api/references/{ref_row[0]}/file"
+                }
+            try:
+                chars = json.loads(r[6]) if r[6] else {}
+            except Exception:
+                chars = {}
+            personas.append({
+                "id": pid,
+                "name": r[1],
+                "age": r[2],
+                "description": r[3],
+                "appearance": r[4],
+                "disclosure": r[5],
+                "characteristics": chars,
+                "identity_locked": bool(r[7]),
+                "locked_at": r[8],
+                "master_anchor": anchor_info
+            })
+        return personas
+
+
+@app.post("/api/orchestrator/compile-persona-prompt")
+def orchestrator_compile_persona(payload: OrchestratorCompilePersonaIn):
+    dna = {
+        "name": payload.name,
+        "age": payload.age,
+        "country": payload.country,
+        "region": payload.region,
+        "facial_identity": payload.facial_identity,
+        "body_physics": {
+            "body_type": payload.body_type,
+            "measurements": payload.measurements,
+            "height": payload.height,
+            "skin_tone": payload.skin_tone,
+            "breast_shape": payload.breast_shape,
+        },
+        "content_mode": payload.content_mode,
+        "aspect_ratio": payload.aspect_ratio,
+        "quality": payload.quality,
+    }
+    return orchestrator.compile_persona_master_prompt(dna)
+
+
+@app.post("/api/orchestrator/create-persona", status_code=201)
+def orchestrator_create_persona(payload: OrchestratorCreatePersonaIn):
+    pid = uid()
+    chars = {
+        "country": payload.country,
+        "region": payload.region,
+        "facial_identity": payload.facial_identity,
+        "body_physics": payload.body_physics,
+        "content_mode": payload.content_mode,
+        "master_prompt": payload.master_prompt,
+        "negative_prompt": payload.negative_prompt,
+        "aspect_ratio": payload.aspect_ratio,
+        "quality": payload.quality,
+    }
+    chars_json = json.dumps(chars)
+    appearance = f"{payload.country} ({payload.region}), {payload.facial_identity}, {payload.body_physics.get('measurements', '')} {payload.body_physics.get('body_type', '')}"
+    description = f"Fictional adult persona {payload.name}, {payload.age}yo from {payload.region}, {payload.country}."
+    disclosure = f"Fictional adult persona: {payload.name}. AI-generated synthetic media."
+
+    db.write(
+        "INSERT INTO personas (id, name, age, description, appearance, disclosure, created_at, characteristics_json, identity_locked) VALUES (?,?,?,?,?,?,?,?,0)",
+        (pid, payload.name, payload.age, description, appearance, disclosure, now(), chars_json)
+    )
+    return {
+        "id": pid,
+        "name": payload.name,
+        "age": payload.age,
+        "country": payload.country,
+        "region": payload.region,
+        "characteristics": chars,
+        "created_at": now()
+    }
+
+
+@app.post("/api/orchestrator/render-anchor", status_code=201)
+async def orchestrator_render_anchor(payload: OrchestratorRenderAnchorIn):
+    person = must_persona(payload.persona_id)
+    width, height = orchestrator.ASPECT_RATIOS.get(payload.aspect_ratio, (768, 1152))
+    seed = payload.seed if payload.seed is not None else secrets.randbelow(1_000_000_000)
+
+    try:
+        dest_path = await asyncio.to_thread(
+            orchestrator.generate_orchestrator_image,
+            prompt=payload.prompt,
+            negative_prompt=payload.negative_prompt,
+            model_id=payload.model,
+            width=width,
+            height=height,
+            seed=seed,
+            quality=payload.quality,
+        )
+    except Exception as exc:
+        logger.exception("orchestrator_render_anchor_failed")
+        raise HTTPException(500, f"Master Anchor generation failed: {str(exc)[:300]}") from exc
+
+    raw = dest_path.read_bytes()
+    aid = uid()
+    filename = dest_path.name
+    disclosure = person.get("disclosure") or AI_DISCLOSURE
+    metadata = media_metadata(raw, "image", filename)
+    quality = quality_report(dest_path, "image", disclosure)
+
+    db.write(
+        "INSERT INTO assets (id, persona_id, job_id, filename, kind, prompt, review, rights_confirmed, disclosure, created_at, sha256, metadata_json, quality_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (aid, person["id"], None, filename, "image", payload.prompt, "approved", 1, disclosure, now(), sha256_bytes(raw), json.dumps(metadata), json.dumps(quality)),
+    )
+
+    return {
+        "asset_id": aid,
+        "filename": filename,
+        "url": f"/api/assets/{aid}/file",
+        "prompt": payload.prompt,
+        "negative_prompt": payload.negative_prompt,
+        "seed": seed,
+        "width": width,
+        "height": height,
+        "quality": payload.quality,
+        "model": payload.model,
+    }
+
+
+@app.post("/api/orchestrator/lock-anchor")
+def orchestrator_lock_anchor(payload: OrchestratorLockAnchorIn):
+    person = must_persona(payload.persona_id)
+    with db.connection() as con:
+        asset_row = con.execute("SELECT filename, prompt FROM assets WHERE id = ?", (payload.asset_id,)).fetchone()
+        if not asset_row:
+            raise HTTPException(404, "Asset not found")
+        filename, prompt = asset_row[0], asset_row[1]
+
+    source_path = db.OUTPUTS / filename
+    ref_dest = db.UPLOADS / filename
+    if source_path.is_file():
+        shutil.copy2(source_path, ref_dest)
+
+    rid = uid()
+    label = f"Master Persona Anchor: {person['name']}"
+    db.write(
+        "INSERT INTO reference_images (id, persona_id, filename, label, created_at) VALUES (?,?,?,?,?)",
+        (rid, person["id"], filename, label, now()),
+    )
+    db.write(
+        "UPDATE personas SET identity_locked = 1, locked_at = ? WHERE id = ?",
+        (now(), person["id"])
+    )
+
+    return {
+        "status": "locked",
+        "persona_id": person["id"],
+        "reference_id": rid,
+        "filename": filename,
+        "url": f"/api/references/{rid}/file",
+        "label": label,
+    }
+
+
+@app.post("/api/orchestrator/synthesize-scenes")
+def orchestrator_synthesize_scenes(payload: OrchestratorSynthesizeScenesIn):
+    person = must_persona(payload.persona_id)
+    try:
+        chars = json.loads(person.get("characteristics_json") or "{}")
+    except Exception:
+        chars = {}
+
+    dna = {
+        "name": person["name"],
+        "age": person["age"],
+        "country": chars.get("country", ""),
+        "region": chars.get("region", ""),
+        "facial_identity": chars.get("facial_identity", person.get("appearance", "")),
+        "body_physics": chars.get("body_physics", {}),
+        "content_mode": chars.get("content_mode", "adult"),
+    }
+
+    result = orchestrator.synthesize_scene_variations(
+        persona_dna=dna,
+        narrative=payload.narrative,
+        category_id=payload.category,
+        batch_count=payload.batch_count,
+        aspect_ratio=payload.aspect_ratio,
+        quality=payload.quality
+    )
+
+    if payload.model_override:
+        result["model_id"] = payload.model_override
+        result["routing_reason"] = f"Manual override to {payload.model_override}"
+
+    return result
+
+
+@app.post("/api/orchestrator/generate-batch", status_code=201)
+async def orchestrator_generate_batch(payload: OrchestratorBatchGenerateIn):
+    person = must_persona(payload.persona_id)
+    if not payload.rights_confirmed:
+        raise HTTPException(400, "Rights confirmation required")
+
+    width, height = orchestrator.ASPECT_RATIOS.get(payload.aspect_ratio, (768, 1152))
+    generated_assets = []
+
+    for i, scene in enumerate(payload.scenes):
+        seed = secrets.randbelow(1_000_000_000)
+        try:
+            dest_path = await asyncio.to_thread(
+                orchestrator.generate_orchestrator_image,
+                prompt=scene.prompt,
+                negative_prompt=scene.negative_prompt,
+                model_id=payload.model,
+                width=width,
+                height=height,
+                seed=seed,
+                quality=payload.quality,
+                steps=payload.steps,
+                guidance=payload.guidance,
+            )
+        except Exception as exc:
+            logger.exception("orchestrator_batch_scene_failed")
+            raise HTTPException(500, f"Generation failed at scene {i+1}: {str(exc)[:300]}") from exc
+
+        raw = dest_path.read_bytes()
+        aid = uid()
+        filename = dest_path.name
+        disclosure = person.get("disclosure") or AI_DISCLOSURE
+        metadata = media_metadata(raw, "image", filename)
+        quality = quality_report(dest_path, "image", disclosure)
+
+        db.write(
+            "INSERT INTO assets (id, persona_id, job_id, filename, kind, prompt, review, rights_confirmed, disclosure, created_at, sha256, metadata_json, quality_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (aid, person["id"], None, filename, "image", scene.prompt, "approved", 1, disclosure, now(), sha256_bytes(raw), json.dumps(metadata), json.dumps(quality)),
+        )
+
+        generated_assets.append({
+            "asset_id": aid,
+            "filename": filename,
+            "url": f"/api/assets/{aid}/file",
+            "title": scene.title,
+            "location": scene.location,
+            "costume": scene.costume,
+            "expression": scene.expression,
+            "shot": scene.shot,
+            "prompt": scene.prompt,
+            "negative_prompt": scene.negative_prompt,
+            "seed": seed,
+            "width": width,
+            "height": height,
+            "quality": payload.quality,
+            "created_at": now(),
+        })
+
+    return {
+        "persona_id": person["id"],
+        "persona_name": person["name"],
+        "total_generated": len(generated_assets),
+        "assets": generated_assets,
+    }
+
+
+@app.get("/api/orchestrator/export-json/{persona_id}")
+def orchestrator_export_json(persona_id: str):
+    person = must_persona(persona_id)
+    try:
+        chars = json.loads(person.get("characteristics_json") or "{}")
+    except Exception:
+        chars = {}
+
+    with db.connection() as con:
+        ref_row = con.execute("SELECT id, filename, label FROM reference_images WHERE persona_id = ? AND (label LIKE '%Master%' OR label LIKE '%Anchor%') ORDER BY created_at DESC LIMIT 1", (person["id"],)).fetchone()
+
+    payload = {
+        "version": "1.0",
+        "name": person["name"],
+        "age": person["age"],
+        "demographics": {
+            "country": chars.get("country", ""),
+            "region": chars.get("region", ""),
+        },
+        "facial_identity": chars.get("facial_identity", person.get("appearance", "")),
+        "body_physics": chars.get("body_physics", {}),
+        "content_mode": chars.get("content_mode", "adult"),
+        "master_prompt": chars.get("master_prompt", ""),
+        "negative_prompt": chars.get("negative_prompt", ""),
+        "aspect_ratio": chars.get("aspect_ratio", "2:3"),
+        "quality": chars.get("quality", "4K"),
+        "master_anchor_file": ref_row[1] if ref_row else None,
+        "exported_at": now()
+    }
+    return JSONResponse(content=payload, headers={"Content-Disposition": f'attachment; filename="persona_{person["name"].lower().replace(" ", "_")}.json"'})
+
+
+@app.post("/api/orchestrator/import-json", status_code=201)
+async def orchestrator_import_json(request: Request):
+    try:
+        body = await request.json()
+    except Exception as exc:
+        raise HTTPException(400, "Invalid JSON payload") from exc
+
+    name = body.get("name") or "Imported Persona"
+    age = int(body.get("age", 23))
+    demographics = body.get("demographics", {})
+    country = demographics.get("country") or body.get("country") or "Germany"
+    region = demographics.get("region") or body.get("region") or "Bavaria"
+    facial = body.get("facial_identity") or body.get("appearance") or ""
+    body_phys = body.get("body_physics") or {}
+
+    chars = {
+        "country": country,
+        "region": region,
+        "facial_identity": facial,
+        "body_physics": body_phys,
+        "content_mode": body.get("content_mode", "adult"),
+        "master_prompt": body.get("master_prompt", ""),
+        "negative_prompt": body.get("negative_prompt", ""),
+        "aspect_ratio": body.get("aspect_ratio", "2:3"),
+        "quality": body.get("quality", "4K"),
+    }
+
+    pid = uid()
+    appearance = f"{country} ({region}), {facial}, {body_phys.get('measurements', '')} {body_phys.get('body_type', '')}"
+    description = f"Imported fictional persona {name}, {age}yo from {region}, {country}."
+    disclosure = f"Fictional adult persona: {name}. AI-generated synthetic media."
+
+    db.write(
+        "INSERT INTO personas (id, name, age, description, appearance, disclosure, created_at, characteristics_json, identity_locked) VALUES (?,?,?,?,?,?,?,?,0)",
+        (pid, name, age, description, appearance, disclosure, now(), json.dumps(chars))
+    )
+
+    return {
+        "id": pid,
+        "name": name,
+        "age": age,
+        "country": country,
+        "region": region,
+        "characteristics": chars,
+        "status": "imported",
+        "created_at": now()
+    }
+
+

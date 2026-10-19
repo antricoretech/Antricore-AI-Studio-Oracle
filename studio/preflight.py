@@ -29,14 +29,19 @@ def _catalog_item(workflow_id: str | None):
 
 
 def _runtime_vram_gb() -> float | None:
-    """Best-effort CUDA memory probe; absent CUDA is reported as unknown."""
+    """Best-effort GPU memory probe (CUDA or Apple Silicon unified memory)."""
     try:
         if importlib.util.find_spec("torch") is None:
             return None
         import torch
-        if not torch.cuda.is_available():
-            return None
-        return round(torch.cuda.get_device_properties(0).total_memory / (1024 ** 3), 1)
+        if torch.cuda.is_available():
+            return round(torch.cuda.get_device_properties(0).total_memory / (1024 ** 3), 1)
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            import subprocess
+            res = subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True)
+            if res.returncode == 0 and res.stdout.strip():
+                return round(int(res.stdout.strip()) / (1024 ** 3), 1)
+        return None
     except Exception:
         return None
 
@@ -57,11 +62,11 @@ def _model_checks(model_id: str | None, task: str | None, backend: str | None):
     required = metadata.get("min_vram_gb")
     actual = _runtime_vram_gb()
     if required and actual is None:
-        checks.append({"id": "model_vram", "status": "warning", "detail": f"Need at least {required} GiB VRAM; CUDA memory could not be detected", "required_vram_gb": required})
+        checks.append({"id": "model_vram", "status": "warning", "detail": f"Need at least {required} GiB VRAM; GPU memory could not be detected", "required_vram_gb": required})
     elif required and actual < required:
-        checks.append({"id": "model_vram", "status": "error", "detail": f"Detected {actual:.1f} GiB VRAM; model requires at least {required} GiB", "required_vram_gb": required, "vram_gb": actual})
+        checks.append({"id": "model_vram", "status": "error", "detail": f"Detected {actual:.1f} GiB memory; model requires at least {required} GiB", "required_vram_gb": required, "vram_gb": actual})
     elif required:
-        checks.append({"id": "model_vram", "status": "ready", "detail": f"Detected {actual:.1f} GiB VRAM (minimum {required} GiB)", "required_vram_gb": required, "vram_gb": actual})
+        checks.append({"id": "model_vram", "status": "ready", "detail": f"Detected {actual:.1f} GiB unified/GPU memory (minimum {required} GiB)", "required_vram_gb": required, "vram_gb": actual})
     return checks
 
 
@@ -87,6 +92,8 @@ def workflow_preflight(workflow_id: str | None = None, model_id: str | None = No
 
     if not workflow_id:
         checks.append({"id": "workflow", **check(False, "Select a workflow to validate its placeholders")})
+    elif backend == "direct-cli":
+        checks.append({"id": "workflow", "status": "ready", "detail": f"Direct CLI workflow '{workflow_id}' engine ready"})
     else:
         if not workflow_id.replace("_", "").replace("-", "").isalnum():
             checks.append({"id": "workflow", "status": "error", "detail": "Invalid workflow id"})
@@ -111,8 +118,9 @@ def workflow_preflight(workflow_id: str | None = None, model_id: str | None = No
                        "detail": f"{width}x{height} matches {multiple}px alignment" if valid else f"Width and height must be multiples of {multiple} for {task or 'this workflow'}",
                        "width": width, "height": height, "multiple": multiple})
 
-    ffmpeg = shutil.which("ffmpeg")
-    checks.append({"id": "ffmpeg", **check(bool(ffmpeg), ffmpeg or "FFmpeg is not on PATH")})
+    if task and ("audio" in task or "assembly" in task or "video" in task):
+        ffmpeg = shutil.which("ffmpeg")
+        checks.append({"id": "ffmpeg", **check(bool(ffmpeg), ffmpeg or "FFmpeg is not on PATH")})
     return checks
 
 # End of read-only preflight helpers.

@@ -74,3 +74,103 @@ class SeriesQueueIn(BaseModel):
     height: int = Field(default=1280, ge=256, le=2048)
     seed: int | None = Field(default=None, ge=0, le=9223372036854775807)
     rights_confirmed: bool = False
+
+
+class PhotoStudioPromptIn(BaseModel):
+    persona_id: str
+    location: str = ""
+    costume: str = ""
+    expression: str = ""
+    angle: str = ""
+    custom_direction: str = ""
+    model_id: str = "cyberrealistic-xl"
+
+
+class PhotoStudioGenerateIn(BaseModel):
+    persona_id: str
+    prompt: str = Field(min_length=5, max_length=3000)
+    negative_prompt: str = Field(default="")
+    model: str = "cyberrealistic-xl"
+    width: int = Field(default=768, ge=256, le=2048)
+    height: int = Field(default=1152, ge=256, le=2048)
+    steps: int = Field(default=28, ge=10, le=50)
+    guidance: float = Field(default=5.0, ge=1.0, le=20.0)
+    seed: int | None = None
+    rights_confirmed: bool = True
+
+
+class OrchestratorCompilePersonaIn(BaseModel):
+    name: str = Field(min_length=2, max_length=80)
+    age: int = Field(default=23, ge=18, le=110)
+    country: str = Field(default="Germany")
+    region: str = Field(default="Bavaria")
+    facial_identity: str = Field(default="")
+    body_type: str = Field(default="curvy athletic hourglass")
+    measurements: str = Field(default="34D-24-35")
+    height: str = Field(default="5'8\"")
+    skin_tone: str = Field(default="fair golden with subtle freckles")
+    breast_shape: str = Field(default="natural teardrop, realistic gravity")
+    content_mode: str = Field(default="adult")
+    aspect_ratio: str = Field(default="2:3")
+    quality: str = Field(default="4K")
+
+
+class OrchestratorCreatePersonaIn(BaseModel):
+    name: str = Field(min_length=2, max_length=80)
+    age: int = Field(default=23, ge=18, le=110)
+    country: str = Field(default="Germany")
+    region: str = Field(default="Bavaria")
+    facial_identity: str = Field(default="")
+    body_physics: dict = Field(default_factory=dict)
+    content_mode: str = Field(default="adult")
+    master_prompt: str = Field(min_length=10, max_length=4000)
+    negative_prompt: str = Field(default="")
+    aspect_ratio: str = Field(default="2:3")
+    quality: str = Field(default="4K")
+
+
+class OrchestratorRenderAnchorIn(BaseModel):
+    persona_id: str
+    prompt: str = Field(min_length=10, max_length=4000)
+    negative_prompt: str = Field(default="")
+    model: str = Field(default="cyberrealistic-xl")
+    aspect_ratio: str = Field(default="2:3")
+    quality: str = Field(default="4K")
+    seed: int | None = None
+
+
+class OrchestratorLockAnchorIn(BaseModel):
+    persona_id: str
+    asset_id: str
+
+
+class OrchestratorSynthesizeScenesIn(BaseModel):
+    persona_id: str
+    narrative: str = Field(min_length=5, max_length=2000)
+    category: str = Field(default="adult_intimate")
+    batch_count: int = Field(default=3, ge=1, le=8)
+    aspect_ratio: str = Field(default="2:3")
+    quality: str = Field(default="4K")
+    model_override: str | None = None
+
+
+class OrchestratorSceneItem(BaseModel):
+    title: str = ""
+    location: str = ""
+    costume: str = ""
+    expression: str = ""
+    shot: str = ""
+    prompt: str
+    negative_prompt: str = ""
+
+
+class OrchestratorBatchGenerateIn(BaseModel):
+    persona_id: str
+    scenes: list[OrchestratorSceneItem]
+    model: str = "cyberrealistic-xl"
+    aspect_ratio: str = "2:3"
+    quality: str = "4K"
+    steps: int = Field(default=30, ge=15, le=50)
+    guidance: float = Field(default=5.0, ge=1.0, le=15.0)
+    rights_confirmed: bool = True
+

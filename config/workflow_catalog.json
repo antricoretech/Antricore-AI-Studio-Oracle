@@ -39,6 +39,32 @@
     "requires_audio": false
   },
   {
+    "id": "pony_diffusion_v6_xl_txt2img",
+    "label": "Pony Diffusion V6 XL · uncensored text to image",
+    "category": "image",
+    "backend": "direct-cli",
+    "model": "pony-diffusion-v6-xl",
+    "task": "image.text_to_image",
+    "description": "Uncensored, highly expressive SDXL model with strong prompt adherence for adult influencers.",
+    "ready": false,
+    "requires_reference": false,
+    "requires_checkpoint": false,
+    "requires_audio": false
+  },
+  {
+    "id": "cyberrealistic_xl_txt2img",
+    "label": "CyberRealistic XL · ultra-photorealistic text to image",
+    "category": "image",
+    "backend": "direct-cli",
+    "model": "cyberrealistic-xl",
+    "task": "image.text_to_image",
+    "description": "Ultra-photorealistic SDXL model fine-tuned on real DSLR photography and film scans without anime bias.",
+    "ready": false,
+    "requires_reference": false,
+    "requires_checkpoint": false,
+    "requires_audio": false
+  },
+  {
     "id": "wan22_ti2v_image_to_video",
     "label": "Wan2.2 TI2V 5B · image to video",
     "category": "video",

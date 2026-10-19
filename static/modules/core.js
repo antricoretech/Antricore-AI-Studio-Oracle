@@ -8,8 +8,9 @@ export const state = {
 
 export const names = {
   dashboard: 'Overview', personas: 'Persona Library', generate: 'Production Studio',
-  assets: 'Media Review', voice: 'Voice & Narration', funnels: 'Link Tracking',
-  workflows: 'Workflow Manager', series: 'Series Studio', monitoring: 'Monitoring',
+  photostudio: 'Photo Studio', orchestrator: 'Persona Orchestrator', assets: 'Media Review', voice: 'Voice & Narration',
+  funnels: 'Link Tracking', workflows: 'Workflow Manager', series: 'Series Studio',
+  monitoring: 'Monitoring',
 };
 
 export const $ = (selector, root = document) => root.querySelector(selector);

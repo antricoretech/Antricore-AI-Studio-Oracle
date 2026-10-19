@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <meta name="theme-color" content="#0b0f14"/>
+  <title>AI Influencer Studio · Creator control room</title>
+  <link rel="stylesheet" href="/static/styles.css?v=14" onerror="this.onerror=null;this.href='styles.css?v=14'"/>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Studio navigation">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">AI</span><span class="brand-copy"><strong>Persona Studio</strong><small>CREATOR CONTROL ROOM</small></span></div>
+      <div class="workspace-chip" aria-label="Current workspace"><span class="workspace-dot" aria-hidden="true"></span><span><strong>Cloud render workspace</strong><small>Local inference · no API credits</small></span></div>
+      <nav class="nav-list" aria-label="Primary">
+        <p class="nav-label">Workspace</p>
+        <button data-tab="dashboard" class="nav active" aria-current="page"><span class="nav-icon" aria-hidden="true">⌂</span><span>Overview</span><kbd>01</kbd></button>
+        <button data-tab="personas" class="nav"><span class="nav-icon" aria-hidden="true">◎</span><span>Persona library</span><kbd>02</kbd></button>
+        <button data-tab="photostudio" class="nav"><span class="nav-icon" aria-hidden="true">📷</span><span>Photo studio</span><kbd>03</kbd></button>
+        <button data-tab="generate" class="nav"><span class="nav-icon" aria-hidden="true">✦</span><span>Generation</span><kbd>04</kbd></button>
+        <button data-tab="assets" class="nav"><span class="nav-icon" aria-hidden="true">▧</span><span>Media review</span><kbd>04</kbd></button>
+        <p class="nav-label nav-label-spaced">Operations</p>
+        <button data-tab="voice" class="nav"><span class="nav-icon" aria-hidden="true">◖</span><span>Voice studio</span><kbd>05</kbd></button>
+        <button data-tab="workflows" class="nav"><span class="nav-icon" aria-hidden="true">⌘</span><span>Workflows</span><kbd>06</kbd></button>
+        <button data-tab="funnels" class="nav"><span class="nav-icon" aria-hidden="true">↗</span><span>Link tracking</span><kbd>07</kbd></button>
+      </nav>
+      <div class="sidebar-policy"><span class="policy-mark" aria-hidden="true">✓</span><div><strong>Review before publish</strong><small>Fictional adult identities only. Keep synthetic disclosure attached.</small></div></div>
+      <div class="sidebar-status"><span class="status-dot" id="status-dot" aria-hidden="true"></span><div><strong id="comfy-status">Checking render bridge</strong><small id="status-detail">127.0.0.1:8188</small></div></div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar"><div class="breadcrumb"><span>Persona Studio</span><span class="breadcrumb-slash">/</span><strong id="page-title">Overview</strong></div><div class="topbar-actions"><span class="environment-pill"><span class="live-dot" aria-hidden="true"></span> LOCAL CONTROL PLANE</span><button id="refresh" class="icon-button" type="button" aria-label="Refresh workspace" title="Refresh workspace">↻</button></div></header>
+      <div id="message" class="notice hidden" role="alert"></div>
+
+      <section id="dashboard" class="panel active">
+          <div class="overview-hero"><div class="hero-copy"><p class="eyebrow">FICTIONAL CHARACTER PIPELINE</p><h1>Make one character<br/><span>feel unmistakably yours.</span></h1><p class="hero-lede">Build a fictional adult persona, anchor the look with approved references, create photorealistic imagery in the Photo Studio, then review every frame before it leaves the studio.</p><div class="hero-actions"><button class="primary go-tab" data-target="photostudio" type="button">Open Photo Studio <span aria-hidden="true">📷</span></button><button class="secondary go-tab" data-target="personas" type="button">Persona library</button></div><div class="hero-proof"><span><b>01</b> Persona</span><span><b>02</b> Photo Studio</span><span><b>03</b> Review</span></div></div><div class="hero-art" aria-label="Pipeline preview"><div class="art-topline"><span>RUNBOOK</span><span class="art-status">READY TO BUILD</span></div><div class="art-canvas"><div class="art-orbit orbit-one"></div><div class="art-orbit orbit-two"></div><div class="art-card art-card-main"><span class="art-card-label">MASTER REFERENCE</span><strong>Fictional adult<br/>identity capsule</strong><span class="art-card-meta">portrait · approved inputs</span></div><div class="art-card art-card-side"><span class="art-number">04</span><span>review<br/>every export</span></div></div><div class="art-footer"><span><i class="tiny-dot"></i> GPU path</span><span>96 GB VRAM target</span></div></div></div>
+        <div class="section-heading"><div><p class="eyebrow">THE CONTROL LOOP</p><h2>From idea to approved asset</h2></div><span class="section-note">One focused workspace, one connected route</span></div>
+        <div class="stage-grid"><button class="stage-card go-tab" data-target="personas" type="button"><span class="stage-index">01</span><span class="stage-icon">◎</span><strong>Define</strong><small>Shape the fictional identity and content lane.</small><span class="stage-link">Open library →</span></button><button class="stage-card go-tab" data-target="personas" type="button"><span class="stage-index">02</span><span class="stage-icon">◈</span><strong>Anchor</strong><small>Add approved reference images for continuity.</small><span class="stage-link">Add reference →</span></button><button class="stage-card go-tab" data-target="generate" type="button"><span class="stage-index">03</span><span class="stage-icon">✦</span><strong>Generate</strong><small>Render images, motion and scenes locally.</small><span class="stage-link">Open generator →</span></button><button class="stage-card go-tab" data-target="voice" type="button"><span class="stage-index">04</span><span class="stage-icon">◖</span><strong>Narrate</strong><small>Add optional synthetic voice and audio.</small><span class="stage-link">Open voice →</span></button><button class="stage-card go-tab" data-target="assets" type="button"><span class="stage-index">05</span><span class="stage-icon">✓</span><strong>Review</strong><small>Approve, reject and disclose every output.</small><span class="stage-link">Review gallery →</span></button></div>
+        <div class="dashboard-grid"><div class="card metric-card"><div class="card-heading"><div><p class="eyebrow">STUDIO PULSE</p><h3>Workspace at a glance</h3></div><span class="card-mark">LIVE</span></div><div class="metrics"><div><span>PERSONAS</span><strong id="m-personas">0</strong></div><div><span>RENDER JOBS</span><strong id="m-jobs">0</strong></div><div><span>MEDIA FILES</span><strong id="m-assets">0</strong></div><div><span>APPROVED</span><strong id="m-approved">0</strong></div><div><span>TRACKED CLICKS</span><strong id="m-clicks">0</strong></div></div></div><div class="card readiness-card"><div class="card-heading"><div><p class="eyebrow">SYSTEM READINESS</p><h3>Render stack</h3></div><span class="readiness-badge">LOCAL</span></div><div class="readiness-row"><span class="readiness-icon">⌁</span><div><strong>Control plane</strong><small>FastAPI + SQLite dashboard</small></div><span class="ready-check">Ready</span></div><div class="readiness-row"><span class="readiness-icon">✦</span><div><strong>GPU generation</strong><small>Direct CLI + optional ComfyUI bridge</small></div><span class="ready-check" id="readiness-gpu">Check</span></div><div class="readiness-row"><span class="readiness-icon">◖</span><div><strong>Disclosure gate</strong><small>Manual approval before export</small></div><span class="ready-check">Active</span></div></div></div>
+      </section>
+
+      <section id="personas" class="panel"><div class="section-heading page-heading"><div><p class="eyebrow">02 / IDENTITY SYSTEM</p><h2>Persona library</h2><p class="muted">Define a canonical fictional adult identity, then keep the same character brief through every scene.</p></div><span class="section-note">Rights-cleared inputs only</span></div><div class="two-col persona-layout"><form id="persona-form" class="card form accent-card"><div class="card-heading"><div><p class="eyebrow">IDENTITY CAPSULE</p><h3>New fictional persona</h3></div><span class="step-badge">01</span></div><label>Name<input id="p-name" placeholder="e.g. Mira Vale" maxlength="80" required/></label><div class="twobox"><label>Age (18+)<input id="p-age" type="number" value="25" min="18" required/></label><label>Identity type<input disabled value="Fictional adult"/></label></div><label>Physical appearance<textarea id="p-appearance" required rows="4" placeholder="Facial geometry, hair, eyes, skin tone, distinguishing features…"></textarea></label><label>Personality & content focus<textarea id="p-description" required rows="3" placeholder="Lifestyle, tone, locations, recurring interests and story…"></textarea></label><button type="submit" class="primary">Save persona <span aria-hidden="true">→</span></button><p class="fine muted">Use an original character description. Do not upload a real person’s likeness without documented permission.</p></form><div class="card reference-card"><div class="card-heading"><div><p class="eyebrow">REFERENCE VAULT</p><h3>Characters & references</h3></div><span class="step-badge">02</span></div><div id="personas-list" class="stack"></div><hr/><form id="reference-form" class="form"><h4>Add master reference</h4><label>Persona<select id="r-persona" required></select></label><label>Image <span class="label-hint">PNG / JPEG / WEBP · max 20 MB</span><input type="file" id="r-file" accept="image/png,image/jpeg,image/webp" required/></label><label>Reference label<input id="r-label" value="Canonical front-facing reference"/></label><label class="check"><input type="checkbox" id="r-rights" required/> I own or have permission to use this image and likeness.</label><button class="secondary" type="submit">Upload reference</button></form><div id="reference-list" class="references"></div></div></div></section>
+
+      <section id="photostudio" class="panel">
+        <div class="section-heading page-heading">
+          <div>
+            <p class="eyebrow">03 / DEDICATED IMAGE STUDIO</p>
+            <h2>Persona Photo Studio</h2>
+            <p class="muted">Generate 100% photorealistic DSLR imagery exclusively anchored to your Persona Library. Select locations, expressions, costumes and camera angles, review the prompt in the approval gate, and render.</p>
+          </div>
+          <span class="section-note">Apple Silicon M5 · CyberRealistic XL</span>
+        </div>
+
+        <div class="card photo-studio-persona-card">
+          <div class="persona-anchor-header">
+            <div class="persona-select-wrap">
+              <label for="ps-persona-select" class="field-label">Active Persona Anchor</label>
+              <select id="ps-persona-select" class="persona-select"></select>
+            </div>
+            <div class="persona-anchor-badge">
+              <span class="live-dot"></span>
+              <span>100% DSLR Photorealism (CyberRealistic XL)</span>
+            </div>
+          </div>
+          <div id="ps-persona-details" class="persona-details-grid">
+            <!-- Dynamic Persona Details & References injected here -->
+          </div>
+        </div>
+
+        <div class="photo-studio-layout">
+          <div class="ps-controls-col">
+            <!-- 1. Location / Scene -->
+            <div class="card ps-card">
+              <div class="card-heading">
+                <div>
+                  <p class="eyebrow">SCENE & ENVIRONMENT</p>
+                  <h3>Location</h3>
+                </div>
+                <span class="ps-chip-indicator" id="ps-loc-indicator">Preset</span>
+              </div>
+              <div class="chips-grid" id="ps-location-chips"></div>
+              <div class="custom-input-wrap">
+                <input type="text" id="ps-custom-location" placeholder="Or type custom location (e.g. Santorini caldera cliffside at golden hour)..." />
+              </div>
+            </div>
+
+            <!-- 2. Costume & Wardrobe -->
+            <div class="card ps-card">
+              <div class="card-heading">
+                <div>
+                  <p class="eyebrow">WARDROBE & STYLING</p>
+                  <h3>Costume</h3>
+                </div>
+                <span class="ps-chip-indicator" id="ps-costume-indicator">Preset</span>
+              </div>
+              <div class="chips-grid" id="ps-costume-chips"></div>
+              <div class="custom-input-wrap">
+                <input type="text" id="ps-custom-costume" placeholder="Or type custom wardrobe (e.g. minimalist two-piece bikini)..." />
+              </div>
+            </div>
+
+            <!-- 3. Expressions & Emotion -->
+            <div class="card ps-card">
+              <div class="card-heading">
+                <div>
+                  <p class="eyebrow">EMOTION & MOOD</p>
+                  <h3>Expression</h3>
+                </div>
+                <span class="ps-chip-indicator" id="ps-expr-indicator">Preset</span>
+              </div>
+              <div class="chips-grid" id="ps-expression-chips"></div>
+              <div class="custom-input-wrap">
+                <input type="text" id="ps-custom-expression" placeholder="Or type custom expression (e.g. joyful laughing, windblown hair)..." />
+              </div>
+            </div>
+
+            <!-- 4. Camera Framing & Angles -->
+            <div class="card ps-card">
+              <div class="card-heading">
+                <div>
+                  <p class="eyebrow">CAMERA & LENS</p>
+                  <h3>Angle & Framing</h3>
+                </div>
+                <span class="ps-chip-indicator" id="ps-angle-indicator">Preset</span>
+              </div>
+              <div class="chips-grid" id="ps-angle-chips"></div>
+              <div class="custom-input-wrap">
+                <input type="text" id="ps-custom-angle" placeholder="Or type custom lens/shot (e.g. 50mm f/1.2 waist-up portrait)..." />
+              </div>
+            </div>
+
+            <!-- Advanced / Dimensions Settings (Collapsible) -->
+            <details class="card ps-card ps-advanced-card">
+              <summary class="ps-advanced-summary">
+                <span>⚙️ Render Parameters & Aspect Ratio</span>
+                <span class="ps-summary-badge">CyberRealistic XL · 28 steps · CFG 5.0</span>
+              </summary>
+              <div class="ps-advanced-body">
+                <div class="twobox">
+                  <label>Aspect Ratio
+                    <select id="ps-aspect-ratio">
+                      <option value="768x1152" selected>Portrait (2:3 · 768×1152)</option>
+                      <option value="704x1280">Story / Reels (9:16 · 704×1280)</option>
+                      <option value="832x1104">Standard (3:4 · 832×1104)</option>
+                      <option value="1024x1024">Square (1:1 · 1024×1024)</option>
+                    </select>
+                  </label>
+                  <label>Seed (blank = random)
+                    <input type="number" id="ps-seed" placeholder="Random seed" min="0" />
+                  </label>
+                </div>
+                <div class="twobox">
+                  <label>Inference Steps
+                    <input type="number" id="ps-steps" value="28" min="15" max="45" />
+                  </label>
+                  <label>Guidance Scale (CFG)
+                    <input type="number" id="ps-guidance" value="5.0" step="0.5" min="1" max="15" />
+                  </label>
+                </div>
+              </div>
+            </details>
+          </div>
+
+          <div class="ps-output-col">
+            <!-- Approval Gate -->
+            <div class="card ps-approval-card" id="ps-approval-gate">
+              <div class="card-heading">
+                <div>
+                  <p class="eyebrow">STEP 1: PROMPT REVIEW & APPROVAL GATE</p>
+                  <h3>Approve Prompt Before Render</h3>
+                </div>
+                <span class="approval-gate-badge">Gated Approval</span>
+              </div>
+              <p class="approval-instruction">
+                Review and approve the compiled photographic prompt below. You can edit any word directly before generating:
+              </p>
+
+              <label class="ps-prompt-label">
+                <span>Compiled Positive Prompt (DSLR Realism)</span>
+                <span class="token-badge" id="ps-token-badge">~80 tokens</span>
+              </label>
+              <textarea id="ps-approved-prompt" rows="5" class="ps-prompt-textarea" required></textarea>
+
+              <label class="ps-prompt-label">
+                <span>Tuned Negative Prompt (Anime/Cartoon Filter)</span>
+              </label>
+              <textarea id="ps-negative-prompt" rows="3" class="ps-prompt-textarea"></textarea>
+
+              <div class="ps-action-bar">
+                <button type="button" id="ps-recompile-btn" class="secondary">
+                  <span>↻ Reset to Presets</span>
+                </button>
+                <button type="button" id="ps-approve-generate-btn" class="primary ps-approve-btn">
+                  <span>✓ Approve & Generate Image</span>
+                  <span class="btn-subtext">Local M5 GPU (~45s)</span>
+                </button>
+              </div>
+
+              <div id="ps-progress-box" class="ps-progress-box hidden">
+                <div class="ps-spinner"></div>
+                <div class="ps-progress-text">
+                  <strong id="ps-progress-status">Rendering image on Apple Silicon Metal (MPS)...</strong>
+                  <small id="ps-progress-sub">Executing 28 denoising steps on CyberRealistic XL. Please wait ~45s.</small>
+                </div>
+              </div>
+            </div>
+
+            <!-- Output Preview Card -->
+            <div class="card ps-result-card" id="ps-result-card">
+              <div class="card-heading">
+                <div>
+                  <p class="eyebrow">STEP 2: RENDER OUTPUT</p>
+                  <h3>Photo Studio Result</h3>
+                </div>
+                <span id="ps-result-meta-badge" class="result-badge">Waiting for generation</span>
+              </div>
+              <div id="ps-image-viewport" class="ps-image-viewport">
+                <div class="ps-empty-viewport">
+                  <span class="empty-icon">📷</span>
+                  <p>Select persona & attributes, review and approve prompt above, then click <strong>Approve & Generate Image</strong>.</p>
+                </div>
+              </div>
+              <div id="ps-result-actions" class="ps-result-actions hidden">
+                <a id="ps-download-btn" class="primary button-link" download="photo_studio.png" target="_blank">📥 Download High-Res</a>
+                <button type="button" id="ps-goto-gallery-btn" class="secondary">View in Media Review →</button>
+                <button type="button" id="ps-new-seed-btn" class="secondary">↻ New Seed (Same Prompt)</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================= -->
+      <!-- 04 / PERSONA ORCHESTRATION PIPELINE PANEL                     -->
+      <!-- ============================================================= -->
+      <section id="orchestrator" class="panel">
+        <div class="section-heading page-heading">
+          <div>
+            <p class="eyebrow">04 / FULL-BODY CONSISTENCY ORCHESTRATION</p>
+            <h2>Persona Orchestrator & Consistency Studio</h2>
+            <p class="muted">
+              Define demographic DNA and body physics (country, region, measurements, adult/glamour mode), compile and approve master anchor prompts, configure creative story narratives, and generate multi-scene 4K batches with 100% face and anatomical consistency.
+            </p>
+          </div>
+          <div class="orch-header-actions">
+            <input type="file" id="orch-import-json-file" accept=".json,application/json" class="hidden" />
+            <button type="button" id="orch-import-json-btn" class="secondary icon-button">
+              📂 Import Persona JSON
+            </button>
+            <button type="button" id="orch-export-json-btn" class="secondary icon-button">
+              💾 Export Persona JSON
+            </button>
+          </div>
+        </div>
+
+        <!-- 1. Active Persona Selector & Pinned Master Anchor -->
+        <div class="card orch-active-persona-card">
+          <div class="card-heading">
+            <div>
+              <p class="eyebrow">STEP 1: SELECT OR DEFINE PERSONA</p>
+              <h3>Active Persona & Ground Truth Reference</h3>
+            </div>
+            <div class="persona-select-wrap">
+              <select id="orch-persona-select" class="persona-select"></select>
+            </div>
+          </div>
+          <div id="orch-active-persona-card" class="orch-active-grid hidden">
+            <div id="orch-persona-dna-preview" class="orch-dna-preview-col"></div>
+            <div id="orch-master-anchor-slot" class="orch-anchor-col"></div>
+          </div>
+        </div>
+
+        <div class="orch-main-grid">
+          <!-- Left Column: Persona Blueprint & Master Creation -->
+          <div class="orch-col-blueprint">
+            <div class="card orch-card">
+              <div class="card-heading">
+                <div>
+                  <p class="eyebrow">PERSONA DNA DEFINITION</p>
+                  <h3>Demographics & Anatomy</h3>
+                </div>
+                <span class="ps-chip-indicator">DNA Capsule</span>
+              </div>
+
+              <div class="twobox">
+                <label>Persona Name
+                  <input type="text" id="orch-p-name" value="Elena Weber" placeholder="e.g. Elena Weber" required />
+                </label>
+                <label>Adult Age
+                  <input type="number" id="orch-p-age" value="23" min="18" max="99" required />
+                </label>
+              </div>
+
+              <div class="twobox">
+                <label>Country of Origin
+                  <input type="text" id="orch-p-country" value="Germany" placeholder="e.g. Germany, India, Brazil, Australia" />
+                </label>
+                <label>Region / Heritage
+                  <input type="text" id="orch-p-region" value="Bavaria (Munich)" placeholder="e.g. Bavaria, Punjab, Scandinavia" />
+                </label>
+              </div>
+
+              <label>Facial Structure & Likeness
+                <textarea id="orch-p-facial" rows="2" placeholder="Striking hazel-green eyes, soft sculpted jawline, delicate nose, natural full lips, sun-kissed dirty blonde wavy hair..."></textarea>
+              </label>
+
+              <div class="twobox">
+                <label>Body Type & Silhouette
+                  <input type="text" id="orch-p-body-type" value="Curvy athletic hourglass" placeholder="e.g. Curvy hourglass, athletic toned, slender" />
+                </label>
+                <label>Measurements (Bust-Waist-Hip)
+                  <input type="text" id="orch-p-measurements" value="34D-24-35" placeholder="e.g. 34D-24-35, 36C-25-36" />
+                </label>
+              </div>
+
+              <div class="threebox">
+                <label>Height
+                  <input type="text" id="orch-p-height" value="5'8\" (173cm)" placeholder="e.g. 5'8\"" />
+                </label>
+                <label>Skin Tone & Traits
+                  <input type="text" id="orch-p-skin-tone" value="Fair golden with subtle freckles" placeholder="e.g. Olive skin, tan lines" />
+                </label>
+                <label>Breast Shape / Gravity
+                  <input type="text" id="orch-p-breast-shape" value="Natural teardrop, realistic gravity" placeholder="e.g. Natural teardrop" />
+                </label>
+              </div>
+
+              <div class="twobox">
+                <label>Aspect Ratio
+                  <select id="orch-aspect-ratio"></select>
+                </label>
+                <label>Resolution Quality
+                  <select id="orch-quality"></select>
+                </label>
+              </div>
+
+              <div class="orch-toggle-wrap">
+                <label class="check-toggle">
+                  <input type="checkbox" id="orch-p-adult-toggle" checked />
+                  <span><strong>Enable Adult / Intimate / Erotic Glamour (Uncensored)</strong><small>Allows artistic nude, topless, and sheer lingerie anatomy without suppression.</small></span>
+                </label>
+              </div>
+
+              <div class="orch-btn-row">
+                <button type="button" id="orch-compile-persona-btn" class="primary full-button">
+                  <span>⚡ Compile Master Persona Prompt</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Approval Gate 1: Persona Master Prompt Review -->
+            <div id="orch-approval-gate-1" class="card orch-approval-gate hidden">
+              <div class="card-heading">
+                <div>
+                  <p class="eyebrow">APPROVAL GATE 1: PERSONA MASTER PROMPT</p>
+                  <h3>Review & Validate Master Prompt</h3>
+                </div>
+                <span class="approval-gate-badge">Validation Gate</span>
+              </div>
+
+              <div class="orch-meta-banner">
+                <span id="orch-routed-model-badge" class="model-badge">Auto-routing...</span>
+                <span id="orch-token-badge" class="token-badge">~85 tokens</span>
+              </div>
+
+              <label class="ps-prompt-label">
+                <div class="prompt-header-row">
+                  <span>Compiled Master Positive Prompt</span>
+                  <button type="button" class="secondary icon-button" data-copy-target="#orch-master-positive">
+                    📋 Copy Positive Prompt
+                  </button>
+                </div>
+                <textarea id="orch-master-positive" rows="4"></textarea>
+              </label>
+
+              <label class="ps-prompt-label">
+                <div class="prompt-header-row">
+                  <span>Compiled Master Negative Prompt</span>
+                  <button type="button" class="secondary icon-button" data-copy-target="#orch-master-negative">
+                    📋 Copy Negative Prompt
+                  </button>
+                </div>
+                <textarea id="orch-master-negative" rows="2"></textarea>
+              </label>
+
+              <div class="orch-gate-actions">
+                <button type="button" id="orch-render-anchor-btn" class="primary">
+                  <span>✓ Approve & Render Master Candidate</span>
+                  <small>Local Apple Silicon MPS</small>
+                </button>
+              </div>
+
+              <div id="orch-anchor-progress" class="ps-progress-box hidden">
+                <div class="ps-spinner"></div>
+                <div class="ps-progress-text">
+                  <strong>Rendering Master Persona Anchor on Apple Silicon MPS...</strong>
+                  <small>Running 30 denoising steps with attention slicing. Please wait ~35s.</small>
+                </div>
+              </div>
+
+              <!-- Master Candidate Card -->
+              <div id="orch-candidate-card" class="orch-candidate-box hidden">
+                <h4>Master Anchor Candidate</h4>
+                <div class="orch-candidate-img-wrap">
+                  <img id="orch-candidate-img" src="" alt="Master Candidate" />
+                </div>
+                <div class="orch-candidate-actions">
+                  <span id="orch-candidate-meta"></span>
+                  <button type="button" id="orch-lock-anchor-btn" class="primary orch-lock-btn">
+                    <span>🔒 Lock as Master Persona Anchor</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right Column: Narrative Story & Multi-Scene Batch Setup -->
+          <div class="orch-col-narrative">
+            <div class="card orch-card">
+              <div class="card-heading">
+                <div>
+                  <p class="eyebrow">STEP 2: STORY NARRATIVE & BATCH</p>
+                  <h3>Photoshoot Scene Setup</h3>
+                </div>
+                <span class="ps-chip-indicator">Narrative Engine</span>
+              </div>
+
+              <label>Scene Category / Intent
+                <select id="orch-category"></select>
+              </label>
+
+              <label>Creative Story Narrative
+                <textarea id="orch-narrative" rows="4" placeholder="Describe the story in plain words (e.g. An intimate morning in a luxury high-rise penthouse. Elena is relaxing across different rooms as sunlight fills the space, moving between the floor-to-ceiling window view, a steamy marble bath, and lounging on silk sheets with playful exposed curves)...">An intimate morning in a luxury high-rise penthouse. Elena is relaxing across different rooms as sunlight fills the space, moving between the floor-to-ceiling window view, a steamy marble bath, and lounging on silk bedsheets with playful exposed curves.</textarea>
+              </label>
+
+              <div class="threebox">
+                <label>Number of Images
+                  <select id="orch-batch-count">
+                    <option value="1">1 Image</option>
+                    <option value="2">2 Images</option>
+                    <option value="3" selected>3 Images (Multi-Scene)</option>
+                    <option value="4">4 Images</option>
+                    <option value="5">5 Images (Complete Editorial)</option>
+                  </select>
+                </label>
+                <label>Aspect Ratio
+                  <select id="orch-scene-aspect-ratio"></select>
+                </label>
+                <label>Target Quality
+                  <select id="orch-scene-quality"></select>
+                </label>
+              </div>
+
+              <div class="orch-btn-row">
+                <button type="button" id="orch-synth-scenes-btn" class="primary full-button">
+                  <span>⚡ Synthesize Diverse Scene Prompts</span>
+                </button>
+              </div>
+
+              <div id="orch-synth-spinner" class="ps-progress-box hidden">
+                <div class="ps-spinner"></div>
+                <div class="ps-progress-text">
+                  <strong>Synthesizing distinct locations, costumes, angles & expressions...</strong>
+                </div>
+              </div>
+            </div>
+
+            <!-- Approval Gate 2: Multi-Scene Review & Approval Accordion -->
+            <div id="orch-approval-gate-2" class="card orch-approval-gate hidden">
+              <div class="card-heading">
+                <div>
+                  <p class="eyebrow">APPROVAL GATE 2: MULTI-SCENE BATCH</p>
+                  <h3>Review & Validate All Scene Prompts</h3>
+                </div>
+                <span class="approval-gate-badge">Batch Approval</span>
+              </div>
+
+              <div class="orch-meta-banner">
+                <span id="orch-scenes-routed-model" class="model-badge">Auto-routing...</span>
+              </div>
+
+              <div id="orch-scenes-accordion" class="orch-scenes-list"></div>
+
+              <div class="orch-gate-actions">
+                <button type="button" id="orch-approve-batch-btn" class="primary ps-approve-btn">
+                  <span>🚀 Approve & Generate Multi-Image Batch</span>
+                  <small>Enforcing 100% face & physics consistency</small>
+                </button>
+              </div>
+
+              <div id="orch-batch-progress" class="ps-progress-box hidden">
+                <div class="ps-spinner"></div>
+                <div class="ps-progress-text">
+                  <strong>Executing consistent multi-scene batch generation on Apple Silicon MPS...</strong>
+                  <small>Rendering diverse scenes + high-fidelity quality upscaling. Please wait...</small>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. Final Consistency Inspector Deck & Multi-Image Gallery -->
+        <div id="orch-consistency-deck" class="card orch-deck-card hidden">
+          <div class="card-heading">
+            <div>
+              <p class="eyebrow">STEP 4: CONSISTENCY INSPECTOR & GALLERY</p>
+              <h3>Multi-Scene Consistency Verification</h3>
+            </div>
+            <span class="consistency-badge">100% Identity Continuity</span>
+          </div>
+
+          <div class="orch-deck-layout">
+            <div class="orch-deck-left" id="orch-deck-master-slot">
+              <!-- Pinned Master Anchor injected here -->
+            </div>
+            <div class="orch-deck-right">
+              <div id="orch-batch-gallery" class="orch-gallery-grid"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+
+      <section id="generate" class="panel"><div class="section-heading page-heading"><div><p class="eyebrow">03 / LOCAL RENDER PIPELINE</p><h2>Generation workspace</h2><p class="muted">Prepare the image, motion and review inputs. Inference stays on the connected local/cloud GPU.</p></div><span class="section-note">No hosted generation credits</span></div><div class="pipeline-strip"><span class="pipeline-step active"><b>01</b> Character</span><span class="pipeline-line"></span><span class="pipeline-step"><b>02</b> Reference</span><span class="pipeline-line"></span><span class="pipeline-step"><b>03</b> Render</span><span class="pipeline-line"></span><span class="pipeline-step"><b>04</b> Review</span></div><div class="two-col wide-left"><form class="card form generation-card" id="job-form"><div class="card-heading"><div><p class="eyebrow">NEW RENDER JOB</p><h3>Creative setup</h3></div><span class="local-badge">LOCAL ONLY</span></div><div class="twobox"><label>Persona<select id="g-persona" required></select></label><label>Workflow<select id="g-workflow" required></select></label></div><label>Checkpoint <span class="label-hint">for checkpoint-loader workflows</span><select id="g-checkpoint"><option value="">Choose a local checkpoint</option></select></label><label>Reference image<select id="g-reference"><option value="">No reference supplied</option></select></label><label>Audio input <span class="label-hint">for speech-to-video workflows</span><select id="g-audio"><option value="">No audio selected</option></select></label><label>Creative direction<textarea id="g-prompt" rows="5" required placeholder="A natural daytime café portrait, looking off-camera, candid editorial styling…"></textarea></label><label>Negative prompt<input id="g-negative" value="blurry, extra fingers, facial distortion, watermark, typography"/></label><div class="twobox"><label>Canvas<select id="g-ratio"><option value="768x1152">Portrait · 2:3</option><option value="720x1280">Vertical · 9:16</option><option value="1024x1024">Square · 1:1</option><option value="1280x720">Landscape · 16:9</option></select></label><label>Seed <span class="label-hint">blank = random</span><input id="g-seed" placeholder="Random" type="number" min="0"/></label></div><label class="check"><input type="checkbox" id="g-rights" required/> I confirm this is a fictional adult persona, source inputs are rights-cleared and outputs will be disclosed as AI-generated.</label><button class="primary" type="submit">Queue generation <span aria-hidden="true">→</span></button><p class="muted fine">The direct CLI pipeline is the primary cloud path. Dashboard queue jobs require a compatible ComfyUI API workflow.</p></form><div class="card queue-card"><div class="card-heading"><div><p class="eyebrow">RENDER MONITOR</p><h3>Live queue</h3></div><span class="queue-indicator"><i></i> Polling</span></div><div id="job-list" class="stack"></div><button class="secondary full-button" type="button" id="jobs-refresh">Refresh jobs <span aria-hidden="true">↻</span></button></div></div></section>
+
+      <section id="assets" class="panel"><div class="section-heading page-heading"><div><p class="eyebrow">05 / HUMAN REVIEW</p><h2>Media gallery</h2><p class="muted">Review each asset for identity consistency, anatomy, rights and disclosure before publishing.</p></div><span class="section-note">Approve deliberately</span></div><div class="review-banner"><span class="review-icon">✓</span><div><strong>Nothing publishes from here automatically.</strong><small>Approve only work that represents the fictional persona accurately and carries the appropriate synthetic-media disclosure.</small></div></div><div id="gallery" class="gallery"></div></section>
+
+      <section id="voice" class="panel"><div class="section-heading page-heading"><div><p class="eyebrow">04 / OPTIONAL NARRATION</p><h2>Voice studio</h2><p class="muted">Generate local narration with Kokoro, then attach it to a compatible video workflow or mux it with FFmpeg.</p></div><span class="section-note">Synthetic voice only</span></div><div class="two-col"><form id="voice-form" class="card form accent-card"><div class="card-heading"><div><p class="eyebrow">NARRATION PASS</p><h3>Write the voice layer</h3></div><span class="step-badge">04</span></div><label>Persona<select id="v-persona" required></select></label><label>Voice<select id="v-voice"><option value="af_heart">American feminine · Heart</option><option value="af_bella">American feminine · Bella</option><option value="am_michael">American masculine · Michael</option><option value="bf_emma">British feminine · Emma</option><option value="bm_george">British masculine · George</option></select></label><label>Script<textarea id="v-text" rows="7" required placeholder="Hey! Today I'm taking you along to my favorite café…"></textarea></label><button class="primary" type="submit">Generate WAV narration <span aria-hidden="true">→</span></button><p class="fine muted">Kokoro uses an existing synthetic voice pack; it is not a real-person voice clone.</p></form><div class="card chain-card"><div class="card-heading"><div><p class="eyebrow">AUDIO CHAIN</p><h3>Where narration fits</h3></div><span class="step-badge">04</span></div><div class="chain-list"><div><span>01</span><p><strong>Generate WAV</strong><small>Local Kokoro voice output</small></p></div><div><span>02</span><p><strong>Animate or mux</strong><small>Use a compatible video workflow or FFmpeg</small></p></div><div><span>03</span><p><strong>Review timing</strong><small>Audio mux is not automatic lip-sync</small></p></div></div><p class="callout">A ready-wired lip-sync graph is not bundled. Add only model/dependency stacks with separately verified licenses.</p></div></div></section>
+
+      <section id="funnels" class="panel"><div class="section-heading page-heading"><div><p class="eyebrow">07 / OPERATIONS</p><h2>Link tracking</h2><p class="muted">Create redirect links for controlled testing. Public campaigns require secure hosting, consent-aware analytics and platform compliance.</p></div><span class="section-note">Local testing only</span></div><div class="two-col"><form class="card form" id="link-form"><div class="card-heading"><div><p class="eyebrow">CAMPAIGN ROUTE</p><h3>Create tracked link</h3></div></div><label>Campaign label<input id="l-label" required placeholder="Profile bio → landing page"/></label><label>Destination URL<input id="l-destination" required type="url" placeholder="https://example.com/landing"/></label><button class="primary" type="submit">Create link <span aria-hidden="true">→</span></button></form><div class="card"><div class="card-heading"><div><p class="eyebrow">LINK INVENTORY</p><h3>Existing campaign links</h3></div></div><div id="link-list" class="stack"></div></div></div></section>
+
+      <section id="workflows" class="panel"><div class="section-heading page-heading"><div><p class="eyebrow">06 / RENDER GRAPH</p><h2>Workflow manager</h2><p class="muted">Import verified ComfyUI API-format graphs when you need dashboard queue execution.</p></div><span class="section-note">Optional layer</span></div><div class="two-col"><div class="card"><div class="card-heading"><div><p class="eyebrow">INSTALLED GRAPHS</p><h3>Available workflow templates</h3></div></div><div id="workflow-list" class="stack"></div></div><form id="workflow-form" class="card form"><div class="card-heading"><div><p class="eyebrow">IMPORT</p><h3>Add a workflow</h3></div></div><label>Workflow label<input id="w-label" required placeholder="wan22_image_to_video"/></label><label>API workflow JSON<input type="file" id="w-file" accept=".json,application/json" required/></label><button type="submit" class="primary">Import API workflow <span aria-hidden="true">→</span></button><p class="muted fine">Use exact placeholders such as <code>{{PROMPT}}</code>, <code>{{REFERENCE_IMAGE}}</code>, <code>{{SEED}}</code>, <code>{{WIDTH}}</code> and <code>{{HEIGHT}}</code>. Do not install untrusted custom nodes.</p></form></div></section>
+
+      <footer><span>Persona Studio</span><span>Local research implementation</span><span>Generated media should be rights-cleared and transparently disclosed.</span></footer>
+    </main>
+  </div>
+  <script type="module" src="/static/app.js?v=16"></script>
+</body>
+</html>

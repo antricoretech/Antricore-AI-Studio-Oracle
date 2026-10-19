@@ -5,7 +5,7 @@ from studio import free_cli as fc
 
 def test_registry_only_freely_available_models():
     assert fc.REGISTRY
-    assert all(r['license']=='Apache-2.0' for r in fc.REGISTRY.values())
+    assert all(r['license'] in {'Apache-2.0', 'Fair AI Public License 1.0-SD', 'CreativeML OpenRAIL++-M', 'Stability AI Community License'} for r in fc.REGISTRY.values())
     assert 'flux2-klein-9b' not in fc.REGISTRY
     assert 'inswapper_128' not in fc.REGISTRY
 

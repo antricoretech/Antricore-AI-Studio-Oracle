@@ -10,7 +10,9 @@ const navGroups = [
     ['generate', 'generation-brief', 'Generation brief', '✦', '03', 'brief-import'],
   ] },
   { label: 'Produce', key: 'produce', items: [
-    ['generate', 'image-studio', 'Image studio', '◉', '', 'job-form'],
+    ['orchestrator', 'persona-orchestrator', 'Persona Orchestrator', '💎', '04', 'orchestrator'],
+    ['photostudio', 'photo-studio', 'Photo Studio', '📷', '03', 'photo-studio'],
+    ['generate', 'image-studio', 'Legacy studio', '◉', '', 'job-form'],
     ['generate', 'video-studio', 'Video studio', '▷', '', 'job-form'],
     ['voice', 'voice-studio', 'Voice & narration', '◖', ''],
     ['series', 'series-studio', 'Series studio', '↻', ''],

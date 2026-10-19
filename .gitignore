@@ -4,16 +4,28 @@ __pycache__/
 .env
 data/
 *.pyc
+*.db
 .DS_Store
 external/
 
 # Temporary browser profiles created by local UI smoke checks
 .chrome-*/
 
+# Large Neural Weights & Checkpoints (Excluded from Git - Download separately)
 models/
-generated/
+models/**
 *.safetensors
+*.bin
 *.onnx
+*.gguf
+*.pt
+LivePortrait/
+
+# Generated media outputs: ignore all tests, benchmarks, and temp renders
+# ONLY keep master persona reference vaults (generated/master_persona_*)
+generated/*
+!generated/master_persona_*/
+generated/_vault_jobs_cache.json
 
 # Isolated local model-test environment (keep code/reports, never commit
 # virtualenvs, Hugging Face caches, generated images or run JSON artifacts).
