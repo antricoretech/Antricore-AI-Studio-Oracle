@@ -74,6 +74,20 @@ input::placeholder, textarea::placeholder { color: #71808e; }
 .reference-item { border: 1px solid var(--border); border-radius: 8px; background: var(--surface-raised); padding: 13px; }
 .reference-item-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .reference-item-heading .badge { margin-left: 5px; }
+.lineage-overview { display: flex; flex-wrap: wrap; gap: 7px; margin: 12px 0; color: var(--muted); font-size: .76rem; }
+.lineage-overview span { border: 1px solid var(--border); border-radius: 7px; padding: 7px 9px; }
+.lineage-status { display: flex; align-items: flex-start; gap: 7px; margin: 10px 0 0; color: var(--muted); font-size: .76rem; }
+.lineage-status .badge { flex: 0 0 auto; }
+.lineage-status.ready { color: var(--success); }
+.lineage-status.stale, .lineage-status.mismatch, .lineage-status.blocked, .lineage-status.missing { color: var(--warning); }
+.lineage-status.rejected { color: var(--danger); }
+.stale-callout { margin-bottom: 16px; border-left-color: var(--warning); background: rgba(242, 196, 111, .08); }
+.asset-lineage { display: grid; gap: 5px; margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
+.asset-lineage > strong { color: var(--text); font-size: .78rem; }
+.asset-lineage .lineage-status { margin-top: 0; }
+.lineage-panel { margin-bottom: 16px; }
+.asset-lineage-list, .lineage-detail-list { display: grid; gap: 8px; }
+.lineage-detail-list { margin-top: 9px; }
 .reference-controls { display: grid; gap: 9px; margin-top: 12px; }
 .inline-form, .pack-review-form { display: flex; align-items: end; gap: 8px; flex-wrap: wrap; }
 .inline-form label, .pack-review-form label { display: grid; gap: 4px; color: var(--muted); font-size: .74rem; }
@@ -139,6 +153,7 @@ input::placeholder, textarea::placeholder { color: #71808e; }
 .badge.approved, .badge.ready { border-color: rgba(105, 210, 154, .45); color: var(--success); }
 .badge.pending, .badge.queued, .badge.planned { border-color: rgba(242, 196, 111, .45); color: var(--warning); }
 .badge.rejected, .badge.failed { border-color: rgba(239, 140, 140, .45); color: var(--danger); }
+.badge.stale, .badge.mismatch, .badge.blocked, .badge.missing { border-color: rgba(242, 196, 111, .5); color: var(--warning); }
 .card-list { display: grid; gap: 9px; }
 .entity-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-raised); padding: 13px; }
 .entity-card h3 { overflow-wrap: anywhere; }

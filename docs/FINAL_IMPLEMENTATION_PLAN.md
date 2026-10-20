@@ -273,15 +273,16 @@ Asset Review is now available at `/workspace#assets`. It keeps generated and
 imported media pending until an explicit decision, shows quality, rights,
 disclosure, and PersonaVersion lineage, supports approve/reject/pending
 transitions through the canonical API, and exposes package export only for
-approved assets. The next frontend slice is Production Queue and generation
-readiness, followed by the remaining legacy-shell parity work.
+approved assets. It now also loads active-persona ReferencePack linkage so
+stale and mismatched canonical relationships are visible before reuse.
 
 Production Queue is now available at `/workspace#production`. It exposes the
 Persona/PersonaVersion, rights/disclosure, and final model-installation gates,
 shows active/completed/failed counts, preserves job and ContentPack lineage,
 surfaces errors, and provides guarded cancel/retry actions through the existing
-job API. A dedicated generation-authoring flow remains separate until the
-preflight, workflow catalog, and final model-installation boundary are ready.
+job API. Generation authoring remains gated by workflow readiness, read-only
+preflight, explicit rights confirmation, and the final model-installation
+boundary.
 
 The generation-authoring flow is now integrated into the same Production view.
 It loads workflow readiness, keeps catalog recipes disabled until their local
@@ -289,6 +290,17 @@ verified graph is available, captures prompt/canvas/ContentPack/rights inputs,
 calls the read-only `/api/preflight` contract, and enables queue submission
 only after a passing result. This validates the application flow without
 installing or executing any image, audio, or video generation model.
+
+The canonical shell now also makes stale lineage explicit. ReferencePack
+items explain missing assets, rejected or pending review, rights blocks,
+eligibility failures, and PersonaVersion mismatches; pack summaries count
+stale canonical candidates and identify invalidated selections. Asset Review
+loads the active persona's ReferencePack links and exposes a dedicated
+Reference linkage panel, while ContentPacks show a stale-anchor warning when
+their approved anchors no longer match the bound PersonaVersion. This keeps
+adult/glamour packs inside the same Identity Core lineage and prevents a
+stored-but-invalid media link from being mistaken for a reusable canonical
+anchor.
 
 ### Cross-cutting frontend migration workstream
 

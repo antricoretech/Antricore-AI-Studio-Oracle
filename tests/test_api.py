@@ -84,6 +84,10 @@ def test_canonical_workspace_page_is_served(client):
     assert '/api/preflight?' in workspace_js.text
     assert 'Queue generation' in workspace_js.text
     assert '/api/personas/' in workspace_js.text
+    assert 'data-lineage-state' in workspace_js.text
+    assert 'Stale lineage warning' in workspace_js.text
+    assert 'Reference linkage' in workspace_js.text
+    assert 'assetReferenceLinks' in workspace_js.text
     assert client.get('/static/workspace.css').status_code == 200
 
 

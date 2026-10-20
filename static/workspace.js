@@ -34,6 +34,7 @@ const state = {
   versions: [],
   references: [],
   referenceAssets: [],
+  assetReferenceLinks: [],
   selectedReferencePackId: '',
   contentPacks: [],
   jobs: [],
@@ -198,12 +199,77 @@ function referenceAssetOptions(item) {
   return `${current}${assets.filter((asset) => asset.id !== item.asset_id).map((asset) => `<option value="${escapeHtml(asset.id)}">${escapeHtml(asset.id)} · ${escapeHtml(asset.filename || 'image')} · ${escapeHtml(asset.review || 'pending')}</option>`).join('')}`;
 }
 
+function referenceLineage(item, pack) {
+  if (!item.asset_id) return { state: 'missing', label: 'missing asset', detail: 'No image asset is linked to this reference item.' };
+  if (item.asset_review !== 'approved') {
+    const review = item.asset_review || 'pending';
+    return { state: review === 'rejected' ? 'rejected' : 'stale', label: `asset ${review}`, detail: `Linked asset is ${review}; approve it in Asset Review before reuse.` };
+  }
+  if (!item.asset_persona_version_id || item.asset_persona_version_id !== pack.persona_version_id) {
+    return { state: 'mismatch', label: 'version mismatch', detail: `Linked asset belongs to ${item.asset_persona_version_id || 'an unknown PersonaVersion'}, but this pack belongs to ${pack.persona_version_id || 'an unknown PersonaVersion'}.` };
+  }
+  if (item.review !== 'approved') {
+    const review = item.review || 'pending';
+    return { state: review === 'rejected' ? 'rejected' : 'blocked', label: `item ${review}`, detail: `Reference item review is ${review}; it cannot be a canonical anchor yet.` };
+  }
+  if (!item.rights_confirmed) return { state: 'blocked', label: 'rights required', detail: 'Confirm rights for this reference item before canonical selection.' };
+  if (!item.canonical_eligible) return { state: 'blocked', label: 'not eligible', detail: 'This reference item is not marked eligible for canonical identity use.' };
+  return { state: 'ready', label: 'lineage ready', detail: 'Approved asset, item review, rights, and PersonaVersion lineage are aligned.' };
+}
+
+function packLineageSummary(pack) {
+  const items = pack.items || [];
+  const statuses = items.map((item) => referenceLineage(item, pack));
+  return {
+    ready: statuses.filter((status) => status.state === 'ready').length,
+    stale: statuses.filter((status) => status.state !== 'ready').length,
+    staleCanonical: items.filter((item, index) => item.canonical_selected && statuses[index].state !== 'ready').length,
+  };
+}
+
+function assetReferenceLinks(asset) {
+  const links = [];
+  state.assetReferenceLinks.forEach((pack) => {
+    (pack.items || []).forEach((item) => {
+      if (item.asset_id === asset.id) links.push({ pack, item, lineage: referenceLineage(item, pack) });
+    });
+  });
+  return links;
+}
+
+function contentPackAnchorSummary(pack) {
+  const items = pack.items || [];
+  const stale = items.filter((item) => !item.asset_id || item.asset_review !== 'approved' || item.asset_persona_version_id !== pack.persona_version_id);
+  return { total: items.length, stale: stale.length, ready: items.length - stale.length };
+}
+
+function renderCrossViewLineageNotice() {
+  if (state.view === 'content-packs') {
+    const stalePacks = state.contentPacks.filter((pack) => contentPackAnchorSummary(pack).stale > 0);
+    if (stalePacks.length) return `<div class="callout stale-callout"><p><strong>Stale anchor warning:</strong> ${stalePacks.length} ContentPack(s) contain an unapproved, missing, or PersonaVersion-mismatched anchor. Review them before reuse.</p></div>`;
+  }
+  if (state.view === 'assets') {
+    const linked = state.assets.flatMap((asset) => assetReferenceLinks(asset));
+    const stale = linked.filter((link) => link.lineage.state !== 'ready');
+    if (stale.length) return `<div class="callout stale-callout"><p><strong>Stale lineage warning:</strong> ${stale.length} ReferencePack linkage(s) are not currently reusable. Rejected, pending, missing, rights-blocked, or PersonaVersion-mismatched assets cannot become canonical anchors.</p></div>`;
+  }
+  return '';
+}
+
+function renderAssetLineagePanel() {
+  if (state.view !== 'assets') return '';
+  const linkedAssets = state.assets.filter((asset) => assetReferenceLinks(asset).length);
+  if (!linkedAssets.length) return '';
+  return `<section class="panel lineage-panel" aria-labelledby="asset-lineage-heading"><div class="section-heading"><div><p class="eyebrow">Canonical linkage</p><h2 id="asset-lineage-heading">Reference linkage</h2></div>${badge(`${linkedAssets.length} linked asset${linkedAssets.length === 1 ? '' : 's'}`)}</div><p class="helper">These links are evaluated against the active PersonaVersion. A link may exist in storage while still being stale or blocked for canonical reuse.</p><div class="asset-lineage-list">${linkedAssets.map((asset) => `<article class="entity-card"><div><h3>${escapeHtml(asset.filename || asset.id)}</h3><p>${escapeHtml(asset.id)} · ${escapeHtml(asset.persona_version_id || 'unknown PersonaVersion')}</p><div class="entity-meta">${assetReferenceLinks(asset).map((link) => badge(`${link.pack.name || link.pack.pack_type}: ${link.lineage.label}`)).join('')}</div><div class="lineage-detail-list">${assetReferenceLinks(asset).map((link) => `<div class="lineage-status ${escapeHtml(link.lineage.state)}" data-lineage-state="${escapeHtml(link.lineage.state)}"><span>${escapeHtml(link.item.label || link.item.id)} · ${escapeHtml(link.lineage.detail)}</span></div>`).join('')}</div></div></article>`).join('')}</div></section>`;
+}
+
 function renderReferenceItem(pack, item) {
-  const assetReady = item.asset_id && item.asset_review === 'approved' && item.asset_persona_version_id === pack.persona_version_id;
-  const canonicalEligible = item.review === 'approved' && item.rights_confirmed && item.canonical_eligible && assetReady;
+  const lineage = referenceLineage(item, pack);
+  const canonicalEligible = lineage.state === 'ready';
   return `<article class="reference-item">
     <div class="reference-item-heading"><div><h3>${escapeHtml(item.label || item.id)}</h3><p class="helper">${escapeHtml(item.role || 'supporting_reference')} · ${escapeHtml(item.content_class || pack.content_class || 'identity')}</p></div>${badge(item.review)}${item.canonical_selected ? badge('canonical') : ''}</div>
     <div class="entity-meta">${item.asset_id ? badge(`asset ${item.asset_id}`) : badge('asset not linked')}${item.rights_confirmed ? badge('rights confirmed') : badge('rights required')}${item.canonical_eligible ? badge('eligible') : badge('not eligible')}</div>
+    <div class="lineage-status ${escapeHtml(lineage.state)}" data-lineage-state="${escapeHtml(lineage.state)}">${badge(lineage.label)} <span>${escapeHtml(lineage.detail)}${item.canonical_selected && !canonicalEligible ? ' Existing canonical selection has been invalidated by this state.' : ''}</span></div>
     <div class="reference-controls">
       <form class="inline-form" data-reference-item-review="${escapeHtml(item.id)}" data-reference-pack-id="${escapeHtml(pack.id)}">
         <label>Review<select name="review">${reviewOption('pending', item.review)}${reviewOption('approved', item.review)}${reviewOption('rejected', item.review)}</select></label>
@@ -223,15 +289,17 @@ function renderReferencesCanonical() {
   if (!state.activePersonaId) return emptyState('Select or create a Master Persona before reviewing references.', 'personas');
   if (!state.references.length) return emptyState('No ReferencePacks are available for this PersonaVersion yet.');
   const selectedPack = state.references.find((pack) => pack.id === state.selectedReferencePackId) || state.references[0];
-  const eligibleItems = (selectedPack.items || []).filter((item) => item.review === 'approved' && item.rights_confirmed && item.canonical_eligible && item.asset_id && item.asset_review === 'approved' && item.asset_persona_version_id === selectedPack.persona_version_id);
+  const eligibleItems = (selectedPack.items || []).filter((item) => referenceLineage(item, selectedPack).state === 'ready');
   const packRights = (selectedPack.items || []).length > 0 && selectedPack.items.every((item) => item.rights_confirmed);
+  const selectedSummary = packLineageSummary(selectedPack);
   return `<section class="panel" aria-labelledby="references-heading">
     <div class="section-heading"><div><p class="eyebrow">Identity sources</p><h2 id="references-heading">Review ReferencePacks</h2></div><a class="button secondary" href="/content-packs?persona_id=${encodeURIComponent(state.activePersonaId)}">Open ContentPack studio</a></div>
     <p class="helper">Review every item, confirm rights, link the correct PersonaVersion image asset, then explicitly select canonical identity anchors. Adult/glamour packs follow the same review gates and remain eligible to become Identity Core anchors.</p>
+    <div class="lineage-overview" aria-label="ReferencePack lineage summary">${state.references.map((pack) => { const summary = packLineageSummary(pack); return `<span>${escapeHtml(pack.name || pack.pack_type)}: ${summary.ready} ready, ${summary.stale} stale${summary.staleCanonical ? `, ${summary.staleCanonical} selected anchor(s) invalidated` : ''}</span>`; }).join('')}</div>
     <div class="reference-pack-grid"><div class="card-list">${state.references.map((pack) => { const canonical = (pack.items || []).filter((item) => item.canonical_selected).length; return `<article class="entity-card ${pack.id === selectedPack.id ? 'selected-entity' : ''}"><div><h3>${escapeHtml(pack.name || pack.pack_type)}</h3><p>${escapeHtml(pack.content_class || 'identity')} · ${pack.items?.length || 0} item(s)</p><div class="entity-meta">${badge(pack.review)}${pack.canonical_selected ? badge('canonical') : badge('not selected')}${badge(`${canonical} anchor(s)`)}</div></div><div class="entity-actions"><button class="button secondary" type="button" data-reference-pack-id="${escapeHtml(pack.id)}">${pack.id === selectedPack.id ? 'Selected' : 'Review pack'}</button></div></article>`; }).join('')}</div>
       <div class="reference-detail">
         <div class="section-heading"><div><p class="eyebrow">Selected pack</p><h2>${escapeHtml(selectedPack.name || selectedPack.pack_type)}</h2></div>${badge(selectedPack.review)}</div>
-        <div class="callout"><p><strong>Authority:</strong> ${escapeHtml(selectedPack.identity_authority || 'identity')}</p><p><strong>PersonaVersion:</strong> ${escapeHtml(selectedPack.persona_version_id || 'not linked')}</p><p><strong>Canonical status:</strong> ${selectedPack.canonical_selected ? 'Selected anchors are active for this pack.' : 'No canonical anchors selected.'}</p></div>
+        <div class="callout"><p><strong>Authority:</strong> ${escapeHtml(selectedPack.identity_authority || 'identity')}</p><p><strong>PersonaVersion:</strong> ${escapeHtml(selectedPack.persona_version_id || 'not linked')}</p><p><strong>Lineage summary:</strong> ${selectedSummary.ready} ready, ${selectedSummary.stale} stale or blocked item(s).</p><p><strong>Canonical status:</strong> ${selectedPack.canonical_selected ? `${selectedSummary.staleCanonical ? `${selectedSummary.staleCanonical} selected anchor(s) stale; ` : ''}selected anchors are active for this pack.` : 'No canonical anchors selected.'}</p></div>
         <form class="pack-review-form" data-reference-pack-review="${escapeHtml(selectedPack.id)}">
           <label>Pack review<select name="review">${reviewOption('pending', selectedPack.review)}${reviewOption('approved', selectedPack.review)}${reviewOption('rejected', selectedPack.review)}</select></label>
           <label class="check-field"><input type="checkbox" name="rights_confirmed" ${packRights ? 'checked' : ''}> Confirm rights for all items</label>
@@ -338,7 +406,7 @@ function renderPublishing() {
 
 function renderView() {
   const renderer = { overview: renderOverview, personas: renderPersonasCanonical, references: renderReferencesCanonical, 'content-packs': renderContentPacks, production: renderProductionCanonical, assets: renderAssetsCanonical, publishing: renderPublishing }[state.view] || renderOverview;
-  $('#workspace-view').innerHTML = renderer();
+  $('#workspace-view').innerHTML = `${renderCrossViewLineageNotice()}${renderAssetLineagePanel()}${renderer()}`;
 }
 
 async function loadViewData() {
@@ -352,7 +420,7 @@ async function loadViewData() {
   renderView();
   setStatus('Loading canonical workspace data…');
   try {
-    const requests = { overview: [], personas: state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/versions`] : [], references: state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/reference-packs`, '/api/assets'] : [], 'content-packs': state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/content-packs`] : [], production: state.activePersonaId ? ['/api/jobs', '/api/workflows', `/api/personas/${encodeURIComponent(state.activePersonaId)}/content-packs`] : ['/api/jobs', '/api/workflows'], assets: ['/api/assets'], publishing: [] }[state.view] || [];
+    const requests = { overview: [], personas: state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/versions`] : [], references: state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/reference-packs`, '/api/assets'] : [], 'content-packs': state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/content-packs`] : [], production: state.activePersonaId ? ['/api/jobs', '/api/workflows', `/api/personas/${encodeURIComponent(state.activePersonaId)}/content-packs`] : ['/api/jobs', '/api/workflows'], assets: state.activePersonaId ? ['/api/assets', `/api/personas/${encodeURIComponent(state.activePersonaId)}/reference-packs`] : ['/api/assets'], publishing: [] }[state.view] || [];
     const results = await Promise.all(requests.map((url) => get(url, { signal })));
     if (signal.aborted || token !== state.requestToken) return;
     if (state.view === 'references') {
@@ -366,7 +434,10 @@ async function loadViewData() {
       state.workflows = Array.isArray(results[1]) ? results[1] : [];
       if (state.activePersonaId) state.contentPacks = Array.isArray(results[2]) ? results[2] : [];
     }
-    if (state.view === 'assets') state.assets = results[0] || [];
+    if (state.view === 'assets') {
+      state.assets = results[0] || [];
+      state.assetReferenceLinks = Array.isArray(results[1]) ? results[1] : results[1]?.packs || [];
+    }
     if (state.view === 'personas') state.versions = results[0] || [];
     renderView();
     setStatus('Canonical workspace ready.', 'success');
