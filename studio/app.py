@@ -259,6 +259,12 @@ def content_packs_page():
     return FileResponse(ROOT / "static" / "content_packs.html")
 
 
+@app.get("/workspace", response_class=HTMLResponse)
+def canonical_workspace_page():
+    """Serve the canonical API-backed frontend shell during legacy UI migration."""
+    return FileResponse(ROOT / "static" / "workspace.html")
+
+
 @app.post("/api/briefs/validate")
 async def validate_brief(file: UploadFile = File(...)):
     """Validate a ChatGPT-authored generation brief without queuing work."""

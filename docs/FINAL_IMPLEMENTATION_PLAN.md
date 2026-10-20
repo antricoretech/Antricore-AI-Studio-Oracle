@@ -247,6 +247,12 @@ requests on transient failures, and provides JSON GET/POST/PATCH helpers. The
 ContentPack workspace consumes this adapter; remaining legacy screens still
 require migration before the frontend workstream exits.
 
+The first canonical shell slice is available at `/workspace`. It provides
+API-backed navigation for Overview, Master Personas, ReferencePacks,
+ContentPacks, Production Queue, Asset Review, and Publishing Readiness. The
+legacy `/` route remains available during migration and will not be replaced
+until the canonical screens reach parity and pass regression coverage.
+
 ### Cross-cutting frontend migration workstream
 
 The current static frontend is a legacy shell and is not considered aligned

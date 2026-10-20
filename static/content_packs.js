@@ -120,7 +120,10 @@ function renderAll() {
 async function loadPersonas() {
   const payload = await api("/api/personas");
   state.personas = Array.isArray(payload) ? payload : payload?.personas || [];
-  if (!state.personaId || !state.personas.some((persona) => persona.id === state.personaId)) {
+  const requested = new URLSearchParams(window.location.search).get("persona_id");
+  if (requested && state.personas.some((persona) => persona.id === requested)) {
+    state.personaId = requested;
+  } else if (!state.personaId || !state.personas.some((persona) => persona.id === state.personaId)) {
     state.personaId = state.personas[0]?.id || "";
   }
 }

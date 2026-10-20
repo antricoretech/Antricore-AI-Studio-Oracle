@@ -62,6 +62,16 @@ def test_content_pack_workspace_page_is_served(client):
     assert 'AbortError' in api_module.text
 
 
+def test_canonical_workspace_page_is_served(client):
+    response = client.get('/workspace')
+    assert response.status_code == 200
+    assert 'Canonical Workspace' in response.text
+    assert 'type="module"' in response.text
+    assert '/static/workspace.js' in response.text
+    assert client.get('/static/workspace.js').status_code == 200
+    assert client.get('/static/workspace.css').status_code == 200
+
+
 def test_persona_version_is_persisted_frozen_and_attached_to_series(client):
     persona = client.post('/api/personas', json={
         'name': 'Nora Vale', 'age': 28,

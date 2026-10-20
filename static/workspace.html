@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Canonical AI Influencer Studio workspace for PersonaVersion, references, ContentPacks, production, and review.">
+  <title>AI Influencer Studio · Canonical Workspace</title>
+  <link rel="stylesheet" href="/static/workspace.css">
+</head>
+<body>
+  <div class="workspace-shell">
+    <aside class="sidebar" aria-label="Workspace navigation">
+      <a class="brand" href="/workspace" aria-label="AI Influencer Studio overview">
+        <span class="brand-mark" aria-hidden="true">AI</span>
+        <span><strong>AI Influencer</strong><small>Canonical workspace</small></span>
+      </a>
+      <nav id="workspace-nav" class="nav-list" aria-label="Primary navigation"></nav>
+      <div class="sidebar-footer">
+        <a href="/content-packs">Open ContentPack studio</a>
+        <a href="/">Legacy shell</a>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Canonical control room</p>
+          <h1 id="view-title">Overview</h1>
+          <p id="view-description" class="lede">One source of truth for the new Master Persona journey.</p>
+        </div>
+        <div class="toolbar">
+          <label for="persona-select">Active Master Persona</label>
+          <select id="persona-select" aria-label="Active Master Persona"></select>
+          <button id="refresh-button" class="button secondary" type="button">Refresh</button>
+        </div>
+      </header>
+
+      <div id="workspace-status" class="status" role="status" aria-live="polite"></div>
+      <section id="workspace-view" aria-live="polite"></section>
+    </main>
+  </div>
+  <script type="module" src="/static/workspace.js"></script>
+</body>
+</html>
