@@ -253,6 +253,15 @@ ContentPacks, Production Queue, Asset Review, and Publishing Readiness. The
 legacy `/` route remains available during migration and will not be replaced
 until the canonical screens reach parity and pass regression coverage.
 
+The next frontend slice is also complete: `/workspace#personas` now creates a
+new Master Persona through the canonical API with structured identity
+characteristics and an explicit fictional-adult disclosure, preserves the new
+persona as the active selection, displays its immutable PersonaVersion lineage,
+and exposes the guarded draft-to-frozen transition. This keeps identity
+creation aligned with the new Persona/PersonaVersion boundary; existing legacy
+personas remain preserved and are not reused. Model installation remains a
+final-gate activity.
+
 ### Cross-cutting frontend migration workstream
 
 The current static frontend is a legacy shell and is not considered aligned

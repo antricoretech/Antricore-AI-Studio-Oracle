@@ -68,7 +68,11 @@ def test_canonical_workspace_page_is_served(client):
     assert 'Canonical Workspace' in response.text
     assert 'type="module"' in response.text
     assert '/static/workspace.js' in response.text
-    assert client.get('/static/workspace.js').status_code == 200
+    workspace_js = client.get('/static/workspace.js')
+    assert workspace_js.status_code == 200
+    assert 'persona-create-form' in workspace_js.text
+    assert 'data-freeze-persona' in workspace_js.text
+    assert '/api/personas/' in workspace_js.text
     assert client.get('/static/workspace.css').status_code == 200
 
 

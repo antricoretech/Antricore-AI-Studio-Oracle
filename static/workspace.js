@@ -1,4 +1,4 @@
-import { get } from './modules/api.js';
+import { get, post } from './modules/api.js';
 
 const navGroups = [
   { label: 'Identity', items: [
@@ -36,6 +36,8 @@ const state = {
   contentPacks: [],
   jobs: [],
   assets: [],
+  submittingPersona: false,
+  freezingPersona: false,
   controller: null,
   requestToken: 0,
 };
@@ -94,6 +96,16 @@ function emptyState(message, actionView = '') {
   return `<div class="empty"><p>${escapeHtml(message)}</p>${action}</div>`;
 }
 
+const defaultCharacteristics = JSON.stringify({
+  consistency_anchor: '',
+  face: {},
+  physique: {},
+  style: {},
+  personality: {},
+  world: {},
+  camera: {},
+}, null, 2);
+
 function renderOverview() {
   const persona = activePersona();
   const summary = state.summary;
@@ -121,13 +133,46 @@ function renderOverview() {
   </div>`;
 }
 
-function renderPersonas() {
+function renderPersonasLegacy() {
   if (!state.personas.length) return emptyState('No Master Personas are available in the canonical store.');
   const persona = activePersona();
   return `<div class="panel-grid">
     <section class="panel" aria-labelledby="persona-list-heading"><div class="section-heading"><div><p class="eyebrow">Identity registry</p><h2 id="persona-list-heading">Master Personas</h2></div>${badge(`${state.personas.length} records`)}</div><div class="card-list">${state.personas.map((item) => `<article class="entity-card"><div><h3>${escapeHtml(item.name || item.id)}</h3><p>${escapeHtml(item.description || 'No description recorded.')}</p><div class="entity-meta">${badge(item.current_version?.state || (item.identity_locked ? 'frozen' : 'draft'))}${badge(`Age ${item.age || '—'}`)}<span class="badge">${escapeHtml(item.id)}</span></div></div><div class="entity-actions"><button class="button secondary" type="button" data-persona-id="${escapeHtml(item.id)}">Select</button></div></article>`).join('')}</div></section>
     <section class="panel" aria-labelledby="persona-detail-heading"><div class="section-heading"><div><p class="eyebrow">Selected identity</p><h2 id="persona-detail-heading">${escapeHtml(persona?.name || 'None')}</h2></div></div>${persona ? `<p class="helper">${escapeHtml(persona.appearance || 'Appearance details are not recorded.')}</p><div class="callout"><p><strong>Disclosure:</strong> ${escapeHtml(persona.disclosure || 'No disclosure recorded.')}</p><p><strong>Version:</strong> ${escapeHtml(persona.current_version?.id || 'Load versions from the canonical API')}</p></div><div class="entity-actions" style="margin-top: 14px"><button class="button secondary" type="button" data-view="references">Open ReferencePacks</button><button class="button secondary" type="button" data-view="content-packs">Open ContentPacks</button></div>` : emptyState('Select a Master Persona to inspect its version lineage.')}</section>
   </div>`;
+}
+
+function renderPersonasCanonical() {
+  const persona = activePersona();
+  const currentVersion = persona?.current_version;
+  const canFreeze = persona && currentVersion?.state === 'draft' && !state.freezingPersona;
+  return `<div class="panel-grid">
+    <section class="panel" aria-labelledby="persona-create-heading">
+      <div class="section-heading"><div><p class="eyebrow">Canonical identity</p><h2 id="persona-create-heading">Create Master Persona</h2></div>${badge('new structure')}</div>
+      <p class="helper">This creates a new Persona and its initial draft PersonaVersion. Existing legacy personas are not reused.</p>
+      <form id="persona-create-form" class="persona-form">
+        <div class="form-grid">
+          <div class="field"><label for="persona-create-name">Name</label><input id="persona-create-name" name="name" minlength="2" maxlength="80" required placeholder="e.g. Mira Vale"></div>
+          <div class="field"><label for="persona-create-age">Age</label><input id="persona-create-age" name="age" type="number" min="18" max="110" required value="25"></div>
+        </div>
+        <div class="field"><label for="persona-create-description">Creator description</label><textarea id="persona-create-description" name="description" minlength="8" maxlength="1500" required placeholder="Who this fictional adult creator is and what she makes."></textarea></div>
+        <div class="field"><label for="persona-create-appearance">Appearance</label><textarea id="persona-create-appearance" name="appearance" minlength="8" maxlength="1500" required placeholder="Stable facial identity, hair, eyes, body, and visual traits."></textarea></div>
+        <div class="field"><label for="persona-create-disclosure">Disclosure</label><input id="persona-create-disclosure" name="disclosure" minlength="10" maxlength="250" required value="Fictional AI-generated adult persona"></div>
+        <div class="field"><label for="persona-create-characteristics">Identity characteristics JSON <span class="field-hint">optional structured anchors</span></label><textarea id="persona-create-characteristics" name="characteristics" class="code-field" spellcheck="false">${escapeHtml(defaultCharacteristics)}</textarea></div>
+        <div class="form-actions"><button class="button primary" type="submit" ${state.submittingPersona ? 'disabled' : ''}>${state.submittingPersona ? 'Creating…' : 'Create Persona'}</button></div>
+        <p id="persona-form-error" class="form-error" role="alert" hidden></p>
+      </form>
+    </section>
+    <section class="panel" aria-labelledby="persona-list-heading">
+      <div class="section-heading"><div><p class="eyebrow">Identity registry</p><h2 id="persona-list-heading">Master Personas</h2></div>${badge(`${state.personas.length} records`)}</div>
+      ${state.personas.length ? `<div class="card-list">${state.personas.map((item) => `<article class="entity-card"><div><h3>${escapeHtml(item.name || item.id)}</h3><p>${escapeHtml(item.description || 'No description recorded.')}</p><div class="entity-meta">${badge(item.current_version?.state || (item.identity_locked ? 'frozen' : 'draft'))}${badge(`Age ${item.age || '—'}`)}<span class="badge">${escapeHtml(item.id)}</span></div></div><div class="entity-actions"><button class="button secondary" type="button" data-persona-id="${escapeHtml(item.id)}">${item.id === state.activePersonaId ? 'Selected' : 'Select'}</button></div></article>`).join('')}</div>` : emptyState('No Master Personas are available yet. Create the first canonical identity here.')}
+    </section>
+  </div>
+  <section class="panel" aria-labelledby="persona-detail-heading">
+    <div class="section-heading"><div><p class="eyebrow">Selected identity</p><h2 id="persona-detail-heading">${escapeHtml(persona?.name || 'No persona selected')}</h2></div>${persona ? badge(currentVersion?.state || 'draft') : ''}</div>
+    ${persona ? `<p class="helper">${escapeHtml(persona.appearance || 'Appearance details are not recorded.')}</p><div class="callout"><p><strong>Disclosure:</strong> ${escapeHtml(persona.disclosure || 'No disclosure recorded.')}</p><p><strong>Current PersonaVersion:</strong> ${escapeHtml(currentVersion?.id || 'not available')}</p><p><strong>Lifecycle:</strong> ${currentVersion?.state === 'frozen' ? 'Frozen and ready for downstream lineage.' : 'Draft; freeze after identity review.'}</p></div><div class="entity-actions detail-actions"><button class="button primary" type="button" data-freeze-persona ${canFreeze ? '' : 'disabled'}>${state.freezingPersona ? 'Freezing…' : currentVersion?.state === 'frozen' ? 'PersonaVersion frozen' : 'Freeze PersonaVersion'}</button><button class="button secondary" type="button" data-view="references">Open ReferencePacks</button><button class="button secondary" type="button" data-view="content-packs">Open ContentPacks</button></div>` : emptyState('Select a Master Persona to inspect its version lineage.')}
+    ${persona ? `<div class="version-section"><div class="section-heading"><div><p class="eyebrow">Immutable lineage</p><h3 id="version-lineage-heading">PersonaVersions</h3></div>${badge(`${state.versions.length} version${state.versions.length === 1 ? '' : 's'}`)}</div>${state.versions.length ? `<div class="version-list">${state.versions.map((version) => `<article class="version-card"><div><strong>Version ${escapeHtml(version.version_no)}</strong><span class="version-id">${escapeHtml(version.id)}</span></div><div class="entity-meta">${badge(version.state)}${version.source ? badge(version.source) : ''}${version.frozen_at ? badge('frozen at ' + version.frozen_at) : ''}</div></article>`).join('')}</div>` : emptyState('No PersonaVersion records returned for this persona.')}</div>` : ''}
+  </section>`;
 }
 
 function renderReferences() {
@@ -157,7 +202,7 @@ function renderPublishing() {
 }
 
 function renderView() {
-  const renderer = { overview: renderOverview, personas: renderPersonas, references: renderReferences, 'content-packs': renderContentPacks, production: renderProduction, assets: renderAssets, publishing: renderPublishing }[state.view] || renderOverview;
+  const renderer = { overview: renderOverview, personas: renderPersonasCanonical, references: renderReferences, 'content-packs': renderContentPacks, production: renderProduction, assets: renderAssets, publishing: renderPublishing }[state.view] || renderOverview;
   $('#workspace-view').innerHTML = renderer();
 }
 
@@ -172,7 +217,7 @@ async function loadViewData() {
   renderView();
   setStatus('Loading canonical workspace data…');
   try {
-    const requests = { overview: [], personas: [], references: state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/reference-packs`] : [], 'content-packs': state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/content-packs`] : [], production: ['/api/jobs'], assets: ['/api/assets'], publishing: [] }[state.view] || [];
+    const requests = { overview: [], personas: state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/versions`] : [], references: state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/reference-packs`] : [], 'content-packs': state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/content-packs`] : [], production: ['/api/jobs'], assets: ['/api/assets'], publishing: [] }[state.view] || [];
     const results = await Promise.all(requests.map((url) => get(url, { signal })));
     if (signal.aborted || token !== state.requestToken) return;
     if (state.view === 'references') state.references = Array.isArray(results[0]) ? results[0] : results[0]?.packs || [];
@@ -195,7 +240,8 @@ async function loadBase() {
     state.personas = Array.isArray(personas) ? personas : personas?.personas || [];
     state.summary = summary || {};
     const requested = new URLSearchParams(window.location.search).get('persona_id');
-    state.activePersonaId = state.personas.some((persona) => persona.id === requested) ? requested : (state.personas[0]?.id || '');
+    const preferred = requested || state.activePersonaId;
+    state.activePersonaId = state.personas.some((persona) => persona.id === preferred) ? preferred : (state.personas[0]?.id || '');
     renderPersonaSelect();
     renderView();
     await loadViewData();
@@ -212,6 +258,67 @@ function navigate(view) {
   loadViewData();
 }
 
+function showPersonaFormError(message) {
+  const target = $('#persona-form-error');
+  if (!target) return;
+  target.textContent = message;
+  target.hidden = !message;
+}
+
+async function createPersona(event) {
+  event.preventDefault();
+  const form = event.target;
+  showPersonaFormError('');
+  if (!form.reportValidity()) return;
+  let characteristics;
+  try {
+    characteristics = JSON.parse(form.elements.characteristics.value || '{}');
+    if (!characteristics || Array.isArray(characteristics) || typeof characteristics !== 'object') throw new Error('Characteristics must be a JSON object.');
+  } catch (error) {
+    showPersonaFormError(`Invalid characteristics JSON: ${error.message}`);
+    return;
+  }
+  state.submittingPersona = true;
+  renderView();
+  try {
+    const created = await post('/api/personas', {
+      name: form.elements.name.value.trim(),
+      age: Number(form.elements.age.value),
+      description: form.elements.description.value.trim(),
+      appearance: form.elements.appearance.value.trim(),
+      disclosure: form.elements.disclosure.value.trim(),
+      characteristics,
+    });
+    state.activePersonaId = created.id;
+    setStatus(`Created ${created.name} with draft PersonaVersion ${created.current_version?.version_no || 1}.`, 'success');
+    state.submittingPersona = false;
+    await loadBase();
+  } catch (error) {
+    state.submittingPersona = false;
+    renderView();
+    setStatus(error.message, 'error');
+    showPersonaFormError(error.message);
+  }
+}
+
+async function freezePersona() {
+  if (!state.activePersonaId || state.freezingPersona) return;
+  const persona = activePersona();
+  if (persona?.current_version?.state !== 'draft') return;
+  state.freezingPersona = true;
+  renderView();
+  try {
+    const result = await post(`/api/personas/${encodeURIComponent(state.activePersonaId)}/freeze`, {});
+    state.freezingPersona = false;
+    setStatus(`PersonaVersion ${result.frozen_version?.version_no || ''} is frozen and ready for lineage.`, 'success');
+    await loadBase();
+  } catch (error) {
+    state.freezingPersona = false;
+    renderView();
+    setStatus(error.message, 'error');
+  }
+}
+
 $('#workspace-nav').addEventListener('click', (event) => {
   const button = event.target.closest('[data-view]');
   if (button) navigate(button.dataset.view);
@@ -225,8 +332,16 @@ $('#workspace-view').addEventListener('click', (event) => {
     loadViewData();
     return;
   }
+  const freezeButton = event.target.closest('[data-freeze-persona]');
+  if (freezeButton) {
+    freezePersona();
+    return;
+  }
   const button = event.target.closest('[data-view]');
   if (button) navigate(button.dataset.view);
+});
+$('#workspace-view').addEventListener('submit', (event) => {
+  if (event.target.id === 'persona-create-form') createPersona(event);
 });
 $('#persona-select').addEventListener('change', (event) => {
   state.activePersonaId = event.target.value;
