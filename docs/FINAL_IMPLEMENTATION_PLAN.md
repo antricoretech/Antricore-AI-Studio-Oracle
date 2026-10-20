@@ -233,6 +233,14 @@ content style while remaining part of the canonical identity system. Jobs and
 series queueing can resolve an approved ContentPack or fall back to the
 approved canonical asset for the active PersonaVersion.
 
+Phase 2 UI slice completed: the focused `/content-packs` workspace lets an
+operator select a Master Persona, inspect eligible canonical ReferencePacks,
+author style directives and metadata, create a pending ContentPack, explicitly
+approve/reject it, and resolve its final canonical anchors. The adult/glamour
+family (`adult_glamour`, `lingerie`, `boudoir`, and `nude_editorial`) is forced
+through the same Identity Core plus style authority rule at the backend boundary
+so UI choices cannot downgrade these packs into style-only presets.
+
 Exit: identity and style references are distinguishable, while approved adult/glamour references can participate in canonical identity anchoring.
 
 ### Phase 3 — Unified rendering and asset lifecycle

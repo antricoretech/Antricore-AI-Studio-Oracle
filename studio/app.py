@@ -253,6 +253,12 @@ def index():
     return FileResponse(ROOT / "static" / "index.html")
 
 
+@app.get("/content-packs", response_class=HTMLResponse)
+def content_packs_page():
+    """Serve the focused Master Persona ContentPack authoring workspace."""
+    return FileResponse(ROOT / "static" / "content_packs.html")
+
+
 @app.post("/api/briefs/validate")
 async def validate_brief(file: UploadFile = File(...)):
     """Validate a ChatGPT-authored generation brief without queuing work."""

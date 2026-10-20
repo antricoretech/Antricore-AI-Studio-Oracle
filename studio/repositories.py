@@ -12,6 +12,17 @@ import uuid
 
 from . import database as db
 
+ADULT_GLAMOUR_CONTENT_CLASSES = frozenset({
+    "adult_glamour",
+    "lingerie",
+    "boudoir",
+    "nude_editorial",
+})
+
+
+def is_adult_glamour_content_class(content_class: str) -> bool:
+    return content_class.strip().lower() in ADULT_GLAMOUR_CONTENT_CLASSES
+
 
 class PersonaRepository:
     @staticmethod
@@ -413,7 +424,7 @@ class ContentPackRepository:
     def create(*, persona_id: str, persona_version_id: str, reference_pack_id: str, pack_type: str,
                name: str, content_class: str, identity_authority: str, identity_core: bool,
                style: dict, metadata: dict, item_ids: list[str], created_at: str):
-        if content_class == "adult_glamour":
+        if is_adult_glamour_content_class(content_class):
             identity_core = True
             identity_authority = "identity_and_style"
         if identity_authority not in {"identity", "style", "identity_and_style"}:
@@ -422,7 +433,7 @@ class ContentPackRepository:
             persona_id=persona_id, persona_version_id=persona_version_id,
             reference_pack_id=reference_pack_id, item_ids=item_ids,
         )
-        if content_class == "adult_glamour" and source["content_class"] != "adult_glamour":
+        if is_adult_glamour_content_class(content_class) and not is_adult_glamour_content_class(source["content_class"]):
             raise ValueError("Adult/glamour ContentPacks must use an adult/glamour reference pack")
         content_pack_id = uuid.uuid4().hex
         statements = [(

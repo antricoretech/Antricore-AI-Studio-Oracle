@@ -49,6 +49,15 @@ def test_persona_reference_and_gates(client):
     assert client.get('/api/summary').json()['personas'] == 1
 
 
+def test_content_pack_workspace_page_is_served(client):
+    response = client.get('/content-packs')
+    assert response.status_code == 200
+    assert 'ContentPack workspace' in response.text
+    assert '/static/content_packs.js' in response.text
+    assert client.get('/static/content_packs.js').status_code == 200
+    assert client.get('/static/content_packs.css').status_code == 200
+
+
 def test_persona_version_is_persisted_frozen_and_attached_to_series(client):
     persona = client.post('/api/personas', json={
         'name': 'Nora Vale', 'age': 28,
@@ -258,6 +267,20 @@ def test_content_pack_persists_style_and_resolves_canonical_identity(client, tmp
     assert resolved_pack['identity_authority'] == 'identity_and_style'
     assert resolved_pack['style']['tone'].startswith('editorial')
     assert resolved_pack['anchors'][0]['asset_id'] == asset_id
+
+    lingerie = client.post('/api/personas/maya_bhutia/content-packs', json={
+        'reference_pack_id': source_pack['id'],
+        'pack_type': 'lingerie_creator',
+        'name': 'Lingerie Creator Style',
+        'content_class': 'lingerie',
+        'identity_authority': 'style',
+        'identity_core': False,
+        'style': {'tone': 'editorial lingerie campaign'},
+        'reference_item_ids': [source_item['id']],
+    })
+    assert lingerie.status_code == 201
+    assert lingerie.json()['identity_core'] == 1
+    assert lingerie.json()['identity_authority'] == 'identity_and_style'
 
     rejected = client.patch(f'/api/assets/{asset_id}/review', json={'review': 'rejected'})
     assert rejected.status_code == 200

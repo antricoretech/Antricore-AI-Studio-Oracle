@@ -2,7 +2,7 @@
 
 **Purpose:** Track every approved implementation activity, validation result, file change, status transition, blocker, and next action.
 
-**Current status:** Phase 0 runtime hardening complete; Phase 1 PersonaVersion foundation in progress. Model installation remains deferred to the final installation gate.  
+**Current status:** Phase 0 runtime hardening complete; Phase 2 ContentPack authoring/review workspace active on its dedicated branch. Model installation remains deferred to the final installation gate.
 **Tracking rule:** Update this file after every successfully verified activity. If an activity fails, record the failure and evidence before retrying. Do not mark an activity complete from intention or an unverified edit.
 
 ## Branch strategy
@@ -16,7 +16,7 @@ from the updated `main`.
 | Branch | Scope | Status |
 |---|---|---|
 | `phase/00-baseline` | Baseline and Phase 0 foundation checkpoint | CREATED |
-| `phase/01-canonical-persona` | PersonaVersion, pack review/canonical selection, and unified media linkage | ACTIVE |
+| `phase/01-canonical-persona` | PersonaVersion, pack review/canonical selection, and unified media linkage | CHECKPOINTED |
 | `phase/02-master-persona-content-packs` | Master Persona and ContentPack implementation | ACTIVE |
 | `phase/03-unified-media-assets` | Unified rendering and asset lifecycle | PLANNED |
 | `phase/04-local-job-runner` through `phase/09-analytics` | Subsequent roadmap phases | PLANNED |
@@ -59,7 +59,7 @@ Every completed activity must record:
 |---|---|---|---:|---|---|
 | 0 | Baseline and contracts | COMPLETED | 100% | User approval | Contracts, states, storage, API ownership, observability and runtime enforcement verified |
 | 1 | Canonical PersonaVersion | IN_PROGRESS | 70% | Phase 0 | SQLite canonical source; persistence, v2 compatibility, pack review/canonical selection, unified asset linkage, archive reconciliation, and migration boundary recorded |
-| 2 | Master Persona and content packs | IN_PROGRESS | 25% | Phase 1 | ContentPack persistence, canonical-anchor resolver, and adult/glamour identity-core rules completed on `phase/02-master-persona-content-packs` |
+| 2 | Master Persona and content packs | IN_PROGRESS | 40% | Phase 1 | ContentPack persistence, canonical-anchor resolver, adult/glamour-family Identity Core rules, and focused author/review/resolve UI completed on `phase/02-master-persona-content-packs` |
 | 3 | Unified rendering and assets | PLANNED | 0% | Phase 1 | One job and asset contract |
 | 4 | Persistent local job runner | PLANNED | 0% | Phase 3 | Mac memory-aware execution |
 | 5 | Identity-conditioned rendering | PLANNED | 0% | Phases 2–4 | Benchmark before selection |
@@ -90,6 +90,7 @@ Every completed activity must record:
 | IMP-020 | Phase 1 | Record new Master Persona migration boundary | COMPLETED | Final plan ADR-010 and this tracker updated; no runtime/data/model changes made | 2026-10-21 | New production personas use the new canonical structure and unique IDs; existing personas and packs remain preserved legacy/reference-only |
 | IMP-021 | Phase 1 | Implement pack-level review, canonical selection, and unified media-asset linkage | COMPLETED | `python -m compileall -q studio`; `pytest -q tests/test_api.py tests/test_comfy.py` — 25 passed; live DB schema version 8, 12 packs, 39 pack items verified | 2026-10-21 | Pack/item review gates, asset links, PersonaVersion lineage, canonical selection, and rejection invalidation are active; model installation remains deferred |
 | IMP-022 | Phase 2 | Add ContentPack persistence and canonical-anchor resolution | COMPLETED | `python -m compileall -q studio`; `pytest -q tests/test_api.py tests/test_comfy.py` — 26 passed; live DB schema version 9, 0 content packs, 0 content-pack items verified | 2026-10-21 | ContentPacks bind style directives and canonical ReferencePack anchors to one PersonaVersion; adult/glamour forces identity-core and identity-and-style authority; job/series resolution is active |
+| IMP-023 | Phase 2 | Add Master Persona ContentPack authoring, review, and resolution workspace | COMPLETED | `.\\.venv\\Scripts\\python.exe -m compileall -q studio`; `.\\.venv\\Scripts\\python.exe -m pytest -q tests/test_api.py tests/test_comfy.py` — 27 passed; `node --check static/content_packs.js`; route/static smoke check returned 200 | 2026-10-21 | Added `/content-packs`, canonical-source eligibility display, style/metadata authoring, explicit review actions, anchor resolution, and adult/glamour-family client/server Identity Core enforcement; no model/dependency installation performed |
 | IMP-003 | Phase 1 | Introduce canonical PersonaVersion persistence | PLANNED | Not started | — | Requires Phase 0 |
 | IMP-004 | Phase 1 | Convert v2 JSON persona data to import/export | PLANNED | Not started | — | Preserve backup compatibility |
 | IMP-005 | Phase 2 | Reclassify and review Master Persona packs | PLANNED | Not started | — | Adult/glamour can be canonical when approved |
@@ -105,9 +106,9 @@ Every completed activity must record:
 
 | Requirement | Status | Evidence/notes |
 |---|---|---|
-| Adult/glamour is a first-class content class | COMPLETED | Normalized as `content_class=adult_glamour` with identity-and-style authority |
+| Adult/glamour is a first-class content class | COMPLETED | Adult/glamour family is normalized as `adult_glamour`, `lingerie`, `boudoir`, or `nude_editorial` with identity-and-style authority |
 | Adult/glamour guides content style | COMPLETED | Pack authority and content class are retained through review and selection |
-| Approved adult/glamour assets can become canonical anchors | COMPLETED | Backend selection requires approved eligible pack/item, linked approved image asset, rights, and matching PersonaVersion; UI remains follow-up work |
+| Approved adult/glamour assets can become canonical anchors | COMPLETED | Backend selection and `/content-packs` UI require an approved eligible pack/item, linked approved image asset, rights, and matching PersonaVersion |
 | Adult/glamour assets are not auto-approved | COMPLETED | Direct generation paths now begin `pending`; explicit review remains required |
 | Fictional adult status is explicit | COMPLETED | Persona and asset disclosure contracts remain required for generation/import |
 | Rights and consent metadata is captured | COMPLETED | Reference-pack items and Assets carry rights confirmation gates |
@@ -125,7 +126,7 @@ Every completed activity must record:
 | ContentPack style directives are persisted and resolved | COMPLETED | `style_json` is returned by the approved resolver and appended to queued job prompts when requested |
 | Adult/glamour ContentPack is part of Identity Core | COMPLETED | Adult/glamour creation forces `identity_core=true` and `identity_authority=identity_and_style` |
 | Unapproved/stale anchors cannot resolve | COMPLETED | Resolver revalidates source pack, selected items, asset review, rights, version, and file presence |
-| Master Persona UI authors/reviews ContentPacks | PLANNED | Next Phase 2 activity |
+| Master Persona UI authors/reviews ContentPacks | COMPLETED | `/content-packs` supports source selection, style/metadata authoring, pending review, approval/rejection, and canonical resolution |
 
 ## Legacy persona disposition
 
@@ -271,6 +272,20 @@ Result: PASS — compile succeeded; 26 passed; live schema migration verified
 Evidence: Phase 2 ContentPack persistence and canonical-anchor resolution are active without installing models or heavyweight runtimes.
 ~~~
 
+~~~text
+Activity: IMP-023
+Validation:
+  - .\\.venv\\Scripts\\python.exe -m compileall -q studio
+  - .\\.venv\\Scripts\\python.exe -m pytest -q tests/test_api.py tests/test_comfy.py
+  - node --check static/content_packs.js
+  - Route/static smoke check: GET /content-packs, /static/content_packs.js, and /static/content_packs.css returned 200
+  - Workspace exposes only approved canonical ReferencePacks as selectable ContentPack sources
+  - Authoring persists style and metadata; review remains explicit; resolve displays canonical anchors
+  - Adult/glamour-family classes force Identity Core and identity_and_style authority in both UI and repository logic
+Result: PASS — compile succeeded; 27 passed; JavaScript syntax and route/static checks passed
+Evidence: Master Persona ContentPack authoring/review/resolution is available on the Phase 2 branch without installing models or heavyweight runtimes.
+~~~
+
 ## Blockers and decisions
 
 | ID | Blocker/decision | Status | Owner/action |
@@ -322,4 +337,5 @@ disk usage, and rollback/removal instructions.
 | 2026-10-21 | Completed Phase 1 pack review and unified media linkage | Added schema version 8 asset/pack linkage, PersonaVersion-bound assets, review/canonical APIs, rejection invalidation, v2 routes, and regression coverage; 25-test backend gate passed |
 | 2026-10-21 | Created phase branch structure and Phase 1 checkpoint | Added `phase/00-baseline` and `phase/01-canonical-persona`; committed Phase 1 as `9900255`; added `phase-0-baseline` and `phase-1-checkpoint-70` tags |
 | 2026-10-21 | Started Phase 2 ContentPack implementation | Created `phase/02-master-persona-content-packs`; added schema version 9 ContentPack persistence, resolver APIs, canonical job/series fallback, adult/glamour identity-core enforcement, and 26-test backend gate |
+| 2026-10-21 | Completed Phase 2 ContentPack workspace slice | Added `/content-packs` author/review/resolve UI, expanded adult/glamour-family Identity Core enforcement, added route/UI regression coverage, and passed 27-test backend gate; model installation remains deferred |
 

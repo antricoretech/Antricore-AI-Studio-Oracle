@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Create, review, and resolve Master Persona ContentPacks from canonical identity anchors.">
+  <title>Master Persona · ContentPacks</title>
+  <link rel="stylesheet" href="/static/content_packs.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="page-header">
+      <div>
+        <p class="eyebrow">AI Influencer Studio / Master Persona</p>
+        <h1>ContentPack workspace</h1>
+        <p class="lede">Author creator style and adult/glamour identity anchors together, then approve the exact pack that generation is allowed to use.</p>
+      </div>
+      <a class="quiet-link" href="/">Back to Studio</a>
+    </header>
+
+    <section class="control-bar" aria-labelledby="persona-heading">
+      <div>
+        <p class="eyebrow" id="persona-heading">Active identity</p>
+        <label for="persona-select">Master Persona</label>
+        <select id="persona-select" aria-describedby="persona-help"></select>
+        <p class="helper" id="persona-help">All source packs and ContentPacks stay bound to the selected PersonaVersion.</p>
+      </div>
+      <button class="button secondary" id="refresh-button" type="button">Refresh workspace</button>
+    </section>
+
+    <div id="status" class="status" role="status" aria-live="polite">Loading Master Personas…</div>
+
+    <section class="workspace-grid">
+      <div class="panel" aria-labelledby="sources-heading">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Step 1</p>
+            <h2 id="sources-heading">Canonical reference sources</h2>
+          </div>
+          <span class="count" id="source-count">0</span>
+        </div>
+        <p class="helper">Only approved ReferencePacks with selected, rights-confirmed canonical assets can become a ContentPack source.</p>
+        <div id="reference-packs" class="card-list" role="list"></div>
+      </div>
+
+      <div class="panel" aria-labelledby="author-heading">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Step 2</p>
+            <h2 id="author-heading">Author a ContentPack</h2>
+          </div>
+          <span class="authority-note">Style + identity</span>
+        </div>
+        <form id="content-pack-form" novalidate>
+          <div class="form-grid">
+            <div class="field full">
+              <label for="pack-name">Pack name</label>
+              <input id="pack-name" name="name" type="text" maxlength="120" placeholder="Editorial Glamour Creator" required>
+            </div>
+            <div class="field">
+              <label for="pack-type">Pack type</label>
+              <input id="pack-type" name="pack_type" type="text" maxlength="80" placeholder="creator_style" required>
+            </div>
+            <div class="field">
+              <label for="content-class">Content class</label>
+              <select id="content-class" name="content_class">
+                <option value="identity">Identity</option>
+                <option value="creator_style">Creator style</option>
+                <option value="lifestyle">Lifestyle</option>
+                <option value="fashion">Fashion</option>
+                <option value="brand_content">Brand content</option>
+                <option value="adult_glamour">Adult / glamour</option>
+                <option value="lingerie">Lingerie</option>
+                <option value="boudoir">Boudoir</option>
+                <option value="nude_editorial">Nude editorial</option>
+              </select>
+            </div>
+            <div class="field full">
+              <label for="identity-authority">Identity authority</label>
+              <select id="identity-authority" name="identity_authority">
+                <option value="identity">Identity</option>
+                <option value="style">Style</option>
+                <option value="identity_and_style">Identity + style</option>
+              </select>
+              <p class="helper">Adult/glamour classes are automatically locked to Identity + style and Identity Core.</p>
+            </div>
+            <div class="field full">
+              <label for="style-json">Style directives (JSON)</label>
+              <textarea id="style-json" name="style" rows="6">{
+  "tone": "confident, warm, editorial",
+  "formats": ["photo", "reel", "story"],
+  "wardrobe": ["tailored", "silk", "statement accessories"]
+}</textarea>
+              <p class="helper">These directives are persisted with the pack and appended to generation requests after approval.</p>
+            </div>
+            <div class="field full">
+              <label for="metadata-json">Metadata (JSON, optional)</label>
+              <textarea id="metadata-json" name="metadata" rows="3" placeholder='{"audience":"adult subscribers","disclosure":"fictional AI persona"}'>{}</textarea>
+            </div>
+          </div>
+          <label class="check-row" for="identity-core">
+            <input id="identity-core" name="identity_core" type="checkbox">
+            <span><strong>Include in Identity Core</strong><small>Use this pack as a canonical identity-and-style anchor.</small></span>
+          </label>
+          <div class="selected-source" id="selected-source">Choose an eligible canonical source pack.</div>
+          <button class="button primary" id="create-button" type="submit" disabled>Create ContentPack</button>
+        </form>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="packs-heading">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Step 3</p>
+          <h2 id="packs-heading">Review and resolve</h2>
+        </div>
+        <span class="count" id="pack-count">0</span>
+      </div>
+      <p class="helper">A pack is usable by generation only after explicit approval and a successful canonical-anchor resolution.</p>
+      <div id="content-packs" class="pack-grid" role="list"></div>
+      <article id="resolution" class="resolution" hidden aria-labelledby="resolution-heading"></article>
+    </section>
+  </main>
+  <script type="module" src="/static/content_packs.js"></script>
+</body>
+</html>
