@@ -254,9 +254,21 @@ function renderProduction() {
   return `<section class="panel" aria-labelledby="jobs-heading"><div class="section-heading"><div><p class="eyebrow">Execution lineage</p><h2 id="jobs-heading">Recent production jobs</h2></div></div><div class="table-wrap"><table><thead><tr><th>Job</th><th>Persona</th><th>Status</th><th>Version lineage</th></tr></thead><tbody>${state.jobs.map((job) => `<tr><td>${escapeHtml(job.id)}</td><td>${escapeHtml(job.persona_name || job.persona_id)}</td><td>${badge(job.status)}</td><td>${escapeHtml(job.lineage?.persona_version_id || 'not recorded')}</td></tr>`).join('')}</tbody></table></div></section>`;
 }
 
-function renderAssets() {
+function renderAssetsLegacy() {
   if (!state.assets.length) return emptyState('No generated or imported assets are recorded yet.');
   return `<section class="panel" aria-labelledby="assets-heading"><div class="section-heading"><div><p class="eyebrow">Human review gate</p><h2 id="assets-heading">Recent assets</h2></div></div><div class="table-wrap"><table><thead><tr><th>Asset</th><th>Kind</th><th>Persona</th><th>Review</th><th>File</th></tr></thead><tbody>${state.assets.map((asset) => `<tr><td>${escapeHtml(asset.id)}</td><td>${escapeHtml(asset.kind)}</td><td>${escapeHtml(asset.persona_name || asset.persona_id)}</td><td>${badge(asset.review)}</td><td><a class="asset-link" href="/api/assets/${encodeURIComponent(asset.id)}/file" target="_blank" rel="noreferrer">Open media</a></td></tr>`).join('')}</tbody></table></div></section>`;
+}
+
+function renderAssetsCanonical() {
+  return `<section class="panel" aria-labelledby="assets-heading">
+    <div class="section-heading"><div><p class="eyebrow">Human review gate</p><h2 id="assets-heading">Asset Review</h2></div>${badge(`${state.assets.length} asset${state.assets.length === 1 ? '' : 's'}`)}</div>
+    <p class="helper">Generated and imported media remain pending until an explicit review decision. Approval is required before canonical anchoring, export, or publishing.</p>
+    ${state.assets.length ? `<div class="asset-review-list">${state.assets.map((asset) => `<article class="asset-review-card">
+      <div class="asset-review-summary"><div><p class="eyebrow">${escapeHtml(asset.kind || 'media')}</p><h3>${escapeHtml(asset.filename || asset.id)}</h3><p class="helper">${escapeHtml(asset.id)} · ${escapeHtml(asset.persona_name || asset.persona_id)} · PersonaVersion ${escapeHtml(asset.persona_version_id || 'not recorded')}</p></div><div class="entity-meta">${badge(asset.review)}${badge(asset.quality?.status || 'quality pending')}${asset.rights_confirmed ? badge('rights confirmed') : badge('rights required')}</div></div>
+      <div class="asset-review-meta"><span>${escapeHtml(asset.prompt || 'No generation/import description recorded.')}</span><span>${asset.disclosure ? `Disclosure: ${escapeHtml(asset.disclosure)}` : 'Disclosure not recorded'}</span></div>
+      <div class="asset-review-actions"><form class="inline-form" data-asset-review="${escapeHtml(asset.id)}"><label>Review<select name="review">${reviewOption('pending', asset.review)}${reviewOption('approved', asset.review)}${reviewOption('rejected', asset.review)}</select></label><button class="button primary" type="submit">Save review</button></form><a class="button secondary" href="/api/assets/${encodeURIComponent(asset.id)}/file" target="_blank" rel="noreferrer">Open media</a>${asset.review === 'approved' ? `<a class="button secondary" href="/api/assets/${encodeURIComponent(asset.id)}/package" target="_blank" rel="noreferrer">Export package</a>` : ''}</div>
+    </article>`).join('')}</div>` : emptyState('No generated or imported assets are recorded yet. Assets will appear here after an import or generation job.')}
+  </section>`;
 }
 
 function renderPublishing() {
@@ -265,7 +277,7 @@ function renderPublishing() {
 }
 
 function renderView() {
-  const renderer = { overview: renderOverview, personas: renderPersonasCanonical, references: renderReferencesCanonical, 'content-packs': renderContentPacks, production: renderProduction, assets: renderAssets, publishing: renderPublishing }[state.view] || renderOverview;
+  const renderer = { overview: renderOverview, personas: renderPersonasCanonical, references: renderReferencesCanonical, 'content-packs': renderContentPacks, production: renderProduction, assets: renderAssetsCanonical, publishing: renderPublishing }[state.view] || renderOverview;
   $('#workspace-view').innerHTML = renderer();
 }
 
@@ -458,6 +470,18 @@ async function clearReferenceCanonical(packId) {
   }
 }
 
+async function reviewAsset(event) {
+  const form = event.target;
+  const assetId = form.dataset.assetReview;
+  try {
+    await patch(`/api/assets/${encodeURIComponent(assetId)}/review`, { review: form.elements.review.value });
+    setStatus('Asset review state saved.', 'success');
+    await loadViewData();
+  } catch (error) {
+    setStatus(error.message, 'error');
+  }
+}
+
 $('#workspace-nav').addEventListener('click', (event) => {
   const button = event.target.closest('[data-view]');
   if (button) navigate(button.dataset.view);
@@ -513,6 +537,11 @@ $('#workspace-view').addEventListener('submit', (event) => {
   if (event.target.matches('[data-reference-canonical]')) {
     event.preventDefault();
     selectReferenceCanonical(event);
+    return;
+  }
+  if (event.target.matches('[data-asset-review]')) {
+    event.preventDefault();
+    reviewAsset(event);
   }
 });
 $('#persona-select').addEventListener('change', (event) => {

@@ -84,6 +84,12 @@ input::placeholder, textarea::placeholder { color: #71808e; }
 .canonical-form { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 18px; }
 .canonical-options { display: grid; gap: 7px; margin: 10px 0 14px; }
 .canonical-option { display: flex; align-items: center; gap: 7px; border: 1px solid var(--border); border-radius: 7px; padding: 8px 10px; color: var(--text); font-size: .8rem; }
+.asset-review-list { display: grid; gap: 10px; }
+.asset-review-card { border: 1px solid var(--border); border-radius: 8px; background: var(--surface-raised); padding: 13px; }
+.asset-review-summary { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.asset-review-summary h3 { overflow-wrap: anywhere; }
+.asset-review-meta { display: grid; gap: 5px; margin-top: 10px; color: var(--muted); font-size: .78rem; }
+.asset-review-actions { display: flex; align-items: end; gap: 8px; flex-wrap: wrap; margin-top: 13px; }
 .button { border: 1px solid transparent; border-radius: 7px; padding: 9px 13px; color: var(--text); font-weight: 750; }
 .button.primary { background: var(--accent); color: #21170c; }
 .button.secondary { border-color: var(--border); background: transparent; }
@@ -151,4 +157,5 @@ th { color: var(--muted); font-size: .7rem; font-weight: 750; letter-spacing: .0
   .entity-actions { justify-content: flex-start; }
   .form-grid { grid-template-columns: 1fr; }
   .version-card { align-items: flex-start; flex-direction: column; }
+  .asset-review-summary { flex-direction: column; }
 }

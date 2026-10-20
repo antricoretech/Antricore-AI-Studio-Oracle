@@ -269,6 +269,13 @@ or clear canonical anchors. The same gates apply to adult/glamour packs, which
 remain eligible to serve as Identity Core anchors when approved; the UI cannot
 downgrade that authority to style-only.
 
+Asset Review is now available at `/workspace#assets`. It keeps generated and
+imported media pending until an explicit decision, shows quality, rights,
+disclosure, and PersonaVersion lineage, supports approve/reject/pending
+transitions through the canonical API, and exposes package export only for
+approved assets. The next frontend slice is Production Queue and generation
+readiness, followed by the remaining legacy-shell parity work.
+
 ### Cross-cutting frontend migration workstream
 
 The current static frontend is a legacy shell and is not considered aligned
