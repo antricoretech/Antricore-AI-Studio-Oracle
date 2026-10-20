@@ -262,6 +262,13 @@ creation aligned with the new Persona/PersonaVersion boundary; existing legacy
 personas remain preserved and are not reused. Model installation remains a
 final-gate activity.
 
+ReferencePack review is now available at `/workspace#references`. Operators
+can review packs and items, confirm rights, link PersonaVersion-compatible
+image assets, inspect canonical eligibility diagnostics, and explicitly select
+or clear canonical anchors. The same gates apply to adult/glamour packs, which
+remain eligible to serve as Identity Core anchors when approved; the UI cannot
+downgrade that authority to style-only.
+
 ### Cross-cutting frontend migration workstream
 
 The current static frontend is a legacy shell and is not considered aligned

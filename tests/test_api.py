@@ -72,6 +72,9 @@ def test_canonical_workspace_page_is_served(client):
     assert workspace_js.status_code == 200
     assert 'persona-create-form' in workspace_js.text
     assert 'data-freeze-persona' in workspace_js.text
+    assert 'data-reference-pack-review' in workspace_js.text
+    assert 'data-reference-canonical' in workspace_js.text
+    assert 'data-reference-item-asset' in workspace_js.text
     assert '/api/personas/' in workspace_js.text
     assert client.get('/static/workspace.css').status_code == 200
 
