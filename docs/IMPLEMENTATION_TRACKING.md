@@ -1,0 +1,295 @@
+# Implementation Tracking — AI Influencer Studio
+
+**Purpose:** Track every approved implementation activity, validation result, file change, status transition, blocker, and next action.
+
+**Current status:** Phase 0 runtime hardening complete; Phase 1 PersonaVersion foundation in progress. Model installation remains deferred to the final installation gate.  
+**Tracking rule:** Update this file after every successfully verified activity. If an activity fails, record the failure and evidence before retrying. Do not mark an activity complete from intention or an unverified edit.
+
+## Branch strategy
+
+Implementation is organized as cumulative phase branches. `main` is the
+verified integration branch; each phase branch contains the completed work of
+the previous phases plus the active phase work. A phase is merged into `main`
+only after its validation gate passes, then the next phase branch is created
+from the updated `main`.
+
+| Branch | Scope | Status |
+|---|---|---|
+| `phase/00-baseline` | Baseline and Phase 0 foundation checkpoint | CREATED |
+| `phase/01-canonical-persona` | PersonaVersion, pack review/canonical selection, and unified media linkage | ACTIVE |
+| `phase/02-master-persona-content-packs` | Master Persona and ContentPack implementation | PLANNED |
+| `phase/03-unified-media-assets` | Unified rendering and asset lifecycle | PLANNED |
+| `phase/04-local-job-runner` through `phase/09-analytics` | Subsequent roadmap phases | PLANNED |
+
+Milestone tags use `phase-0-complete`, `phase-1-complete`, and the same
+pattern for later phases. Model installation remains isolated to the final
+installation gate and is not included in feature-phase branches.
+
+## Status vocabulary
+
+~~~text
+PLANNED      Approved for future work but not started
+IN_PROGRESS  Work is actively being performed
+BLOCKED      Cannot proceed without a specific external decision/change
+VERIFYING    Implementation exists and validation is running
+COMPLETED    Implementation and required validation succeeded
+REJECTED     Proposed approach was not accepted
+DEFERRED     Intentionally postponed
+~~~
+
+## Activity record requirements
+
+Every completed activity must record:
+
+- Activity ID.
+- Date and time.
+- Phase.
+- Objective.
+- Files changed.
+- Implementation summary.
+- Validation commands/checks.
+- Validation result.
+- User approval reference.
+- Risks or follow-up work.
+- Next activity.
+
+## Overall roadmap status
+
+| Phase | Name | Status | Completion | Depends on | Notes |
+|---|---|---|---:|---|---|
+| 0 | Baseline and contracts | COMPLETED | 100% | User approval | Contracts, states, storage, API ownership, observability and runtime enforcement verified |
+| 1 | Canonical PersonaVersion | IN_PROGRESS | 70% | Phase 0 | SQLite canonical source; persistence, v2 compatibility, pack review/canonical selection, unified asset linkage, archive reconciliation, and migration boundary recorded |
+| 2 | Master Persona and content packs | PLANNED | 0% | Phase 1 | Includes canonical adult/glamour anchors |
+| 3 | Unified rendering and assets | PLANNED | 0% | Phase 1 | One job and asset contract |
+| 4 | Persistent local job runner | PLANNED | 0% | Phase 3 | Mac memory-aware execution |
+| 5 | Identity-conditioned rendering | PLANNED | 0% | Phases 2–4 | Benchmark before selection |
+| 6 | Creator personality/content system | PLANNED | 0% | Phases 1–2 | Content pillars and creator behavior |
+| 7 | Quality, review and export | PLANNED | 0% | Phases 3–5 | Human approval remains required |
+| 8 | Publishing integration | PLANNED | 0% | Phase 7 | Account and policy gates |
+| 9 | Analytics and optimization | PLANNED | 0% | Phase 8 | Feedback loop |
+
+## Detailed activity log
+
+| Activity ID | Phase | Activity | Status | Verification | Date | Notes |
+|---|---|---|---|---|---|---|
+| DOC-001 | Planning | Consolidate current code, workflow and Master Persona analyses | COMPLETED | Existing analysis documents reviewed | 2026-10-21 | Basis for final roadmap |
+| DOC-002 | Planning | Add adult/glamour content-pack requirements | COMPLETED | Architecture documentation updated | 2026-10-21 | Initial adult-pack track documented |
+| DOC-003 | Planning | Update adult/glamour model so approved assets can become canonical anchors | COMPLETED | Final plan updated | 2026-10-21 | Requires explicit role, quality and review metadata |
+| DOC-004 | Planning | Create implementation tracking structure | COMPLETED | This tracking file created | 2026-10-21 | Future implementation updates require evidence |
+| DOC-005 | Planning | Organize active and archived documentation | COMPLETED | 19 Markdown files moved; two active files remain in docs root | 2026-10-21 | Archive path: docs/archieved doc/ |
+| IMP-001 | Phase 0 | Define canonical domain contracts | COMPLETED | Final plan contract section reviewed | 2026-10-21 | Persona, PersonaVersion, ReferencePack, Asset, Job and ContentBrief boundaries |
+| IMP-002 | Phase 0 | Define lifecycle state machines and ADRs | COMPLETED | Final plan state/ADR sections reviewed | 2026-10-21 | Persona, reference, brief and job states documented |
+| IMP-013 | Phase 0 | Define storage, API ownership and observability contracts | COMPLETED | Final plan contract sections reviewed | 2026-10-21 | No runtime behavior changed |
+| IMP-014 | Phase 0 | Add request/correlation ID middleware and structured trace logging | COMPLETED | `pytest -q tests/test_api.py tests/test_comfy.py` — 22 passed | 2026-10-21 02:11 +05:30 | Bounded incoming IDs are preserved; invalid/missing IDs are regenerated; response headers and request/job logs carry trace context |
+| IMP-015 | Phase 0 | Enforce pending review for direct generated assets | COMPLETED | `pytest -q tests/test_api.py tests/test_comfy.py` — 22 passed; Photo Studio regression test passed | 2026-10-21 02:11 +05:30 | Photo Studio, Orchestrator, diffusion engine, and v2 fallback no longer auto-approve output; approval remains explicit |
+| IMP-016 | Phase 1 | Record final-only model and heavyweight dependency installation register | COMPLETED | Final plan ADR-007 and this register reviewed | 2026-10-21 | No model, runtime, or heavyweight dependency installed |
+| IMP-017 | Phase 1 | Add SQLite PersonaVersion foundation and lineage hooks | COMPLETED | `python -m compileall -q studio`; `pytest -q tests/test_api.py tests/test_comfy.py` — 23 passed; live DB schema version 5 verified | 2026-10-21 | Added schema migration/backfill, repository methods, freeze/version API, series binding, job lineage IDs, and regression coverage |
+| IMP-018 | Phase 1 | Convert v2 JSON to canonical import/export compatibility and bind references to PersonaVersion | COMPLETED | `python -m compileall -q studio`; `pytest -q tests/test_api.py tests/test_comfy.py` — 24 passed; live DB schema version 6 verified | 2026-10-21 | v2 reads now resolve through SQLite; JSON remains backup/export; references carry version, role, class, review, rights, and metadata |
+| IMP-019 | Phase 1 | Normalize v2 vault packs and reconcile archive/restore records | COMPLETED | `python -m compileall -q studio`; `pytest -q tests/test_api.py tests/test_comfy.py` — 24 passed; live DB schema version 7, 12 packs, 39 pack items verified | 2026-10-21 | Turnaround, detail, category, and adult/glamour packs are normalized; restore remaps packs to the restored PersonaVersion |
+| IMP-020 | Phase 1 | Record new Master Persona migration boundary | COMPLETED | Final plan ADR-010 and this tracker updated; no runtime/data/model changes made | 2026-10-21 | New production personas use the new canonical structure and unique IDs; existing personas and packs remain preserved legacy/reference-only |
+| IMP-021 | Phase 1 | Implement pack-level review, canonical selection, and unified media-asset linkage | COMPLETED | `python -m compileall -q studio`; `pytest -q tests/test_api.py tests/test_comfy.py` — 25 passed; live DB schema version 8, 12 packs, 39 pack items verified | 2026-10-21 | Pack/item review gates, asset links, PersonaVersion lineage, canonical selection, and rejection invalidation are active; model installation remains deferred |
+| IMP-003 | Phase 1 | Introduce canonical PersonaVersion persistence | PLANNED | Not started | — | Requires Phase 0 |
+| IMP-004 | Phase 1 | Convert v2 JSON persona data to import/export | PLANNED | Not started | — | Preserve backup compatibility |
+| IMP-005 | Phase 2 | Reclassify and review Master Persona packs | PLANNED | Not started | — | Adult/glamour can be canonical when approved |
+| IMP-006 | Phase 3 | Unify render, asset and storage contracts | PLANNED | Not started | — | Remove automatic approval |
+| IMP-007 | Phase 4 | Add persistent local job execution | PLANNED | Not started | — | One heavy job by default on 16 GB Mac |
+| IMP-008 | Phase 5 | Benchmark identity-conditioning methods | PLANNED | Not started | — | IP-Adapter FaceID, InstantID, PuLID, LoRA option |
+| IMP-009 | Phase 6 | Add creator personality and content planning | PLANNED | Not started | — | Include adult/glamour content pillars |
+| IMP-010 | Phase 7 | Add quality and review gates | PLANNED | Not started | — | Identity, anatomy, disclosure and policy checks |
+| IMP-011 | Phase 8 | Add account-aware publishing workflow | PLANNED | Not started | — | Only approved assets |
+| IMP-012 | Phase 9 | Add analytics and optimization loop | PLANNED | Not started | — | After publishing stability |
+
+## Adult/glamour implementation checklist
+
+| Requirement | Status | Evidence/notes |
+|---|---|---|
+| Adult/glamour is a first-class content class | COMPLETED | Normalized as `content_class=adult_glamour` with identity-and-style authority |
+| Adult/glamour guides content style | COMPLETED | Pack authority and content class are retained through review and selection |
+| Approved adult/glamour assets can become canonical anchors | COMPLETED | Backend selection requires approved eligible pack/item, linked approved image asset, rights, and matching PersonaVersion; UI remains follow-up work |
+| Adult/glamour assets are not auto-approved | COMPLETED | Direct generation paths now begin `pending`; explicit review remains required |
+| Fictional adult status is explicit | COMPLETED | Persona and asset disclosure contracts remain required for generation/import |
+| Rights and consent metadata is captured | COMPLETED | Reference-pack items and Assets carry rights confirmation gates |
+| Disclosure is attached to export | PLANNED | Review/export phase |
+| Platform policy is checked separately | PLANNED | Publishing phase |
+| Restricted visibility/export controls exist | PLANNED | Review and publishing UI phase |
+| Identity quality is evaluated on adult anchors | PLANNED | AI evaluation phase |
+
+## Legacy persona disposition
+
+The user confirmed that new Master Personas will be generated with the new
+structure and existing personas will not be used after the implementation.
+This is a migration boundary, not a deletion request.
+
+| Control | Required disposition | Status |
+|---|---|---|
+| Existing persona records | Preserve unchanged for reference, audit, and export | RECORDED |
+| Existing generated/reference packs | Preserve as legacy/reference-only; do not use as new production source | RECORDED |
+| New production Master Personas | Create through Persona + PersonaVersion + ReferencePack + ContentPack + review/lineage flow | RECORDED |
+| Persona identifiers | Issue new unique IDs; do not reuse legacy IDs | RECORDED |
+| Legacy asset promotion | Never automatic; require explicit import, provenance, rights/consent, review, and canonical selection | RECORDED |
+| v2 compatibility | Retain for inspection/export/explicit import only; new creation targets canonical APIs | RECORDED |
+
+No legacy persona or pack was deleted, rewritten, or promoted by this decision.
+
+## Validation ledger
+
+Phase 0 documentation and runtime enforcement are complete. The following
+activities were verified:
+
+~~~text
+Activity: IMP-014
+Validation:
+  - .\\.venv\\Scripts\\python.exe -m compileall -q studio
+  - .\\.venv\\Scripts\\python.exe -m pytest -q tests/test_api.py tests/test_comfy.py
+  - Request-ID response-header regression test
+  - Correlation-ID response-header regression test
+Result: PASS — 22 passed
+Evidence: Compile succeeded; missing IDs are generated; safe supplied IDs are preserved; invalid IDs are replaced.
+
+Activity: IMP-015
+Validation:
+  - .\\.venv\\Scripts\\python.exe -m compileall -q studio
+  - .\\.venv\\Scripts\\python.exe -m pytest -q tests/test_api.py tests/test_comfy.py
+  - Photo Studio generation regression test with mocked local image backend
+  - Source audit of Photo Studio, Orchestrator, diffusion-engine, and v2 fallback inserts
+Result: PASS — compile succeeded; 22 passed
+Evidence: Generated assets are inserted with review=pending and require explicit review before export/use.
+~~~
+
+The broader targeted command also included `tests/test_frontend.py` and reported one
+unrelated existing failure: that test expects `type="module"` while the current
+`static/index.html` uses a classic script tag. The existing frontend changes were
+preserved and this issue is deferred to the frontend implementation phase. The
+maintained `tests/` suite reported two unrelated existing failures: the model
+license-registry assertion and the same frontend module-script assertion. The
+backend Phase 0 gate remains green with 22 passed tests.
+
+The repository-wide command also attempted to collect experimental scripts under
+`scripts/` and stopped because optional `cv2` and `torch` packages are absent.
+Those heavyweight model dependencies are not required for Phase 0 runtime
+hardening and were intentionally not installed.
+
+Future entries must include the exact validation command or inspection evidence:
+
+~~~text
+Activity: IMP-006
+Validation:
+  - pytest -q relevant test modules
+  - storage resolver integration test
+  - asset manifest file existence check
+Result: PASS or FAIL
+Evidence: summary and relevant output
+~~~
+
+### Phase 1 foundation validation
+
+~~~text
+Activity: IMP-017
+Validation:
+  - .\\.venv\\Scripts\\python.exe -m compileall -q studio
+  - .\\.venv\\Scripts\\python.exe -m pytest -q tests/test_api.py tests/test_comfy.py
+  - Persona creation creates a draft PersonaVersion snapshot
+  - Freeze transitions the version to frozen and returns the frozen version
+  - Series rows store persona_version_id
+  - Job lineage records persona_version and persona_version_id
+  - Read-only live database check confirms schema version 5 and persona_versions table
+Result: PASS — compile succeeded; 23 passed
+Evidence: Phase 1 PersonaVersion foundation is active without installing models or heavyweight runtimes.
+~~~
+
+~~~text
+Activity: IMP-018
+Validation:
+  - .\\.venv\\Scripts\\python.exe -m compileall -q studio
+  - .\\.venv\\Scripts\\python.exe -m pytest -q tests/test_api.py tests/test_comfy.py
+  - First v2 access imports legacy JSON into canonical SQLite
+  - v2 export returns schema_version persona-v2-export-1
+  - Explicit v2 import merges new personas into canonical SQLite
+  - Reference rows bind persona_version_id and expose role/content_class/review/rights metadata
+  - Read-only live database check confirms schema version 6 and reference metadata columns
+Result: PASS — compile succeeded; 24 passed
+Evidence: data/personas_v2.json remains a three-persona compatibility backup; no models or heavyweight runtimes installed.
+~~~
+
+~~~text
+Activity: IMP-019
+Validation:
+  - .\\.venv\\Scripts\\python.exe -m compileall -q studio
+  - .\\.venv\\Scripts\\python.exe -m pytest -q tests/test_api.py tests/test_comfy.py
+  - v2 access creates turnaround, micro-detail, category-baseline, and adult/glamour packs
+  - adult/glamour pack retains identity_and_style authority and pending review
+  - archive stores reference packs and restore remaps them to the restored PersonaVersion
+  - read-only live database check confirms schema version 7, 12 packs, and 39 pack items
+Result: PASS — compile succeeded; 24 passed
+Evidence: Adult/glamour remains part of the identity authority model without automatic approval; no models or heavyweight runtimes installed.
+~~~
+
+~~~text
+Activity: IMP-021
+Validation:
+  - .\\.venv\\Scripts\\python.exe -m compileall -q studio
+  - .\\.venv\\Scripts\\python.exe -m pytest -q tests/test_api.py tests/test_comfy.py
+  - Pack and item review endpoints reject unsafe approval transitions
+  - Linked pack items expose asset_id, asset kind/review, and Asset PersonaVersion lineage
+  - Canonical selection rejects missing/unapproved/mismatched assets
+  - Asset rejection clears linked item and pack canonical selections
+  - Read-only live database check confirms schema version 8, 12 packs, and 39 pack items
+Result: PASS — compile succeeded; 25 passed; live schema migration verified
+Evidence: Pack-level review/canonical selection and unified media-asset linkage are active without installing models or heavyweight runtimes.
+~~~
+
+The broader maintained `tests` command completed with 32 passed and two
+unrelated pre-existing failures: the free-model license registry assertion and
+the frontend module-script assertion. No Phase 1 pack/linkage regression was
+reported by that run.
+
+## Blockers and decisions
+
+| ID | Blocker/decision | Status | Owner/action |
+|---|---|---|---|
+| DEC-001 | Approve Phase 0 implementation scope | CLOSED | User approved with “Start Phase 0” |
+| DEC-002 | Select canonical identity-conditioning benchmark set | OPEN | After Phase 0/2 foundation |
+| DEC-003 | Confirm publishing platforms and account model | OPEN | Before Phase 8 |
+| DEC-004 | Install all models and heavyweight runtimes only at final installation gate | CLOSED | User clarification recorded; maintain register and defer installation |
+| DEC-005 | Create new Master Personas with the new structure; existing personas are legacy/reference-only after implementation | CLOSED | User clarification recorded; preserve old data, use new unique IDs, and require explicit reviewed import for any legacy reuse |
+
+## Final model and dependency installation register
+
+**Global policy:** `NOT INSTALLED — FINAL GATE ONLY` unless a row is explicitly
+approved during the final installation phase. Development uses mocks, metadata,
+contract tests, and optional-runtime detection. No model files or heavyweight
+runtime packages are to be downloaded as part of Phases 1–9 feature work.
+
+| Register ID | Component | Purpose | Source / license to verify | M5/16 GB fit to validate | Expected footprint | Install gate | Status |
+|---|---|---|---|---|---:|---|---|
+| MODEL-001 | Local image model selected from approved registry | Base image generation | Pinned upstream repository and license record | MPS memory, resolution, quantization benchmark | TBD | Final | NOT INSTALLED |
+| MODEL-002 | Identity-conditioning adapter candidate | Face and identity consistency | Pinned upstream repository and model license | MPS support and peak unified memory | TBD | Final | NOT INSTALLED |
+| MODEL-003 | Wan2.2 or approved local video model | Image-to-video and reels | Pinned upstream repository and license record | Sequential generation and disk/cache benchmark | TBD | Final | NOT INSTALLED |
+| MODEL-004 | Kokoro or approved local narration model | Voice generation | Pinned upstream repository and license record | CPU/MPS latency and voice asset size | TBD | Final | NOT INSTALLED |
+| RUNTIME-001 | PyTorch + Apple Silicon/MPS build | Local ML execution | Official package source and version pin | MPS compatibility and memory behavior | TBD | Final | NOT INSTALLED |
+| RUNTIME-002 | Diffusers / Transformers / safetensors | Image pipeline runtime | Official package sources and version pins | Python 3.12 and MPS compatibility | TBD | Final | NOT INSTALLED |
+| RUNTIME-003 | ComfyUI and approved custom nodes | Optional graph execution | Official repository and node licenses | Local service stability and disk use | TBD | Final | NOT INSTALLED |
+| RUNTIME-004 | FFmpeg | Media assembly and validation | Official distribution/license record | Apple Silicon executable and codec coverage | TBD | Final | NOT INSTALLED |
+| RUNTIME-005 | OpenCV and auxiliary vision packages | Face/quality evaluation | Official package sources and licenses | Install size and MPS/CPU behavior | TBD | Final | NOT INSTALLED |
+
+Each row must later gain: pinned version/revision, checksum, download URL,
+installation date, installer identity, validation command, measured peak memory,
+disk usage, and rollback/removal instructions.
+
+## Change log
+
+| Date | Change | Result |
+|---|---|---|
+| 2026-10-21 | Created final implementation roadmap | Adult/glamour assets may become approved canonical identity anchors |
+| 2026-10-21 | Created implementation tracking file | Future successful activities require evidence-based updates |
+| 2026-10-21 | Organized documentation | Kept final plan and tracking file active; moved 19 other Markdown files to docs/archieved doc/ |
+| 2026-10-21 | Completed Phase 0 contracts baseline | Domain ownership, lifecycle states, storage, API ownership, observability and ADRs documented; no runtime code changed |
+| 2026-10-21 02:11 +05:30 | Completed Phase 0 runtime hardening | Added bounded request/correlation traceability and removed direct-generation auto-approval; backend regression suite passed |
+| 2026-10-21 02:12 +05:30 | Recorded validation boundaries | Maintained suite has two unrelated pre-existing failures; repository-wide collection also requires optional model packages; no Phase 0 regression detected |
+| 2026-10-21 | Recorded final-only model installation policy | Added ADR-007, register, install gate, and decision DEC-004; no model or heavyweight dependency installed |
+| 2026-10-21 | Completed Phase 1 PersonaVersion foundation | Added SQLite version table/backfill, draft/frozen lifecycle, version APIs, series binding, and job lineage; compile and 23-test backend gate passed |
+| 2026-10-21 | Completed Phase 1 v2 compatibility/reference binding | Added canonical v2 import/export facade, schema version 6 reference metadata, PersonaVersion binding, and 24-test backend gate; model installation remains deferred |
+| 2026-10-21 | Completed Phase 1 ReferencePack normalization | Added schema version 7 pack/item tables, adult/glamour identity authority metadata, and archive/restore PersonaVersion remapping; 24-test backend gate passed |
+| 2026-10-21 | Recorded new Master Persona migration boundary | Added ADR-010 and legacy persona disposition controls; existing personas/packs remain untouched and new production creation will use the new canonical structure |
+| 2026-10-21 | Completed Phase 1 pack review and unified media linkage | Added schema version 8 asset/pack linkage, PersonaVersion-bound assets, review/canonical APIs, rejection invalidation, v2 routes, and regression coverage; 25-test backend gate passed |
+

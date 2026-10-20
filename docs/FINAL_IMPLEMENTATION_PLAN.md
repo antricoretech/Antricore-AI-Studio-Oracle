@@ -1,0 +1,680 @@
+# Final Implementation Plan — AI Influencer Studio
+
+**Status:** Phase 0 runtime hardening completed; Phase 1 PersonaVersion foundation in progress  
+**Target:** Local-first modular monolith on a 16 GB unified-memory Mac  
+**Goal:** Build a reliable AI influencer persona and content-creator studio from persona design through reviewed, export-ready, and optionally publishable content.
+
+## Implementation boundary
+
+This document remains the implementation roadmap and decision record. Runtime implementation is now authorized; each completed activity must be verified and recorded in `docs/IMPLEMENTATION_TRACKING.md` before the next activity is marked complete.
+
+## Final architecture recommendation
+
+Keep the application as a modular monolith:
+
+~~~text
+FastAPI API
+  + SQLite system of record
+  + canonical local asset storage
+  + persistent local job runner
+  + image/video/audio adapters
+  + review and provenance services
+  + optional platform publishing service
+~~~
+
+Do not introduce microservices, Kubernetes, distributed queues, or a vector database yet. Consolidate identity, jobs, assets, review, and provenance first.
+
+The key decision is:
+
+> SQLite becomes the canonical system of record. JSON becomes import/export, backup, and interchange format rather than a second live persona database.
+
+## Complete product journey
+
+~~~text
+Workspace startup
+  → readiness checks
+  → persona draft
+  → persona synthesis
+  → Identity Core generation
+  → identity/reference review
+  → PersonaVersion freeze
+  → creator personality setup
+  → lifestyle/world setup
+  → content-pillar setup
+  → content brief
+  → render preflight
+  → persistent render job
+  → identity/content quality checks
+  → manual review
+  → export package
+  → optional platform publishing
+  → analytics feedback
+~~~
+
+## Current code-to-target mapping
+
+| Current area | Current role | Target role |
+|---|---|---|
+| studio/app.py | Main FastAPI routes | Thin API/controller layer |
+| studio/api_v2.py | JSON personas and Vault jobs | Persona/version service using canonical persistence |
+| studio/orchestrator.py | Prompt compilation and direct rendering | Prompt service plus common render-job submission |
+| studio/diffusion_engine.py | Direct SDXL rendering | Model adapter with reference conditioning and job contract |
+| studio/database.py | SQLite schema and transactions | Canonical persistence and migrations |
+| studio/repositories.py | Partial persistence boundary | Persona, version, pack, job, asset, review and publishing repositories |
+| studio/schemas.py | HTTP request schemas | Versioned API/domain contracts |
+| studio/brief.py | JSON brief contract | ContentBrief import/export contract |
+| static/app.js | Large workflow controller | Gradually decomposed feature modules |
+| static/modules/*.js | Modular frontend features | Standard frontend implementation pattern |
+| generated/ and data/outputs/ | Multiple media locations | One canonical storage resolver |
+| tests/ | Core API/mock coverage | Domain, integration, E2E and AI-evaluation coverage |
+
+## Canonical domain model
+
+### Persona
+
+Stable creator identity: id, display name, fictional-adult status, disclosure, and creation time.
+
+### PersonaVersion
+
+Immutable snapshot containing identity capsule, creator profile, lifestyle world, audience profile, content strategy, status, and frozen time.
+
+### ReferencePack
+
+Reference groups with explicit roles:
+
+~~~text
+identity_core
+creator_style
+lifestyle
+adult_glamour
+commercial_brand
+~~~
+
+### ReferenceAsset
+
+Every reference records role, file, prompt, model, workflow, seed, hash, review status, quality status, and canonical eligibility.
+
+### ContentBrief
+
+Every brief records PersonaVersion, content pillar, format, narrative, visual direction, emotional goal, platform, disclosure, and approval status.
+
+### Job and Asset
+
+All rendering paths use the same lifecycle:
+
+~~~text
+Brief → RenderRequest → Job → Execution → Asset → QualityResult
+      → ReviewDecision → Export or Publish
+~~~
+
+## Master Persona design
+
+The Master Persona must become a Creator Identity System rather than only a 13-image visual vault.
+
+### Identity Core
+
+Recommended calibration set:
+
+- Neutral front.
+- Left and right 3/4 views.
+- True left and right profiles.
+- Neutral back.
+- Neutral full body.
+- Smile, serious, closed-eye, and speaking expressions.
+- Eye and mouth macro.
+- Hands and distinctive-feature macro.
+
+### Creator Style Pack
+
+Fashion, fitness, casual, resort, selfie, and UGC visual style references.
+
+### Lifestyle Pack
+
+Home, café, city, workspace, travel, fitness, fashion, vacation, bedroom, and hotel environments.
+
+### Adult/Glamour Pack
+
+Adult/glamour packs must not be isolated from the Identity Core. They must:
+
+1. Guide adult/glamour content style.
+2. Provide eligible canonical identity anchors when explicitly reviewed and approved.
+
+Planned categories include boudoir, lingerie, stockings/corsetry, nude artistic/editorial glamour, sensual portrait campaigns, intimate lifestyle scenes, adult beauty/product campaigns, and restricted commercial glamour.
+
+The correct model is one unified reference authority system:
+
+~~~text
+ReferenceAsset
+  ├── identity_authority: canonical | supporting | style_only
+  ├── content_class: general | adult_glamour | lingerie | nude_editorial
+  ├── canonical_flag: true | false
+  ├── review_status: pending | approved | rejected
+  └── destination_policy: local_only | review_required | eligible
+~~~
+
+An adult/glamour image may become a canonical identity anchor when it passes identity, quality, age, rights, consent, disclosure, and review checks. Adult images must not automatically become canonical merely because generation succeeded.
+
+Required boundaries remain:
+
+- Explicitly fictional adult persona.
+- Clear adult presentation.
+- Rights and consent confirmation.
+- No minors or age-ambiguous personas.
+- No real-person sexual impersonation.
+- No non-consensual or exploitative content.
+- Manual review before approval.
+- Platform-policy review before publishing.
+
+## Implementation phases
+
+### Phase 0 — Baseline and contracts
+
+Define domain objects, lifecycle states, API contracts, storage conventions, logging, correlation IDs, and architecture decision records.
+
+Exit: every route has a domain owner and every generated file maps to a documented asset contract.
+
+### Phase 1 — Canonical Persona and PersonaVersion
+
+- Make SQLite canonical.
+- Convert the v2 JSON persona data to import/export.
+- Add immutable PersonaVersion records.
+- Add explicit canonical reference selection.
+- Add reference roles and pack-level review.
+- Make series and jobs reference PersonaVersion.
+
+Current foundation slice completed: SQLite now persists a PersonaVersion snapshot
+for each persona, freeze returns the frozen version, series stores the bound
+version ID, and queued-job lineage records the version number and ID. v2 JSON
+compatibility import/export is now active, and uploaded references carry their
+bound PersonaVersion, role, content class, review, and rights metadata. Full
+archive lifecycle reconciliation, pack-level review, and downstream version
+enforcement remain the next Phase 1 activities.
+
+The rich v2 vault is now normalized into ReferencePack and ReferencePackItem
+records. Adult/glamour packs retain `identity_authority=identity_and_style`,
+remain review-pending, and are canonical-eligible only after explicit review.
+Archive and restore preserve pack metadata while remapping records to the
+restored PersonaVersion.
+
+Phase 1 review/linkage slice completed: reference-pack and item review APIs
+now require rights confirmation before approval; pack review is invalidated by
+unsafe item changes; canonical selection requires an approved eligible pack,
+approved item(s), approved rights-confirmed image assets, matching
+PersonaVersion lineage, and an existing media file. Pack items now link to the
+unified assets table, generated/imported media carries PersonaVersion lineage,
+and rejecting a linked asset automatically clears its canonical selection.
+
+Migration boundary: existing personas and their existing generated/reference
+packs are legacy/reference-only after the new implementation is released.
+They must not be used as the production source for newly created Master
+Personas. New production personas receive new unique IDs and are created
+through the canonical Persona, immutable PersonaVersion, ReferencePack,
+ReferencePackItem/Asset, ContentPack, review, and lineage flow. Existing
+records remain preserved for inspection, export, audit, or explicit import;
+they are not deleted, silently converted, or automatically promoted into
+canonical identity anchors.
+
+Exit: Vault, Orchestrator, Photo Studio, CLI, and series workflows resolve the same persona/version.
+
+### Phase 2 — Unified Master Persona and content packs
+
+- Reclassify the current 13-pack into explicit reference roles.
+- Add 3/4 views, expression references, neutral full body, hands, and details.
+- Add creator-style, lifestyle, commercial, and adult/glamour packs.
+- Permit reviewed adult/glamour assets to become canonical anchors.
+- Record authority, content class, review, consent, rights, and policy metadata.
+
+Exit: identity and style references are distinguishable, while approved adult/glamour references can participate in canonical identity anchoring.
+
+### Phase 3 — Unified rendering and asset lifecycle
+
+- Route Photo Studio and Orchestrator rendering through the common job service.
+- Normalize CLI imports.
+- Remove automatic approval.
+- Centralize file resolution.
+- Add idempotency and complete lineage.
+- Ensure every output begins as pending.
+
+Exit: Generated, Approved, and Publishable are separate states for every content class.
+
+### Phase 4 — Persistent local job runner
+
+- Persist progress and child tasks.
+- Add retry, backoff, cancellation, and restart recovery.
+- Add bounded concurrency.
+- Add model unload and memory cleanup.
+- Add disk and memory preflight.
+
+For the 16 GB Mac, default to one heavy generation task and sequential Vault/content-pack generation.
+
+Exit: interrupted jobs are resumable or clearly interrupted, and the UI never reports completion before output validation succeeds.
+
+### Phase 5 — Identity-conditioned rendering
+
+Benchmark text-only generation against IP-Adapter FaceID, InstantID, PuLID, and, if necessary, a controlled LoRA/DreamBooth adapter.
+
+Measure face similarity, body consistency, prompt adherence, pose diversity, adult/glamour identity consistency, video drift, latency, memory use, and human approval rate.
+
+Exit: one production identity method is selected from measured results on project personas and target hardware.
+
+### Phase 6 — Creator personality and content system
+
+Add personality, values, interests, humor, voice, mannerisms, audience, content pillars, emotional objectives, brand positioning, captions, and scripts.
+
+Use this brief formula:
+
+~~~text
+Identity + Story + Visual + Emotion + Format + Audience Goal + Disclosure
+~~~
+
+Exit: a brief can be created without manually repeating persona behavior, visual identity, or disclosure instructions.
+
+### Phase 7 — Quality, review, and export
+
+Add checks for file integrity, identity similarity, anatomy, hands, video flicker, facial drift, audio timing, disclosure, rights, content class, and destination policy.
+
+Exit: every review decision records status, reason, reviewer, and timestamp; approved assets export with manifest and disclosure sidecar.
+
+### Phase 8 — Publishing integration
+
+Add platform accounts, Persona-to-account binding, content calendar, captions, publish attempts, retries, audit logs, and platform responses.
+
+Publishing requires:
+
+~~~text
+Approved asset
++ approved caption
++ disclosure
++ frozen PersonaVersion
++ assigned account
++ platform-policy check
+~~~
+
+Exit: the publishing layer cannot consume raw or unreviewed output.
+
+### Phase 9 — Analytics and optimization
+
+Track pillar performance, format performance, audience response, campaign results, rejection reasons, model/version attribution, and identity failures.
+
+Optimize content strategy before changing persona identity.
+
+## Performance plan for the target Mac
+
+- One heavy model at a time.
+- Sequential Vault and content-pack generation.
+- Bounded local queue.
+- Preview resolution before final resolution.
+- Explicit model unload.
+- Thumbnail/original separation.
+- Disk and memory estimates before generation.
+- Image jobs prioritized over video jobs.
+- No silent concurrent model loading.
+
+## Testing plan
+
+### Unit tests
+
+Cover PersonaVersion rules, pack roles, adult metadata, prompt compilation, job transitions, asset approval, path resolution, and idempotency.
+
+### Integration tests
+
+Cover persona creation, identity freeze, Vault generation, adult-pack review, brief-to-job, job-to-asset, export, series continuity, retry, and restart.
+
+### End-to-end tests
+
+~~~text
+Create persona → freeze identity → generate content → review → approve → export
+~~~
+
+Also test:
+
+~~~text
+Adult/glamour asset → anchor eligibility review → content review
+  → disclosure/rights review → approve or reject → export/publishing decision
+~~~
+
+## Priority order
+
+~~~text
+P0  Canonical PersonaVersion
+P0  Unified asset and storage contract
+P0  Remove automatic approval
+P0  Adult/glamour metadata and review gates
+P1  Persistent local job runner
+P1  Unified Master Persona packs
+P1  Identity-conditioned rendering
+P1  Creator personality and content planner
+P2  Publishing integration
+P2  Analytics and optimization
+P3  Distributed infrastructure
+~~~
+
+## Final implementation decision
+
+The next implementation milestone is the Canonical Persona, PersonaVersion, ReferencePack, Asset, and Job foundation.
+
+Adult/glamour content is a first-class capability and can contribute canonical identity anchors. The implementation must use explicit role, quality, age, rights, consent, disclosure, and review metadata rather than automatic approval.
+
+
+## Phase 0 completed baseline
+
+Phase 0 is documented and verified as a design/contracts milestone, with its two low-risk runtime enforcement items now completed: request/correlation traceability and pending-review defaults for direct generated assets. The larger PersonaVersion, storage-resolver, and unified-rendering migrations remain intentionally deferred to their planned phases.
+
+### Canonical ownership map
+
+| Domain | Canonical owner after Phase 1 | Current implementation risk |
+|---|---|---|
+| Persona identity | SQLite Persona and PersonaVersion | v2 JSON and SQLite are currently separate |
+| Identity references | ReferencePack and ReferenceAsset | reference_images and assets overlap |
+| Content direction | ContentBrief | prompts are built in several modules |
+| Render execution | Job and JobAttempt | async tasks and daemon threads are partly process-local |
+| Media files | AssetStorage resolver | generated/renders and data/outputs both exist |
+| Review | ReviewDecision | direct generation paths now begin pending; common review service remains a Phase 3/7 consolidation |
+| Publishing | PublishPlan and PublishAttempt | not implemented yet |
+| Analytics | ContentPerformance | not implemented yet |
+
+### Contract rules
+
+1. Every downstream operation must reference a PersonaVersion.
+2. A PersonaVersion is immutable after freeze.
+3. A canonical identity anchor is explicit; recency is not sufficient.
+4. Any ReferenceAsset, including adult/glamour content, can be canonical only after explicit eligibility and review.
+5. Generated, pending, approved, exportable, and publishable are different states.
+6. Every Asset must resolve to one canonical file path and one database record.
+7. JSON is an import/export format, not a second live source of truth.
+8. Every Job records input PersonaVersion, brief, workflow, model, seed, and output lineage.
+9. Publishing can consume only approved, disclosure-ready assets.
+10. Adult/glamour classification does not bypass age, rights, consent, quality, disclosure, review, or destination-policy checks.
+
+### Lifecycle state machines
+
+#### PersonaVersion
+
+~~~text
+draft
+  → synthesized
+  → identity_review
+  → frozen
+  → superseded
+  → archived
+~~~
+
+Only a frozen PersonaVersion can be used to create repeatable series or production content.
+
+#### ReferenceAsset
+
+~~~text
+generated
+  → pending_review
+  → approved
+  → canonical_eligible
+  → canonical
+~~~
+
+Alternative rejection path:
+
+~~~text
+generated → pending_review → rejected
+~~~
+
+Canonical eligibility does not automatically mean canonical. The operator must explicitly select the canonical anchor or anchor set.
+
+#### ContentBrief
+
+~~~text
+draft
+  → compiled
+  → approved
+  → queued
+  → rendered
+  → review
+  → approved
+  → exportable
+  → publishable
+~~~
+
+#### Job
+
+~~~text
+queued
+  → running
+  → submitted
+  → completed
+  → failed
+  → retryable
+  → cancelled
+  → interrupted
+~~~
+
+A job is not complete until output files exist, pass integrity checks, and are recorded as Assets.
+
+### Storage contract
+
+The future canonical layout is:
+
+~~~text
+data/
+├── studio.db
+├── assets/
+│   ├── originals/
+│   ├── derivatives/
+│   ├── thumbnails/
+│   └── manifests/
+├── references/
+├── workspaces/
+├── workflows/
+└── job-artifacts/
+~~~
+
+The application must use a storage resolver rather than constructing media paths inside route handlers. Existing generated files require an explicit migration decision during Phase 1 or Phase 3; no files are moved automatically by Phase 0. The current Phase 0 hardening deliberately leaves the existing `generated/renders` and `data/outputs` split unchanged until that migration is designed and tested.
+
+### API ownership contract
+
+| API group | Domain owner | Allowed responsibility |
+|---|---|---|
+| /api/personas | Persona service | Create/read/freeze/version personas |
+| /api/personas/{id}/references | Reference service | Upload and review references |
+| /api/v2/personas/* | Compatibility facade | Resolve through canonical PersonaVersion |
+| /api/jobs/* | Job service | Queue, monitor, retry, cancel jobs |
+| /api/assets/* | Asset/review service | File access, manifests, review, export |
+| /api/series/* | Content planning service | Series and episode planning |
+| /api/photo-studio/* | Content/render facade | Compile briefs and submit common jobs |
+| /api/orchestrator/* | Prompt/render facade | Compile prompts and submit common jobs |
+| /api/monitor, /api/readiness | Operations service | Non-mutating health and readiness |
+| Future /api/publishing/* | Publishing service | Account binding and approved publishing only |
+
+Routes should not directly create duplicate persona or asset representations outside their owning service.
+
+### Observability contract
+
+Every future request and job should carry:
+
+~~~text
+request_id
+correlation_id
+persona_id
+persona_version_id
+brief_id
+job_id
+asset_id
+workflow_id
+model_id
+attempt
+~~~
+
+Required events:
+
+~~~text
+request_received
+persona_created
+persona_version_frozen
+reference_generated
+reference_reviewed
+job_queued
+job_started
+job_progressed
+job_completed
+job_failed
+asset_created
+asset_reviewed
+asset_exported
+publish_requested
+publish_completed
+publish_failed
+~~~
+
+Logs must not contain secrets, access tokens, or unnecessary sensitive content. Long-running jobs must expose structured progress and failure categories. The current runtime now emits bounded request/correlation IDs on every HTTP response and in structured request/job log payloads; PersonaVersion, brief, asset, and attempt propagation will be completed with the corresponding domain migrations.
+
+### Architecture decisions recorded in Phase 0
+
+#### ADR-001 — Modular monolith first
+
+Decision: Keep FastAPI, SQLite, local storage, and adapters in one repository with explicit module boundaries.
+
+Reason: The current product is local-first and single-operator. Independent scaling and team size do not yet justify microservices.
+
+Revisit when: Multiple workers, multiple operators, or independent service scaling becomes a real requirement.
+
+#### ADR-002 — SQLite as canonical local system of record
+
+Decision: SQLite owns live Persona, PersonaVersion, ReferenceAsset, Job, Asset, ReviewDecision, and future publishing records.
+
+Reason: It already owns the strongest lineage, review, and job data.
+
+Trade-off: JSON Vault compatibility requires an import/export migration.
+
+#### ADR-003 — PersonaVersion is the identity boundary
+
+Decision: Production generation and series jobs reference immutable PersonaVersion records.
+
+Reason: A lock flag alone does not preserve the exact identity snapshot used by downstream content.
+
+Trade-off: Editing identity requires a new version and explicit migration.
+
+#### ADR-004 — One asset contract and storage resolver
+
+Decision: All generation, import, Photo Studio, Orchestrator, and CLI paths must produce the same Asset contract and use one resolver.
+
+Reason: The current generated/renders and data/outputs split creates broken lineage and export risk.
+
+Trade-off: Existing direct paths must be adapted to the common service.
+
+#### ADR-005 — Review is separate from generation
+
+Decision: All outputs begin as pending; approval is an explicit action.
+
+Reason: Generated content, including adult/glamour content, is not automatically suitable for export or publication.
+
+Trade-off: The operator has an additional review step, but gains quality, rights, disclosure, and policy control.
+
+#### ADR-006 — Adult/glamour references share identity authority
+
+Decision: Adult/glamour assets are first-class ReferenceAssets and may become canonical identity anchors after explicit review.
+
+Reason: The visual identity must remain consistent across the persona's actual content range, including adult/glamour content.
+
+Trade-off: Adult assets require stronger visibility, rights, consent, disclosure, age, and destination-policy metadata.
+
+#### ADR-007 — Install models and heavyweight runtimes last
+
+Decision: Keep model downloads, heavyweight ML dependencies, ComfyUI/Wan runtimes, and generated model assets out of the development loop until the final installation and hardware-validation phase.
+
+Reason: The application contracts, persistence, review gates, and lineage must stabilize before large local installations consume disk, memory, and setup time on the 16 GB Mac.
+
+Trade-off: Model-backed integration tests remain mocked or contract-level until the final installation gate; actual quality and performance benchmarks are deferred.
+
+Revisit when: The Phase 7/8 release candidate is ready and the model register has approved source, license, checksum, storage, and hardware-fit entries.
+
+#### ADR-008 — v2 JSON is a compatibility facade, not a live store
+
+Decision: Import legacy v2 persona JSON into SQLite Persona and PersonaVersion records on first v2 access. Keep JSON as an explicit backup/export format and expose version-aware compatibility responses from the v2 router.
+
+Reason: Existing v2 UI and vault data must remain usable while eliminating two competing live persona sources of truth.
+
+Trade-off: Rich v2 fields are preserved inside the PersonaVersion snapshot until they are normalized into dedicated reference-pack and content-pack tables.
+
+Revisit when: ReferencePack and ContentPack persistence is complete and the v2 compatibility facade can be reduced to import/export only.
+
+#### ADR-009 — Normalize legacy vault packs without auto-approving them
+
+Decision: Convert turnaround, micro-detail, category-baseline, and adult/glamour vault groups into ReferencePack records with explicit identity authority, content class, review, and canonical eligibility metadata.
+
+Reason: The v2 JSON shape contains meaningful identity and style structure that must remain available to the creator workflow, while generated/reference media must not bypass review.
+
+Trade-off: Legacy pack files are represented by source URLs and metadata until the asset-storage resolver and pack media ingestion are completed.
+
+Revisit when: ReferencePack media is migrated into the unified Asset contract and pack-level review UI is implemented.
+
+#### ADR-010 - Create new Master Personas; do not reuse legacy personas after migration
+
+Decision: The post-implementation production workflow creates Master Personas
+using the new canonical structure. Existing personas, generated outputs, and
+reference packs remain unchanged legacy/reference data and are not selected as
+the source for new production personas. New persona IDs must not reuse legacy
+IDs.
+
+Reason: The new structure establishes stronger identity/version boundaries,
+pack authority, adult/glamour identity-and-style anchors, review gates, and
+job/content lineage. Treating old records as active production inputs would
+reintroduce ambiguous ownership and make migration behavior implicit.
+
+Migration rule: No legacy asset becomes a canonical anchor automatically. If
+a future workflow needs to reuse one, it must pass an explicit import path
+with provenance, rights/consent metadata, review, identity-quality checks,
+and canonical selection. The v2 compatibility facade may remain available for
+inspection and export, but new creation targets the canonical flow.
+
+Trade-off: Existing personas do not receive automatic upgrades or continued
+production compatibility. This avoids destructive conversion and keeps the
+new identity system deterministic, at the cost of requiring intentional
+recreation or explicit, reviewed import when old material is valuable.
+
+Revisit when: A separately approved legacy-import/migration workflow has
+provenance, review, rollback, and regression coverage.
+
+#### ADR-011 - Canonical anchors require reviewed, version-matched media assets
+
+Decision: A ReferencePack may become canonical only through an explicit review
+and selection workflow. Every selected item must be approved, rights-confirmed,
+eligible, linked to an approved image Asset, and bound to the same
+PersonaVersion as the pack. Rejection of a linked Asset clears the canonical
+selection.
+
+Reason: Pack metadata alone is not sufficient identity evidence. The media
+asset must be traceable to the PersonaVersion that owns the pack so downstream
+rendering cannot silently mix identity generations or use unreviewed output.
+
+Trade-off: Legacy pack items with URLs but no unified Asset link remain
+inspectable and reviewable, but cannot be promoted to canonical anchors until
+they pass an explicit, versioned media import/link step.
+
+Revisit when: ContentPack persistence and downstream render resolution consume
+the canonical selection directly and provide end-to-end lineage assertions.
+
+### Phase 0 exit criteria
+
+- Canonical domain ownership is documented.
+- PersonaVersion is defined as the identity boundary.
+- Reference authority rules are documented.
+- Adult/glamour canonical-anchor behavior is documented.
+- Job, asset, review, export, and publishing states are documented.
+- Storage and lineage rules are documented.
+- API responsibilities are documented.
+- Observability fields and events are documented.
+- Architectural trade-offs and revisit triggers are documented.
+- Phase 1 implementation dependencies are identified.
+
+### Phase 0 runtime enforcement completed
+
+- Request and correlation IDs are generated or safely propagated for every HTTP request.
+- IDs are returned as `X-Request-ID` and `X-Correlation-ID` response headers.
+- Structured request completion logs and core job lifecycle logs include the trace IDs.
+- Direct Photo Studio, Orchestrator, diffusion-engine, and v2 fallback asset records begin with `review='pending'`.
+- A regression test verifies generated Photo Studio output cannot bypass review.
+- Storage unification, canonical PersonaVersion persistence, identity conditioning, and full render-job convergence remain deferred to Phases 1–5.
+
+### Model and dependency installation policy
+
+The project will maintain a controlled register of every model, runtime, and heavyweight dependency. Entries must include purpose, source, license, expected size, Apple Silicon/M5 compatibility, checksum or pinned revision, install command, and validation result. No entry may be installed during normal feature development. Installation is allowed only during the final installation gate after the application contracts and review workflow are stable.
+
+

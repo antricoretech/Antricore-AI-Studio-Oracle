@@ -147,3 +147,126 @@ recorded before production deployment.
 
 Phase 7 verifies readiness; it does not replace a provider-specific soak test,
 backup/restore drill, or visual quality review on actual generated media.
+
+## Phase 8 — Master Persona content packs and adult/glamour track (planned)
+
+The project uses local uncensored image-generation models, so the Master Persona
+roadmap must support the full adult/glamour content range in a controlled,
+explicitly fictional-adult workflow. This includes boudoir, lingerie, nude
+artistic/glamour, erotic-fashion, stockings, intimate lifestyle, and related
+commercial glamour packs where the content is lawful, consensual, rights-cleared,
+and permitted by the destination platform.
+
+The uncensored capability belongs in the generation/content layer; it must not
+remove the identity, review, provenance, disclosure, or publishing gates.
+
+### Planned Master Persona pack structure
+
+```text
+Identity Core
+  Neutral front, 3/4, profile, back, full body, expressions, macro details
+
+Creator Style Pack
+  Fashion, fitness, casual, resort, selfie and UGC style references
+
+Lifestyle Pack
+  Home, bedroom, hotel, café, travel, workspace, fitness and vacation worlds
+
+Adult/Glamour Content Pack
+  Boudoir half-body
+  Boudoir full-body
+  Lingerie half-body
+  Lingerie full-body
+  Stockings and corsetry
+  Nude artistic/editorial glamour
+  Intimate lifestyle scenes
+  Sensual portrait and campaign variants
+  Adult product/beauty campaign variants where appropriate
+
+Commercial/Brand Pack
+  Product ads, collaborations, campaign compositions and UGC variants
+```
+
+### Adult/glamour design rules
+
+- Every persona must be explicitly fictional and adult before an adult pack can
+  be created.
+- Adult/glamour images are content examples, not canonical identity anchors.
+- The Identity Core must be reviewed independently from adult content.
+- Each pack item must have its own prompt, negative prompt, seed, model,
+  workflow, source references, output hash, review status and rejection reason.
+- All generated adult assets begin as `pending`; generation must never imply
+  approval.
+- Rights confirmation, disclosure, manual review and export packaging remain
+  mandatory.
+- The system must exclude minors, age-ambiguous personas, real-person sexual
+  impersonation, non-consensual sexual content, exploitative content and any
+  prohibited destination-platform content.
+- Publishing must apply a separate platform/content-policy check even when the
+  local model permits the content.
+- Adult content should be isolated by visibility, filters, export controls and
+  optional account/content-policy configuration.
+
+### Required adult-content metadata
+
+The future content-pack model should record:
+
+```text
+content_class: adult_glamour | boudoir | lingerie | nude_editorial | erotic_fashion
+age_confirmation: explicit_adult_persona
+consent_rights_status: confirmed | pending | rejected
+disclosure_status: required | attached | rejected
+visibility: general | restricted | private
+destination_policy: local_only | platform_review_required | eligible
+review_status: pending | approved | rejected
+```
+
+These fields are planning requirements only. They are not implemented by this
+documentation update.
+
+### Adult-pack generation workflow
+
+```text
+Create fictional adult persona
+  → freeze and approve Identity Core
+  → select adult/glamour category
+  → compile scene and consent/rights metadata
+  → preflight model, workflow, storage and destination policy
+  → generate as pending
+  → review identity, anatomy, age presentation, content and disclosure
+  → approve or reject
+  → export with manifest and disclosure sidecar
+  → optional platform-specific publishing review
+```
+
+### Adult identity and quality evaluation
+
+Adult/glamour packs must be evaluated separately for:
+
+- Facial identity continuity.
+- Body proportion continuity.
+- Age presentation and adult clarity.
+- Anatomical quality.
+- Hands, limbs and garment integrity.
+- Pose and camera consistency.
+- Unintended exposure or visual artifacts.
+- Disclosure and destination-policy compliance.
+
+The project should benchmark reference-conditioning methods such as IP-Adapter
+FaceID, InstantID and PuLID before selecting the production identity method.
+Text-only prompts should not be treated as sufficient identity locking for a
+high-volume adult/glamour content system.
+
+### Phase 8 acceptance criteria
+
+- Adult/glamour packs are first-class content-pack types, not hardcoded special
+  cases.
+- Identity Core and adult content references are separate and independently
+  reviewed.
+- No adult content is automatically marked approved.
+- Adult assets carry explicit classification, disclosure, rights and review
+  metadata.
+- The UI can filter adult content and prevent accidental export or publishing.
+- Every adult asset is traceable to a PersonaVersion, job, prompt, model,
+  workflow, seed and review decision.
+- Destination publishing checks remain separate from local generation capability.

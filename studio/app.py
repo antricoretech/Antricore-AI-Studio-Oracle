@@ -14,10 +14,12 @@ import re
 import secrets
 import shutil
 import sys
+import time
 import uuid
 import logging
 import zipfile
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
@@ -43,10 +45,11 @@ from .model_registry import get as get_model, rows as model_rows, workflow_model
 from .policies import AI_DISCLOSURE
 from .preflight import workflow_preflight
 from .provenance import manifest, media_metadata, quality_report, sha256_bytes
-from .repositories import JobRepository, PersonaRepository, SeriesRepository
+from .repositories import JobRepository, PersonaRepository, ReferencePackRepository, SeriesRepository
 from .readiness import evaluate as evaluate_readiness
 from .schemas import (
-    JobIn, LinkIn, PersonaIn, ReviewIn, SeriesEpisodeIn, SeriesIn, SeriesQueueIn, VoiceIn, PhotoStudioPromptIn, PhotoStudioGenerateIn,
+    JobIn, LinkIn, PersonaIn, ReviewIn, ReferencePackReviewIn, ReferencePackCanonicalIn, ReferencePackAssetLinkIn,
+    SeriesEpisodeIn, SeriesIn, SeriesQueueIn, VoiceIn, PhotoStudioPromptIn, PhotoStudioGenerateIn,
     OrchestratorCompilePersonaIn, OrchestratorCreatePersonaIn, OrchestratorRenderAnchorIn, OrchestratorLockAnchorIn,
     OrchestratorSynthesizeScenesIn, OrchestratorBatchGenerateIn
 )
@@ -54,6 +57,9 @@ from . import orchestrator
 from .settings import get_settings
 
 logger = logging.getLogger("studio")
+_request_id_context: ContextVar[str] = ContextVar("studio_request_id", default="")
+_correlation_id_context: ContextVar[str] = ContextVar("studio_correlation_id", default="")
+_TRACE_ID_PATTERN = re.compile(r"[A-Za-z0-9._:-]{1,128}")
 
 
 def now():
@@ -62,6 +68,25 @@ def now():
 
 def uid():
     return uuid.uuid4().hex
+
+
+def _trace_id(value: str | None) -> str:
+    """Accept bounded operator-supplied trace IDs, otherwise generate one."""
+
+    value = (value or "").strip()
+    return value if _TRACE_ID_PATTERN.fullmatch(value) else uid()
+
+
+def _log_data(data: dict | None = None) -> dict:
+    """Merge request trace context into structured log payloads."""
+
+    payload = {
+        "request_id": _request_id_context.get(),
+        "correlation_id": _correlation_id_context.get(),
+    }
+    if data:
+        payload.update(data)
+    return {"data": payload}
 
 
 @asynccontextmanager
@@ -100,6 +125,38 @@ async def optional_token_auth(request: Request, call_next):
         if token != settings.auth_token:
             return JSONResponse({"detail": "Studio authentication required"}, status_code=401, headers={"WWW-Authenticate": "Bearer"})
     return await call_next(request)
+
+
+@app.middleware("http")
+async def request_trace_context(request: Request, call_next):
+    """Attach bounded request/correlation IDs to every response and log event."""
+
+    supplied_request_id = request.headers.get("x-request-id")
+    supplied_correlation_id = request.headers.get("x-correlation-id")
+    request_id = _trace_id(supplied_request_id or supplied_correlation_id)
+    correlation_id = _trace_id(supplied_correlation_id or supplied_request_id)
+    request.state.request_id = request_id
+    request.state.correlation_id = correlation_id
+    request_token = _request_id_context.set(request_id)
+    correlation_token = _correlation_id_context.set(correlation_id)
+    started = time.perf_counter()
+    try:
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        response.headers["X-Correlation-ID"] = correlation_id
+        logger.info(
+            "request_completed",
+            extra=_log_data({
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": response.status_code,
+                "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+            }),
+        )
+        return response
+    finally:
+        _request_id_context.reset(request_token)
+        _correlation_id_context.reset(correlation_token)
 
 
 def workflow_path(wid):
@@ -220,6 +277,21 @@ def persona_response(person):
         result["characteristics"] = json.loads(raw or "{}")
     except json.JSONDecodeError:
         result["characteristics"] = {}
+    version = PersonaRepository.current_version(result.get("id")) if result.get("id") else None
+    if version:
+        result["current_version"] = persona_version_response(version)
+    return result
+
+
+def persona_version_response(version):
+    if not version:
+        return None
+    result = dict(version)
+    raw_snapshot = result.pop("snapshot_json", "{}")
+    try:
+        result["snapshot"] = json.loads(raw_snapshot or "{}")
+    except json.JSONDecodeError:
+        result["snapshot"] = {}
     return result
 
 
@@ -372,14 +444,105 @@ def freeze_persona(pid: str):
     person = db.row("SELECT * FROM personas WHERE id=?", (pid,))
     if not person:
         raise HTTPException(404, "Persona not found")
-    if not person.get("identity_locked"):
-        db.write("UPDATE personas SET identity_locked=1, identity_version=MAX(identity_version, 1), locked_at=? WHERE id=?", (now(), pid))
-    return persona_response(db.row("SELECT * FROM personas WHERE id=?", (pid,)))
+    frozen_version = PersonaRepository.freeze(pid, now())
+    if not frozen_version:
+        raise HTTPException(409, "Persona has no persisted identity version")
+    result = persona_response(db.row("SELECT * FROM personas WHERE id=?", (pid,)))
+    result["frozen_version"] = persona_version_response(frozen_version)
+    return result
+
+
+@app.get("/api/personas/{pid}/versions")
+def list_persona_versions(pid: str):
+    must_persona(pid)
+    return [persona_version_response(version) for version in PersonaRepository.versions(pid)]
+
+
+@app.get("/api/personas/{pid}/versions/{version_id}")
+def get_persona_version(pid: str, version_id: str):
+    must_persona(pid)
+    version = PersonaRepository.version(pid, version_id)
+    if not version:
+        raise HTTPException(404, "Persona version not found")
+    return persona_version_response(version)
 
 
 @app.get("/api/personas/{pid}/references")
 def list_references(pid: str):
-    return db.all_rows("SELECT id, persona_id, label, created_at FROM reference_images WHERE persona_id=? ORDER BY created_at DESC", (pid,))
+    must_persona(pid)
+    return db.all_rows(
+        "SELECT id, persona_id, asset_id, filename, label, created_at, persona_version_id, role, content_class, review, rights_confirmed, metadata_json FROM reference_images WHERE persona_id=? ORDER BY created_at DESC",
+        (pid,),
+    )
+
+
+@app.get("/api/personas/{pid}/reference-packs")
+def list_reference_packs(pid: str):
+    must_persona(pid)
+    return ReferencePackRepository.list(pid)
+
+
+@app.get("/api/personas/{pid}/reference-packs/{pack_id}")
+def get_reference_pack(pid: str, pack_id: str):
+    must_persona(pid)
+    pack = ReferencePackRepository.get(pid, pack_id)
+    if not pack:
+        raise HTTPException(404, "Reference pack not found")
+    return pack
+
+
+@app.patch("/api/personas/{pid}/reference-packs/{pack_id}/review")
+def review_reference_pack(pid: str, pack_id: str, payload: ReferencePackReviewIn):
+    must_persona(pid)
+    try:
+        return ReferencePackRepository.review_pack(
+            persona_id=pid, pack_id=pack_id, review=payload.review,
+            rights_confirmed=payload.rights_confirmed, reviewed_at=now(),
+        )
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@app.patch("/api/personas/{pid}/reference-packs/{pack_id}/canonical")
+def select_reference_pack_canonical(pid: str, pack_id: str, payload: ReferencePackCanonicalIn):
+    must_persona(pid)
+    try:
+        return ReferencePackRepository.select_canonical(
+            persona_id=pid, pack_id=pack_id, selected=payload.selected, item_ids=payload.item_ids,
+        )
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@app.patch("/api/personas/{pid}/reference-packs/{pack_id}/items/{item_id}/review")
+def review_reference_pack_item(pid: str, pack_id: str, item_id: str, payload: ReferencePackReviewIn):
+    must_persona(pid)
+    try:
+        return ReferencePackRepository.review_item(
+            persona_id=pid, pack_id=pack_id, item_id=item_id, review=payload.review,
+            rights_confirmed=payload.rights_confirmed, reviewed_at=now(),
+        )
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@app.post("/api/personas/{pid}/reference-packs/{pack_id}/items/{item_id}/asset")
+def link_reference_pack_asset(pid: str, pack_id: str, item_id: str, payload: ReferencePackAssetLinkIn):
+    must_persona(pid)
+    try:
+        return ReferencePackRepository.link_asset(
+            persona_id=pid, pack_id=pack_id, item_id=item_id, asset_id=payload.asset_id,
+        )
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
 
 
 def series_response(row):
@@ -398,13 +561,16 @@ def create_series(payload: SeriesIn):
     person = must_persona(payload.persona_id)
     if not person.get("identity_locked"):
         raise HTTPException(409, "Freeze the persona identity before creating a repeatable series")
+    persona_version = PersonaRepository.current_version(person["id"])
+    if not persona_version or persona_version.get("state") != "frozen":
+        raise HTTPException(409, "A frozen PersonaVersion is required before creating a repeatable series")
     sid = uid()
     episodes = []
     for index, episode in enumerate(payload.episodes, start=1):
         prompt = f"{payload.shared_prompt.strip()}\nEpisode direction: {episode.prompt.strip()}"
         video_prompt = f"{payload.shared_prompt.strip()}\nEpisode motion: {episode.video_prompt.strip()}"
         episodes.append((uid(), index, episode.title.strip(), prompt, video_prompt, now()))
-    SeriesRepository.create(series_id=sid, persona_id=person["id"], title=payload.title.strip(),
+    SeriesRepository.create(series_id=sid, persona_id=person["id"], persona_version_id=persona_version["id"], title=payload.title.strip(),
                             description=payload.description.strip(), shared_prompt=payload.shared_prompt.strip(),
                             created_at=now(), episodes=episodes)
     return series_response(db.row("SELECT series.*, personas.name AS persona_name, personas.identity_locked, personas.identity_version FROM series JOIN personas ON personas.id=series.persona_id WHERE series.id=?", (sid,)))
@@ -450,10 +616,29 @@ async def add_reference(pid: str, file: UploadFile = File(...), label: str = For
     except Exception as e:
         raise HTTPException(400, f"Invalid PNG, JPEG, or WEBP image: {e}") from e
     rid = uid()
-    filename = rid + extension
+    aid = uid()
+    filename = aid + extension
     (db.UPLOADS / filename).write_bytes(raw)
-    db.write("INSERT INTO reference_images VALUES (?,?,?,?,?)", (rid, pid, filename, label[:100], now()))
-    return {"id": rid, "label": label, "url": f"/api/references/{rid}/file"}
+    (db.OUTPUTS / filename).write_bytes(raw)
+    version = PersonaRepository.current_version(pid)
+    normalized_label = label.strip()[:100]
+    label_lower = normalized_label.lower()
+    role = "identity_anchor" if any(term in label_lower for term in ("master", "anchor", "identity")) else "supporting"
+    content_class = "adult_glamour" if any(term in label_lower for term in ("adult", "boudoir", "lingerie", "glamour", "intimate")) else "identity"
+    metadata = media_metadata(raw, "image", filename)
+    quality = quality_report(db.OUTPUTS / filename, "image", AI_DISCLOSURE)
+    created = now()
+    db.write_many([
+        (
+            "INSERT INTO assets (id, persona_id, persona_version_id, job_id, filename, kind, prompt, review, rights_confirmed, disclosure, created_at, sha256, metadata_json, quality_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (aid, pid, version["id"] if version else None, None, filename, "image", normalized_label, "pending", 1, AI_DISCLOSURE, created, sha256_bytes(raw), json.dumps(metadata), json.dumps(quality)),
+        ),
+        (
+            "INSERT INTO reference_images (id, persona_id, filename, label, created_at, asset_id, persona_version_id, role, content_class, review, rights_confirmed, metadata_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (rid, pid, filename, normalized_label, created, aid, version["id"] if version else None, role, content_class, "pending", 1, json.dumps({"source": "operator_upload"})),
+        ),
+    ])
+    return {"id": rid, "asset_id": aid, "label": normalized_label, "role": role, "content_class": content_class, "review": "pending", "persona_version_id": version["id"] if version else None, "url": f"/api/references/{rid}/file", "asset_url": f"/api/assets/{aid}/file"}
 
 
 @app.get("/api/references/{rid}/file")
@@ -516,8 +701,9 @@ def persona_characteristics_text(person):
 
 async def execute_job(job_id, payload: JobIn, person: dict):
     try:
+        persona_version = PersonaRepository.current_version(person["id"])
         db.write("UPDATE jobs SET status='running', updated_at=? WHERE id=?", (now(), job_id))
-        logger.info("job_started", extra={"data": {"job_id": job_id, "persona_id": person.get("id"), "workflow_id": payload.workflow_id}})
+        logger.info("job_started", extra=_log_data({"job_id": job_id, "persona_id": person.get("id"), "workflow_id": payload.workflow_id}))
         graph = json.loads(workflow_path(payload.workflow_id).read_text(encoding="utf8"))
         creative_prompt = payload.video_prompt if (payload.video_prompt and ("video" in payload.workflow_id.lower() or "wan" in payload.workflow_id.lower())) else payload.prompt
         profile_text = persona_characteristics_text(person)
@@ -566,13 +752,13 @@ async def execute_job(job_id, payload: JobIn, person: dict):
                 disclosure = person.get("disclosure") or AI_DISCLOSURE
                 metadata = media_metadata(content, kind, dest)
                 quality = quality_report(db.OUTPUTS / dest, kind, disclosure, lineage={"job_id": job_id})
-                db.write("INSERT INTO assets (id,persona_id,job_id,filename,kind,prompt,rights_confirmed,disclosure,created_at,sha256,metadata_json,quality_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                         (aid, person["id"], job_id, dest, kind, payload.prompt, 1, disclosure, now(), sha256_bytes(content), json.dumps(metadata), json.dumps(quality)))
+                db.write("INSERT INTO assets (id,persona_id,persona_version_id,job_id,filename,kind,prompt,rights_confirmed,disclosure,created_at,sha256,metadata_json,quality_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                         (aid, person["id"], persona_version["id"] if persona_version else None, job_id, dest, kind, payload.prompt, 1, disclosure, now(), sha256_bytes(content), json.dumps(metadata), json.dumps(quality)))
             db.write("UPDATE jobs SET status='completed', finished_at=?, updated_at=? WHERE id=?", (now(), now(), job_id))
             db.write("UPDATE series_episodes SET status='completed' WHERE job_id=?", (job_id,))
-            logger.info("job_completed", extra={"data": {"job_id": job_id, "outputs": len(files)}})
+            logger.info("job_completed", extra=_log_data({"job_id": job_id, "outputs": len(files)}))
     except Exception as e:
-        logger.exception("job_failed", extra={"data": {"job_id": job_id}})
+        logger.exception("job_failed", extra=_log_data({"job_id": job_id}))
         db.write("UPDATE jobs SET status='failed', error=?, finished_at=?, updated_at=? WHERE id=?", (str(e)[:1500], now(), now(), job_id))
         db.write("UPDATE series_episodes SET status='failed' WHERE job_id=?", (job_id,))
 
@@ -612,6 +798,9 @@ async def create_job(payload: JobIn):
             raise HTTPException(400, "Narration asset is missing rights confirmation")
     jid = uid()
     category = "video" if "video" in payload.workflow_id.lower() or "wan" in payload.workflow_id.lower() else "image"
+    persona_version = PersonaRepository.current_version(person["id"])
+    if not persona_version:
+        raise HTTPException(409, "Persona has no persisted identity version")
     try:
         request_json = payload.model_dump_json()
     except AttributeError:  # Pydantic v1 compatibility for older local installs.
@@ -619,7 +808,9 @@ async def create_job(payload: JobIn):
     created = now()
     lineage = {
         "persona_id": person["id"],
-        "persona_version": person.get("identity_version", 1),
+        "persona_version": persona_version["version_no"],
+        "persona_version_id": persona_version["id"],
+        "persona_version_state": persona_version["state"],
         "workflow_id": payload.workflow_id,
         "checkpoint": payload.checkpoint,
         "reference_id": payload.reference_id,
@@ -633,7 +824,7 @@ async def create_job(payload: JobIn):
                          kind=category, prompt=payload.prompt, request_json=request_json,
                          lineage_json=json.dumps(lineage, separators=(",", ":")), created_at=created)
     _job_task(jid, payload, person)
-    logger.info("job_queued", extra={"data": {"job_id": jid, "persona_id": person["id"], "workflow_id": payload.workflow_id}})
+    logger.info("job_queued", extra=_log_data({"job_id": jid, "persona_id": person["id"], "workflow_id": payload.workflow_id}))
     return {"id": jid, "status": "queued"}
 
 
@@ -678,7 +869,7 @@ async def cancel_job(job_id: str):
     task = getattr(app.state, "job_task_map", {}).get(job_id)
     if task and not task.done():
         task.cancel()
-    logger.info("job_cancelled", extra={"data": {"job_id": job_id}})
+    logger.info("job_cancelled", extra=_log_data({"job_id": job_id}))
     return {"id": job_id, "status": "cancelled"}
 
 
@@ -699,7 +890,7 @@ async def retry_job(job_id: str):
     db.write("UPDATE jobs SET status='queued', attempt=?, cancel_requested=0, error=NULL, finished_at=NULL, updated_at=? WHERE id=?",
              (attempt, now(), job_id))
     _job_task(job_id, payload, person)
-    logger.info("job_retried", extra={"data": {"job_id": job_id, "attempt": attempt}})
+    logger.info("job_retried", extra=_log_data({"job_id": job_id, "attempt": attempt}))
     return {"id": job_id, "status": "queued", "attempt": attempt}
 
 
@@ -761,8 +952,9 @@ async def import_asset(
     disclosure = disclosure.strip()[:300]
     metadata = media_metadata(raw, kind, destination)
     quality = quality_report(db.OUTPUTS / destination, kind, disclosure)
-    db.write("INSERT INTO assets (id,persona_id,job_id,filename,kind,prompt,rights_confirmed,disclosure,created_at,sha256,metadata_json,quality_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-             (aid, person["id"], None, destination, kind, prompt.strip()[:3000], 1, disclosure, now(), sha256_bytes(raw), json.dumps(metadata), json.dumps(quality)))
+    persona_version = PersonaRepository.current_version(person["id"])
+    db.write("INSERT INTO assets (id,persona_id,persona_version_id,job_id,filename,kind,prompt,rights_confirmed,disclosure,created_at,sha256,metadata_json,quality_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+             (aid, person["id"], persona_version["id"] if persona_version else None, None, destination, kind, prompt.strip()[:3000], 1, disclosure, now(), sha256_bytes(raw), json.dumps(metadata), json.dumps(quality)))
     return {"id": aid, "kind": kind, "review": "pending", "url": f"/api/assets/{aid}/file"}
 
 
@@ -829,6 +1021,7 @@ def set_review(aid: str, payload: ReviewIn):
         db.write("UPDATE assets SET review=?, quality_json=? WHERE id=?", (payload.review, json.dumps(quality), aid))
         return {"id": aid, "review": payload.review, "quality": quality}
     db.write("UPDATE assets SET review=? WHERE id=?", (payload.review, aid))
+    ReferencePackRepository.invalidate_canonical_for_asset(aid)
     return {"id": aid, "review": payload.review}
 
 
@@ -846,8 +1039,9 @@ async def create_voice(payload: VoiceIn):
     disclosure = person.get("disclosure") or AI_DISCLOSURE
     metadata = media_metadata(raw, "audio", aid + ".wav")
     quality = quality_report(destination, "audio", disclosure)
-    db.write("INSERT INTO assets (id,persona_id,job_id,filename,kind,prompt,rights_confirmed,disclosure,created_at,sha256,metadata_json,quality_json) VALUES (?,?,NULL,?,?,?,?,?,?,?,?,?)",
-             (aid, person["id"], aid + ".wav", "audio", payload.text, 1, disclosure, now(), sha256_bytes(raw), json.dumps(metadata), json.dumps(quality)))
+    persona_version = PersonaRepository.current_version(person["id"])
+    db.write("INSERT INTO assets (id,persona_id,persona_version_id,job_id,filename,kind,prompt,rights_confirmed,disclosure,created_at,sha256,metadata_json,quality_json) VALUES (?,?,?,NULL,?,?,?,?,?,?,?,?,?)",
+             (aid, person["id"], persona_version["id"] if persona_version else None, aid + ".wav", "audio", payload.text, 1, disclosure, now(), sha256_bytes(raw), json.dumps(metadata), json.dumps(quality)))
     return {"id": aid, "url": f"/api/assets/{aid}/file"}
 
 
@@ -1009,7 +1203,7 @@ async def photo_studio_generate(payload: PhotoStudioGenerateIn):
     try:
         await asyncio.to_thread(make_image, args)
     except Exception as exc:
-        logger.exception("photo_studio_generate_failed")
+        logger.exception("photo_studio_generate_failed", extra=_log_data({"persona_id": person.get("id")}))
         raise HTTPException(500, f"Image generation failed: {str(exc)[:300]}") from exc
 
     if not destination.is_file():
@@ -1019,19 +1213,21 @@ async def photo_studio_generate(payload: PhotoStudioGenerateIn):
     disclosure = person.get("disclosure") or AI_DISCLOSURE
     metadata = media_metadata(raw, "image", filename)
     quality = quality_report(destination, "image", disclosure)
+    version = PersonaRepository.current_version(person["id"])
 
     db.write(
-        "INSERT INTO assets (id, persona_id, job_id, filename, kind, prompt, review, rights_confirmed, disclosure, created_at, sha256, metadata_json, quality_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        (aid, person["id"], None, filename, "image", payload.prompt, "approved", 1, disclosure, now(), sha256_bytes(raw), json.dumps(metadata), json.dumps(quality)),
+        "INSERT INTO assets (id, persona_id, persona_version_id, job_id, filename, kind, prompt, review, rights_confirmed, disclosure, created_at, sha256, metadata_json, quality_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (aid, person["id"], version["id"] if version else None, None, filename, "image", payload.prompt, "pending", 1, disclosure, now(), sha256_bytes(raw), json.dumps(metadata), json.dumps(quality)),
     )
 
     ref_dest = db.UPLOADS / filename
     shutil.copy2(destination, ref_dest)
     rid = uid()
     label = f"Photo Studio: {payload.prompt[:35]}..."
+    content_class = "adult_glamour" if any(term in payload.prompt.lower() for term in ("adult", "boudoir", "lingerie", "glamour", "intimate")) else "identity"
     db.write(
-        "INSERT INTO reference_images (id, persona_id, filename, label, created_at) VALUES (?,?,?,?,?)",
-        (rid, person["id"], filename, label, now()),
+        "INSERT INTO reference_images (id, persona_id, filename, label, created_at, asset_id, persona_version_id, role, content_class, review, rights_confirmed, metadata_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        (rid, person["id"], filename, label, now(), aid, version["id"] if version else None, "supporting", content_class, "pending", 1, json.dumps({"source": "photo_studio_generation"})),
     )
 
     return {
@@ -1168,7 +1364,7 @@ async def orchestrator_render_anchor(payload: OrchestratorRenderAnchorIn):
             quality=payload.quality,
         )
     except Exception as exc:
-        logger.exception("orchestrator_render_anchor_failed")
+        logger.exception("orchestrator_render_anchor_failed", extra=_log_data({"persona_id": person.get("id")}))
         raise HTTPException(500, f"Master Anchor generation failed: {str(exc)[:300]}") from exc
 
     raw = dest_path.read_bytes()
@@ -1177,10 +1373,11 @@ async def orchestrator_render_anchor(payload: OrchestratorRenderAnchorIn):
     disclosure = person.get("disclosure") or AI_DISCLOSURE
     metadata = media_metadata(raw, "image", filename)
     quality = quality_report(dest_path, "image", disclosure)
+    version = PersonaRepository.current_version(person["id"])
 
     db.write(
-        "INSERT INTO assets (id, persona_id, job_id, filename, kind, prompt, review, rights_confirmed, disclosure, created_at, sha256, metadata_json, quality_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        (aid, person["id"], None, filename, "image", payload.prompt, "approved", 1, disclosure, now(), sha256_bytes(raw), json.dumps(metadata), json.dumps(quality)),
+        "INSERT INTO assets (id, persona_id, persona_version_id, job_id, filename, kind, prompt, review, rights_confirmed, disclosure, created_at, sha256, metadata_json, quality_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (aid, person["id"], version["id"] if version else None, None, filename, "image", payload.prompt, "pending", 1, disclosure, now(), sha256_bytes(raw), json.dumps(metadata), json.dumps(quality)),
     )
 
     return {
@@ -1201,9 +1398,13 @@ async def orchestrator_render_anchor(payload: OrchestratorRenderAnchorIn):
 def orchestrator_lock_anchor(payload: OrchestratorLockAnchorIn):
     person = must_persona(payload.persona_id)
     with db.connection() as con:
-        asset_row = con.execute("SELECT filename, prompt FROM assets WHERE id = ?", (payload.asset_id,)).fetchone()
+        asset_row = con.execute("SELECT filename, prompt, review, rights_confirmed FROM assets WHERE id = ? AND persona_id = ?", (payload.asset_id, person["id"])).fetchone()
         if not asset_row:
             raise HTTPException(404, "Asset not found")
+        if asset_row[2] != "approved":
+            raise HTTPException(409, "Approve the asset before locking it as a master anchor")
+        if not asset_row[3]:
+            raise HTTPException(409, "Master anchor asset is missing rights confirmation")
         filename, prompt = asset_row[0], asset_row[1]
 
     source_path = db.OUTPUTS / filename
@@ -1214,13 +1415,10 @@ def orchestrator_lock_anchor(payload: OrchestratorLockAnchorIn):
     rid = uid()
     label = f"Master Persona Anchor: {person['name']}"
     db.write(
-        "INSERT INTO reference_images (id, persona_id, filename, label, created_at) VALUES (?,?,?,?,?)",
-        (rid, person["id"], filename, label, now()),
+        "INSERT INTO reference_images (id, persona_id, filename, label, created_at, asset_id, persona_version_id, role, content_class, review, rights_confirmed, metadata_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        (rid, person["id"], filename, label, now(), payload.asset_id, version["id"] if version else None, "identity_anchor", "identity", "approved", 1, json.dumps({"source": "approved_asset_lock", "asset_id": payload.asset_id})),
     )
-    db.write(
-        "UPDATE personas SET identity_locked = 1, locked_at = ? WHERE id = ?",
-        (now(), person["id"])
-    )
+    PersonaRepository.freeze(person["id"], now())
 
     return {
         "status": "locked",
@@ -1274,6 +1472,7 @@ async def orchestrator_generate_batch(payload: OrchestratorBatchGenerateIn):
 
     width, height = orchestrator.ASPECT_RATIOS.get(payload.aspect_ratio, (768, 1152))
     generated_assets = []
+    version = PersonaRepository.current_version(person["id"])
 
     for i, scene in enumerate(payload.scenes):
         seed = secrets.randbelow(1_000_000_000)
@@ -1291,7 +1490,7 @@ async def orchestrator_generate_batch(payload: OrchestratorBatchGenerateIn):
                 guidance=payload.guidance,
             )
         except Exception as exc:
-            logger.exception("orchestrator_batch_scene_failed")
+            logger.exception("orchestrator_batch_scene_failed", extra=_log_data({"persona_id": person.get("id"), "scene_index": i}))
             raise HTTPException(500, f"Generation failed at scene {i+1}: {str(exc)[:300]}") from exc
 
         raw = dest_path.read_bytes()
@@ -1302,8 +1501,8 @@ async def orchestrator_generate_batch(payload: OrchestratorBatchGenerateIn):
         quality = quality_report(dest_path, "image", disclosure)
 
         db.write(
-            "INSERT INTO assets (id, persona_id, job_id, filename, kind, prompt, review, rights_confirmed, disclosure, created_at, sha256, metadata_json, quality_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (aid, person["id"], None, filename, "image", scene.prompt, "approved", 1, disclosure, now(), sha256_bytes(raw), json.dumps(metadata), json.dumps(quality)),
+            "INSERT INTO assets (id, persona_id, persona_version_id, job_id, filename, kind, prompt, review, rights_confirmed, disclosure, created_at, sha256, metadata_json, quality_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (aid, person["id"], version["id"] if version else None, None, filename, "image", scene.prompt, "pending", 1, disclosure, now(), sha256_bytes(raw), json.dumps(metadata), json.dumps(quality)),
         )
 
         generated_assets.append({

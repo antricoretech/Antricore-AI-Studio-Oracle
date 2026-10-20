@@ -124,9 +124,13 @@ def generate_render(
     try:
         from . import database as db
         aid = f"render-{timestamp}-{actual_seed}"
+        version = db.row(
+            "SELECT id FROM persona_versions WHERE persona_id=? ORDER BY version_no DESC LIMIT 1",
+            (persona_id,),
+        )
         db.write(
-            "INSERT INTO assets (id, persona_id, filename, kind, prompt, review, rights_confirmed, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (aid, persona_id, filename, "image", prompt, "approved", 1, time.strftime("%Y-%m-%d %H:%M:%S"))
+            "INSERT INTO assets (id, persona_id, persona_version_id, filename, kind, prompt, review, rights_confirmed, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (aid, persona_id, version["id"] if version else None, filename, "image", prompt, "pending", 1, time.strftime("%Y-%m-%d %H:%M:%S"))
         )
     except Exception as db_err:
         print(f"[Diffusion Engine] Database write notice: {db_err}")

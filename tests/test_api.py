@@ -36,6 +36,10 @@ def test_persona_reference_and_gates(client):
     r = client.post(f'/api/personas/{pid}/references',
         files={"file": ("a.png",bio.getvalue(),"image/png")}, data={"rights_confirmed":"true", "label":"master"})
     assert r.status_code == 201
+    ref = client.get(f'/api/personas/{pid}/references').json()[0]
+    assert ref['persona_version_id'] == p.json()['current_version']['id']
+    assert ref['role'] == 'identity_anchor'
+    assert ref['review'] == 'pending'
     assert client.get(r.json()['url']).status_code == 200
     w = client.get('/api/workflows').json()
     assert isinstance(w, list)
@@ -43,6 +47,149 @@ def test_persona_reference_and_gates(client):
            "checkpoint":"sdxl_base.safetensors", "reference_id":r.json()['id']}
     assert client.post('/api/jobs',json=job).status_code == 400
     assert client.get('/api/summary').json()['personas'] == 1
+
+
+def test_persona_version_is_persisted_frozen_and_attached_to_series(client):
+    persona = client.post('/api/personas', json={
+        'name': 'Nora Vale', 'age': 28,
+        'appearance': 'dark hair and hazel eyes',
+        'description': 'fictional adult lifestyle creator'
+    }).json()
+    version = persona['current_version']
+    assert version['version_no'] == 1
+    assert version['state'] == 'draft'
+    assert version['snapshot']['name'] == 'Nora Vale'
+
+    versions = client.get(f"/api/personas/{persona['id']}/versions")
+    assert versions.status_code == 200
+    assert versions.json()[0]['id'] == version['id']
+
+    frozen = client.post(f"/api/personas/{persona['id']}/freeze")
+    assert frozen.status_code == 200
+    assert frozen.json()['identity_locked'] == 1
+    assert frozen.json()['frozen_version']['state'] == 'frozen'
+
+    series = client.post('/api/series', json={
+        'persona_id': persona['id'],
+        'title': 'Nora weekly series',
+        'description': 'A repeatable creator content series',
+        'shared_prompt': 'Keep the frozen identity and editorial tone consistent',
+        'episodes': [{
+            'title': 'Cafe morning',
+            'prompt': 'A quiet cafe portrait',
+            'video_prompt': 'Slow natural head turn'
+        }]
+    })
+    assert series.status_code == 201
+    assert series.json()['persona_version_id'] == version['id']
+
+
+def test_v2_json_is_compatibility_import_export_and_not_live_storage(client, tmp_path, monkeypatch):
+    import studio.api_v2 as api_v2
+    monkeypatch.setattr(api_v2, 'PERSONAS_FILE', tmp_path / 'personas_v2.json')
+    personas = client.get('/api/v2/personas')
+    assert personas.status_code == 200
+    assert len(personas.json()['personas']) >= 3
+    assert all(item.get('canonical_version_id') for item in personas.json()['personas'])
+
+    packs = client.get('/api/v2/personas/maya_bhutia/reference-packs')
+    assert packs.status_code == 200
+    pack_by_type = {item['pack_type']: item for item in packs.json()['packs']}
+    assert pack_by_type['adult_glamour']['content_class'] == 'adult_glamour'
+    assert pack_by_type['adult_glamour']['identity_authority'] == 'identity_and_style'
+    assert pack_by_type['adult_glamour']['review'] == 'pending'
+    assert pack_by_type['adult_glamour']['canonical_eligible'] == 1
+    assert pack_by_type['adult_glamour']['items'][0]['role'] == 'adult_glamour_identity_anchor'
+
+    exported = client.get('/api/v2/personas/export')
+    assert exported.status_code == 200
+    assert exported.json()['schema_version'] == 'persona-v2-export-1'
+    assert len(exported.json()['personas']) >= 3
+
+    imported = client.post('/api/v2/personas/import', json={'personas': [{
+        'id': 'compatibility_test_persona',
+        'name': 'Compatibility Test',
+        'age': 30,
+        'tagline': 'A fictional adult compatibility persona',
+        'origin': 'Local test fixture',
+        'biometrics': {'eyes': 'hazel eyes', 'hair': 'dark hair'},
+        'adult_baselines': [],
+        'category_baselines': [],
+        'turnaround_pack': [],
+    }]})
+    assert imported.status_code == 200
+    assert 'compatibility_test_persona' in imported.json()['imported']
+    assert any(item['id'] == 'compatibility_test_persona' for item in client.get('/api/personas').json())
+
+    archived = client.delete('/api/v2/personas/maya_bhutia')
+    assert archived.status_code == 200
+    archived_packs = client.get('/api/v2/personas/archived').json()['archived_personas'][0]['reference_packs']
+    assert any(item['pack_type'] == 'adult_glamour' for item in archived_packs)
+    restored = client.post('/api/v2/personas/maya_bhutia/restore')
+    assert restored.status_code == 200
+    restored_packs = client.get('/api/v2/personas/maya_bhutia/reference-packs').json()['packs']
+    assert any(item['pack_type'] == 'adult_glamour' for item in restored_packs)
+    restored_version = next(item for item in client.get('/api/personas').json() if item['id'] == 'maya_bhutia')['current_version']['id']
+    assert all(item['persona_version_id'] == restored_version for item in restored_packs)
+    assert len({item['pack_type'] for item in restored_packs}) == len(restored_packs)
+
+
+def test_reference_pack_review_linkage_and_canonical_selection(client, tmp_path, monkeypatch):
+    import studio.api_v2 as api_v2
+
+    monkeypatch.setattr(api_v2, 'PERSONAS_FILE', tmp_path / 'personas_v2.json')
+    packs_response = client.get('/api/v2/personas/maya_bhutia/reference-packs')
+    assert packs_response.status_code == 200
+    pack = next(item for item in packs_response.json()['packs'] if item['pack_type'] == 'adult_glamour')
+    item = pack['items'][0]
+
+    image = Image.new('RGB', (64, 64), 'plum')
+    bio = BytesIO()
+    image.save(bio, format='PNG')
+    imported = client.post('/api/assets/import', data={
+        'persona_id': 'maya_bhutia', 'kind': 'image', 'prompt': 'Reviewed adult glamour identity anchor',
+        'disclosure': 'Fictional adult character. AI-generated synthetic media.', 'rights_confirmed': 'true'
+    }, files={'file': ('anchor.png', bio.getvalue(), 'image/png')})
+    assert imported.status_code == 201
+    asset_id = imported.json()['id']
+
+    assert client.patch(f"/api/v2/personas/maya_bhutia/reference-packs/{pack['id']}/canonical",
+                        json={'selected': True, 'item_ids': [item['id']]}).status_code == 409
+    assert client.patch(f'/api/assets/{asset_id}/review', json={'review': 'approved'}).status_code == 200
+    linked = client.post(
+        f"/api/v2/personas/maya_bhutia/reference-packs/{pack['id']}/items/{item['id']}/asset",
+        json={'asset_id': asset_id},
+    )
+    assert linked.status_code == 200
+    for pack_item in pack['items']:
+        reviewed_item = client.patch(
+            f"/api/v2/personas/maya_bhutia/reference-packs/{pack['id']}/items/{pack_item['id']}/review",
+            json={'review': 'approved', 'rights_confirmed': True},
+        )
+        assert reviewed_item.status_code == 200
+    reviewed_pack = client.patch(
+        f"/api/v2/personas/maya_bhutia/reference-packs/{pack['id']}/review",
+        json={'review': 'approved'},
+    )
+    assert reviewed_pack.status_code == 200
+    selected = client.patch(
+        f"/api/v2/personas/maya_bhutia/reference-packs/{pack['id']}/canonical",
+        json={'selected': True, 'item_ids': [item['id']]},
+    )
+    assert selected.status_code == 200
+    selected_pack = selected.json()['pack']
+    assert selected_pack['canonical_selected'] == 1
+    selected_item = next(entry for entry in selected_pack['items'] if entry['id'] == item['id'])
+    assert selected_item['asset_id'] == asset_id
+    assert selected_item['canonical_selected'] == 1
+    assert selected_item['asset_persona_version_id'] == selected_pack['persona_version_id']
+
+    rejected = client.patch(f'/api/assets/{asset_id}/review', json={'review': 'rejected'})
+    assert rejected.status_code == 200
+    invalidated = client.get(f"/api/v2/personas/maya_bhutia/reference-packs/{pack['id']}")
+    assert invalidated.status_code == 200
+    assert invalidated.json()['pack']['canonical_selected'] == 0
+    assert invalidated.json()['pack']['items'][0]['canonical_selected'] == 0
 
 
 def test_link_redirect_and_review_validation(client):
@@ -53,6 +200,50 @@ def test_link_redirect_and_review_validation(client):
     assert client.get('/go/'+code,follow_redirects=False).status_code == 302
     assert client.get('/api/links').json()[0]['clicks'] == 1
     assert client.patch('/api/assets/fake/review',json={"review":"approved"}).status_code == 404
+
+
+def test_request_and_correlation_ids_are_returned_and_bounded(client):
+    response = client.get('/api/summary', headers={
+        'X-Request-ID': 'req-123',
+        'X-Correlation-ID': 'corr-456',
+    })
+    assert response.status_code == 200
+    assert response.headers['X-Request-ID'] == 'req-123'
+    assert response.headers['X-Correlation-ID'] == 'corr-456'
+
+    generated = client.get('/api/summary')
+    assert generated.headers['X-Request-ID']
+    assert generated.headers['X-Correlation-ID']
+    assert len(generated.headers['X-Request-ID']) == 32
+    assert len(generated.headers['X-Correlation-ID']) == 32
+
+    invalid = client.get('/api/summary', headers={'X-Request-ID': 'bad value'})
+    assert invalid.status_code == 200
+    assert invalid.headers['X-Request-ID'] != 'bad value'
+    assert invalid.headers['X-Correlation-ID'] != 'bad value'
+
+
+def test_photo_studio_generation_starts_in_pending_review(client, monkeypatch):
+    import studio.free_cli as free_cli
+
+    persona = client.post('/api/personas', json={
+        'name': 'Asha Vale', 'age': 29,
+        'appearance': 'dark hair and brown eyes',
+        'description': 'fictional adult fashion creator'
+    }).json()
+
+    def fake_make_image(args):
+        Image.new('RGB', (32, 32), 'beige').save(args.output, format='PNG')
+
+    monkeypatch.setattr(free_cli, 'make_image', fake_make_image)
+    response = client.post('/api/photo-studio/generate', json={
+        'persona_id': persona['id'],
+        'prompt': 'Editorial portrait in a studio',
+        'rights_confirmed': True,
+    })
+    assert response.status_code == 201
+    asset = next(item for item in client.get('/api/assets').json() if item['id'] == response.json()['id'])
+    assert asset['review'] == 'pending'
 
 
 def test_import_local_pipeline_output_requires_disclosure_and_starts_pending_review(client):

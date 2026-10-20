@@ -39,6 +39,20 @@ class ReviewIn(BaseModel):
     review: str
 
 
+class ReferencePackReviewIn(BaseModel):
+    review: str
+    rights_confirmed: bool | None = None
+
+
+class ReferencePackCanonicalIn(BaseModel):
+    selected: bool = True
+    item_ids: list[str] = Field(default_factory=list, max_length=100)
+
+
+class ReferencePackAssetLinkIn(BaseModel):
+    asset_id: str = Field(min_length=1, max_length=128)
+
+
 class VoiceIn(BaseModel):
     persona_id: str
     text: str = Field(min_length=2, max_length=1200)
