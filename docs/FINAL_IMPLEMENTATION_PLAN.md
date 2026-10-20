@@ -241,6 +241,38 @@ family (`adult_glamour`, `lingerie`, `boudoir`, and `nude_editorial`) is forced
 through the same Identity Core plus style authority rule at the backend boundary
 so UI choices cannot downgrade these packs into style-only presets.
 
+### Cross-cutting frontend migration workstream
+
+The current static frontend is a legacy shell and is not considered aligned
+with the new implementation. It must be migrated alongside the domain phases,
+not treated as a final cosmetic pass. The new frontend will use the canonical
+Persona, PersonaVersion, ReferencePack, Asset, ContentPack, Job, review, and
+publishing contracts as its source of truth.
+
+The migration sequence is:
+
+- establish one API client with normalized errors, request cancellation, and
+  stale-response protection;
+- replace legacy/v2 fixture-driven persona and vault screens with canonical
+  PersonaVersion-aware screens;
+- add the complete Master Persona journey: creation, version state, reference
+  review, canonical selection, ContentPack authoring, identity/style review,
+  generation, asset approval, export, and publishing readiness;
+- make adult/glamour controls explicit in the UI, including Identity Core
+  authority, fictional-adult disclosure, rights confirmation, visibility, and
+  review state;
+- provide consistent loading, empty, error, pending, approved, rejected, and
+  stale-lineage states across every screen;
+- verify responsive behavior and keyboard/screen-reader access at the major
+  desktop and MacBook viewport sizes; and
+- retire legacy screens only after their canonical replacements have equivalent
+  API, review, lineage, and regression coverage.
+
+Dependencies may be installed or updated when required for application
+development, testing, frontend tooling, or runtime integration. Image, audio,
+and video generation models, model weights, and model repositories remain
+deferred to the final model-installation gate.
+
 Exit: identity and style references are distinguishable, while approved adult/glamour references can participate in canonical identity anchoring.
 
 ### Phase 3 — Unified rendering and asset lifecycle
@@ -592,13 +624,21 @@ Reason: The visual identity must remain consistent across the persona's actual c
 
 Trade-off: Adult assets require stronger visibility, rights, consent, disclosure, age, and destination-policy metadata.
 
-#### ADR-007 — Install models and heavyweight runtimes last
+#### ADR-007 — Install generation models last; allow required runtime dependencies
 
-Decision: Keep model downloads, heavyweight ML dependencies, ComfyUI/Wan runtimes, and generated model assets out of the development loop until the final installation and hardware-validation phase.
+Decision: Keep image, audio, and video generation model downloads, model
+weights, model repositories, and generated model assets out of the development
+loop until the final installation and hardware-validation phase. Application
+dependencies, frontend tooling, test packages, media utilities, and runtime
+libraries may be installed or updated during feature work when required.
 
-Reason: The application contracts, persistence, review gates, and lineage must stabilize before large local installations consume disk, memory, and setup time on the 16 GB Mac.
+Reason: Model artifacts consume substantial disk, memory, and setup time on the
+16 GB Mac, while ordinary dependencies may be necessary to implement and
+validate the application contracts, persistence, review gates, and lineage.
 
-Trade-off: Model-backed integration tests remain mocked or contract-level until the final installation gate; actual quality and performance benchmarks are deferred.
+Trade-off: Model-backed integration tests remain mocked or contract-level until
+the final model gate; dependency changes must be versioned and validated so
+development environments remain reproducible.
 
 Revisit when: The Phase 7/8 release candidate is ready and the model register has approved source, license, checksum, storage, and hardware-fit entries.
 
@@ -688,6 +728,29 @@ review workflow first.
 Revisit when: The full Master Persona UI can author and review ContentPack
 items directly while preserving the same resolver contract.
 
+#### ADR-013 - Migrate the frontend to canonical contracts as a cross-cutting workstream
+
+Decision: The existing static frontend remains a compatibility shell while
+screens are replaced incrementally with PersonaVersion-aware workflows. New
+production UI features must consume the canonical APIs and review/lineage
+contracts; legacy v2 fixtures and presentation-only state cannot be a source of
+production truth.
+
+Reason: The domain model is changing across persona creation, reference packs,
+ContentPacks, assets, jobs, and publishing. Keeping the old frontend intact
+would make the application appear functional while bypassing review, identity
+authority, and lineage rules.
+
+Trade-off: The application may temporarily expose the legacy shell and new
+workflow screens at the same time. This costs migration effort, but permits
+incremental verification and avoids a high-risk frontend rewrite without
+backend contract coverage.
+
+Dependency rule: Application dependencies and development tooling may be
+installed or updated when needed and must be recorded with version and
+validation evidence. Generation models, model weights, and model repositories
+remain final-gate-only.
+
 ### Phase 0 exit criteria
 
 - Canonical domain ownership is documented.
@@ -712,6 +775,12 @@ items directly while preserving the same resolver contract.
 
 ### Model and dependency installation policy
 
-The project will maintain a controlled register of every model, runtime, and heavyweight dependency. Entries must include purpose, source, license, expected size, Apple Silicon/M5 compatibility, checksum or pinned revision, install command, and validation result. No entry may be installed during normal feature development. Installation is allowed only during the final installation gate after the application contracts and review workflow are stable.
+The project will maintain a controlled register of every model, runtime, and
+heavyweight dependency. Application dependencies and development tooling may be
+installed or updated during feature work when required; each change must record
+purpose, version, source, install command, validation result, and rollback
+notes. Image, audio, and video generation models, model weights, and model
+repositories are excluded from that permission and remain final-gate-only after
+the application contracts and review workflow are stable.
 
 

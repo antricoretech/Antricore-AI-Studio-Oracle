@@ -59,7 +59,7 @@ Every completed activity must record:
 |---|---|---|---:|---|---|
 | 0 | Baseline and contracts | COMPLETED | 100% | User approval | Contracts, states, storage, API ownership, observability and runtime enforcement verified |
 | 1 | Canonical PersonaVersion | IN_PROGRESS | 70% | Phase 0 | SQLite canonical source; persistence, v2 compatibility, pack review/canonical selection, unified asset linkage, archive reconciliation, and migration boundary recorded |
-| 2 | Master Persona and content packs | IN_PROGRESS | 40% | Phase 1 | ContentPack persistence, canonical-anchor resolver, adult/glamour-family Identity Core rules, and focused author/review/resolve UI completed on `phase/02-master-persona-content-packs` |
+| 2 | Master Persona and content packs | IN_PROGRESS | 40% | Phase 1 | ContentPack persistence, canonical-anchor resolver, adult/glamour-family Identity Core rules, and focused author/review/resolve UI completed; frontend migration is a cross-cutting workstream |
 | 3 | Unified rendering and assets | PLANNED | 0% | Phase 1 | One job and asset contract |
 | 4 | Persistent local job runner | PLANNED | 0% | Phase 3 | Mac memory-aware execution |
 | 5 | Identity-conditioned rendering | PLANNED | 0% | Phases 2–4 | Benchmark before selection |
@@ -91,6 +91,7 @@ Every completed activity must record:
 | IMP-021 | Phase 1 | Implement pack-level review, canonical selection, and unified media-asset linkage | COMPLETED | `python -m compileall -q studio`; `pytest -q tests/test_api.py tests/test_comfy.py` — 25 passed; live DB schema version 8, 12 packs, 39 pack items verified | 2026-10-21 | Pack/item review gates, asset links, PersonaVersion lineage, canonical selection, and rejection invalidation are active; model installation remains deferred |
 | IMP-022 | Phase 2 | Add ContentPack persistence and canonical-anchor resolution | COMPLETED | `python -m compileall -q studio`; `pytest -q tests/test_api.py tests/test_comfy.py` — 26 passed; live DB schema version 9, 0 content packs, 0 content-pack items verified | 2026-10-21 | ContentPacks bind style directives and canonical ReferencePack anchors to one PersonaVersion; adult/glamour forces identity-core and identity-and-style authority; job/series resolution is active |
 | IMP-023 | Phase 2 | Add Master Persona ContentPack authoring, review, and resolution workspace | COMPLETED | `.\\.venv\\Scripts\\python.exe -m compileall -q studio`; `.\\.venv\\Scripts\\python.exe -m pytest -q tests/test_api.py tests/test_comfy.py` — 27 passed; `node --check static/content_packs.js`; route/static smoke check returned 200 | 2026-10-21 | Added `/content-packs`, canonical-source eligibility display, style/metadata authoring, explicit review actions, anchor resolution, and adult/glamour-family client/server Identity Core enforcement; no model/dependency installation performed |
+| PLAN-001 | Cross-cutting | Record frontend migration and dependency-installation boundary | COMPLETED | Final plan ADR-013, frontend migration workstream, and installation policy updated | 2026-10-21 | Current frontend is recorded as a legacy shell; canonical UI replacement is required across the implementation; application dependencies/tooling may be installed or updated, while generation models remain final-gate-only |
 | IMP-003 | Phase 1 | Introduce canonical PersonaVersion persistence | PLANNED | Not started | — | Requires Phase 0 |
 | IMP-004 | Phase 1 | Convert v2 JSON persona data to import/export | PLANNED | Not started | — | Preserve backup compatibility |
 | IMP-005 | Phase 2 | Reclassify and review Master Persona packs | PLANNED | Not started | — | Adult/glamour can be canonical when approved |
@@ -101,6 +102,38 @@ Every completed activity must record:
 | IMP-010 | Phase 7 | Add quality and review gates | PLANNED | Not started | — | Identity, anatomy, disclosure and policy checks |
 | IMP-011 | Phase 8 | Add account-aware publishing workflow | PLANNED | Not started | — | Only approved assets |
 | IMP-012 | Phase 9 | Add analytics and optimization loop | PLANNED | Not started | — | After publishing stability |
+
+## Frontend migration workstream
+
+The existing `static/index.html`, `static/app.js`, and `static/styles.css`
+surface is a legacy shell. It remains preserved while canonical replacements are
+implemented and verified; it is not the production source of truth for the new
+PersonaVersion/ReferencePack/ContentPack journey.
+
+| Work item | Status | Required outcome |
+|---|---|---|
+| Canonical API client and normalized error handling | PLANNED | One request layer with cancellation, stale-response protection, and consistent errors |
+| Persona and PersonaVersion screens | PLANNED | New Master Personas use the canonical creation/version flow and unique IDs |
+| ReferencePack review and canonical selection screens | PLANNED | Review, rights, asset linkage, and canonical state are visible and enforceable |
+| ContentPack author/review/resolve screen | COMPLETED | `/content-packs` is available on the Phase 2 branch |
+| Generation and asset-review screens | PLANNED | Jobs, lineage, pending review, approval, rejection, and stale assets are explicit |
+| Export and Instagram publishing-readiness screens | PLANNED | Only approved, disclosed, policy-checked assets can advance |
+| Accessibility/responsive/regression coverage | PLANNED | Keyboard, screen-reader, MacBook viewport, loading, empty, and error states covered |
+| Legacy-shell retirement | PLANNED | Remove only after canonical replacement parity and regression evidence |
+
+## Dependency installation boundary
+
+Application dependencies and development/frontend tooling may be installed or
+updated when required for implementation, testing, or runtime integration. The
+following remain prohibited until the final model-installation gate:
+
+- image generation models or weights;
+- audio/voice generation models or weights;
+- video generation models or weights; and
+- model repositories or downloads whose purpose is generation inference.
+
+Any allowed dependency change must be added to the register with the package,
+version, reason, source, command, validation, and rollback/removal notes.
 
 ## Adult/glamour implementation checklist
 
@@ -293,15 +326,17 @@ Evidence: Master Persona ContentPack authoring/review/resolution is available on
 | DEC-001 | Approve Phase 0 implementation scope | CLOSED | User approved with “Start Phase 0” |
 | DEC-002 | Select canonical identity-conditioning benchmark set | OPEN | After Phase 0/2 foundation |
 | DEC-003 | Confirm publishing platforms and account model | OPEN | Before Phase 8 |
-| DEC-004 | Install all models and heavyweight runtimes only at final installation gate | CLOSED | User clarification recorded; maintain register and defer installation |
+| DEC-004 | Install all image/audio/video generation models and model assets only at final installation gate | CLOSED | User clarification recorded; ordinary application/runtime dependencies may be installed or updated when required |
 | DEC-005 | Create new Master Personas with the new structure; existing personas are legacy/reference-only after implementation | CLOSED | User clarification recorded; preserve old data, use new unique IDs, and require explicit reviewed import for any legacy reuse |
+| DEC-006 | Migrate the current frontend to the new canonical implementation; permit non-model dependency/tooling updates while keeping generation models final-gate-only | CLOSED | User clarification recorded; frontend migration workstream and ADR-013 added |
 
 ## Final model and dependency installation register
 
-**Global policy:** `NOT INSTALLED — FINAL GATE ONLY` unless a row is explicitly
-approved during the final installation phase. Development uses mocks, metadata,
-contract tests, and optional-runtime detection. No model files or heavyweight
-runtime packages are to be downloaded as part of Phases 1–9 feature work.
+**Global policy:** Generation models, model weights, and model repositories are
+`NOT INSTALLED — FINAL GATE ONLY`. Application dependencies and development
+tooling may be installed or updated during Phases 1–9 when required, but every
+change must be recorded with version, reason, source, command, validation, and
+rollback notes.
 
 | Register ID | Component | Purpose | Source / license to verify | M5/16 GB fit to validate | Expected footprint | Install gate | Status |
 |---|---|---|---|---|---:|---|---|
@@ -309,11 +344,11 @@ runtime packages are to be downloaded as part of Phases 1–9 feature work.
 | MODEL-002 | Identity-conditioning adapter candidate | Face and identity consistency | Pinned upstream repository and model license | MPS support and peak unified memory | TBD | Final | NOT INSTALLED |
 | MODEL-003 | Wan2.2 or approved local video model | Image-to-video and reels | Pinned upstream repository and license record | Sequential generation and disk/cache benchmark | TBD | Final | NOT INSTALLED |
 | MODEL-004 | Kokoro or approved local narration model | Voice generation | Pinned upstream repository and license record | CPU/MPS latency and voice asset size | TBD | Final | NOT INSTALLED |
-| RUNTIME-001 | PyTorch + Apple Silicon/MPS build | Local ML execution | Official package source and version pin | MPS compatibility and memory behavior | TBD | Final | NOT INSTALLED |
-| RUNTIME-002 | Diffusers / Transformers / safetensors | Image pipeline runtime | Official package sources and version pins | Python 3.12 and MPS compatibility | TBD | Final | NOT INSTALLED |
-| RUNTIME-003 | ComfyUI and approved custom nodes | Optional graph execution | Official repository and node licenses | Local service stability and disk use | TBD | Final | NOT INSTALLED |
-| RUNTIME-004 | FFmpeg | Media assembly and validation | Official distribution/license record | Apple Silicon executable and codec coverage | TBD | Final | NOT INSTALLED |
-| RUNTIME-005 | OpenCV and auxiliary vision packages | Face/quality evaluation | Official package sources and licenses | Install size and MPS/CPU behavior | TBD | Final | NOT INSTALLED |
+| RUNTIME-001 | PyTorch + Apple Silicon/MPS build | Local ML execution | Official package source and version pin | MPS compatibility and memory behavior | TBD | Feature/Final | NOT INSTALLED |
+| RUNTIME-002 | Diffusers / Transformers / safetensors | Image pipeline runtime | Official package sources and version pins | Python 3.12 and MPS compatibility | TBD | Feature/Final | NOT INSTALLED |
+| RUNTIME-003 | ComfyUI and approved custom nodes | Optional graph execution | Official repository and node licenses | Local service stability and disk use | TBD | Feature/Final | NOT INSTALLED |
+| RUNTIME-004 | FFmpeg | Media assembly and validation | Official distribution/license record | Apple Silicon executable and codec coverage | TBD | Feature/Final | NOT INSTALLED |
+| RUNTIME-005 | OpenCV and auxiliary vision packages | Face/quality evaluation | Official package sources and licenses | Install size and MPS/CPU behavior | TBD | Feature/Final | NOT INSTALLED |
 
 Each row must later gain: pinned version/revision, checksum, download URL,
 installation date, installer identity, validation command, measured peak memory,
@@ -329,7 +364,7 @@ disk usage, and rollback/removal instructions.
 | 2026-10-21 | Completed Phase 0 contracts baseline | Domain ownership, lifecycle states, storage, API ownership, observability and ADRs documented; no runtime code changed |
 | 2026-10-21 02:11 +05:30 | Completed Phase 0 runtime hardening | Added bounded request/correlation traceability and removed direct-generation auto-approval; backend regression suite passed |
 | 2026-10-21 02:12 +05:30 | Recorded validation boundaries | Maintained suite has two unrelated pre-existing failures; repository-wide collection also requires optional model packages; no Phase 0 regression detected |
-| 2026-10-21 | Recorded final-only model installation policy | Added ADR-007, register, install gate, and decision DEC-004; no model or heavyweight dependency installed |
+| 2026-10-21 | Recorded final-only model installation policy | Added ADR-007, register, install gate, and decision DEC-004; model artifacts remain final-gate-only while ordinary dependencies may be added when needed |
 | 2026-10-21 | Completed Phase 1 PersonaVersion foundation | Added SQLite version table/backfill, draft/frozen lifecycle, version APIs, series binding, and job lineage; compile and 23-test backend gate passed |
 | 2026-10-21 | Completed Phase 1 v2 compatibility/reference binding | Added canonical v2 import/export facade, schema version 6 reference metadata, PersonaVersion binding, and 24-test backend gate; model installation remains deferred |
 | 2026-10-21 | Completed Phase 1 ReferencePack normalization | Added schema version 7 pack/item tables, adult/glamour identity authority metadata, and archive/restore PersonaVersion remapping; 24-test backend gate passed |
@@ -338,4 +373,5 @@ disk usage, and rollback/removal instructions.
 | 2026-10-21 | Created phase branch structure and Phase 1 checkpoint | Added `phase/00-baseline` and `phase/01-canonical-persona`; committed Phase 1 as `9900255`; added `phase-0-baseline` and `phase-1-checkpoint-70` tags |
 | 2026-10-21 | Started Phase 2 ContentPack implementation | Created `phase/02-master-persona-content-packs`; added schema version 9 ContentPack persistence, resolver APIs, canonical job/series fallback, adult/glamour identity-core enforcement, and 26-test backend gate |
 | 2026-10-21 | Completed Phase 2 ContentPack workspace slice | Added `/content-packs` author/review/resolve UI, expanded adult/glamour-family Identity Core enforcement, added route/UI regression coverage, and passed 27-test backend gate; model installation remains deferred |
+| 2026-10-21 | Recorded frontend migration and dependency boundary | Current frontend is designated a legacy shell requiring canonical replacement; application/tooling dependencies may be installed or updated, while image/audio/video generation models remain final-gate-only |
 
