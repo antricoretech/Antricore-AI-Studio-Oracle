@@ -29,6 +29,7 @@ class JobIn(BaseModel):
     reference_id: str | None = None
     source_asset_id: str | None = None
     audio_asset_id: str | None = None
+    content_pack_id: str | None = None
     width: int = Field(default=768, ge=256, le=2048)
     height: int = Field(default=1152, ge=256, le=2048)
     seed: int = Field(default_factory=lambda: secrets.randbelow(2147483647), ge=0, le=9223372036854775807)
@@ -51,6 +52,23 @@ class ReferencePackCanonicalIn(BaseModel):
 
 class ReferencePackAssetLinkIn(BaseModel):
     asset_id: str = Field(min_length=1, max_length=128)
+
+
+class ContentPackIn(BaseModel):
+    persona_version_id: str | None = None
+    reference_pack_id: str
+    pack_type: str = Field(min_length=2, max_length=80)
+    name: str = Field(min_length=2, max_length=120)
+    content_class: str = Field(default="identity", min_length=2, max_length=80)
+    identity_authority: str = Field(default="identity", max_length=40)
+    identity_core: bool = False
+    style: dict = Field(default_factory=dict)
+    metadata: dict = Field(default_factory=dict)
+    reference_item_ids: list[str] = Field(default_factory=list, max_length=100)
+
+
+class ContentPackReviewIn(BaseModel):
+    review: str
 
 
 class VoiceIn(BaseModel):
@@ -84,6 +102,7 @@ class SeriesQueueIn(BaseModel):
     reference_id: str | None = None
     source_asset_id: str | None = None
     audio_asset_id: str | None = None
+    content_pack_id: str | None = None
     width: int = Field(default=704, ge=256, le=2048)
     height: int = Field(default=1280, ge=256, le=2048)
     seed: int | None = Field(default=None, ge=0, le=9223372036854775807)

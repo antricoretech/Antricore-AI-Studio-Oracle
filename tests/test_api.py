@@ -192,6 +192,78 @@ def test_reference_pack_review_linkage_and_canonical_selection(client, tmp_path,
     assert invalidated.json()['pack']['items'][0]['canonical_selected'] == 0
 
 
+def test_content_pack_persists_style_and_resolves_canonical_identity(client, tmp_path, monkeypatch):
+    import studio.api_v2 as api_v2
+
+    monkeypatch.setattr(api_v2, 'PERSONAS_FILE', tmp_path / 'personas_v2.json')
+    packs = client.get('/api/v2/personas/maya_bhutia/reference-packs').json()['packs']
+    source_pack = next(item for item in packs if item['pack_type'] == 'adult_glamour')
+    source_item = source_pack['items'][0]
+
+    image = Image.new('RGB', (64, 64), 'gold')
+    bio = BytesIO()
+    image.save(bio, format='PNG')
+    imported = client.post('/api/assets/import', data={
+        'persona_id': 'maya_bhutia', 'kind': 'image', 'prompt': 'ContentPack canonical adult style anchor',
+        'disclosure': 'Fictional adult character. AI-generated synthetic media.', 'rights_confirmed': 'true'
+    }, files={'file': ('content-pack-anchor.png', bio.getvalue(), 'image/png')})
+    assert imported.status_code == 201
+    asset_id = imported.json()['id']
+    assert client.patch(f'/api/assets/{asset_id}/review', json={'review': 'approved'}).status_code == 200
+    assert client.post(
+        f"/api/personas/maya_bhutia/reference-packs/{source_pack['id']}/items/{source_item['id']}/asset",
+        json={'asset_id': asset_id},
+    ).status_code == 200
+    for item in source_pack['items']:
+        assert client.patch(
+            f"/api/personas/maya_bhutia/reference-packs/{source_pack['id']}/items/{item['id']}/review",
+            json={'review': 'approved', 'rights_confirmed': True},
+        ).status_code == 200
+    assert client.patch(
+        f"/api/personas/maya_bhutia/reference-packs/{source_pack['id']}/review",
+        json={'review': 'approved'},
+    ).status_code == 200
+    assert client.patch(
+        f"/api/personas/maya_bhutia/reference-packs/{source_pack['id']}/canonical",
+        json={'selected': True, 'item_ids': [source_item['id']]},
+    ).status_code == 200
+
+    created = client.post('/api/personas/maya_bhutia/content-packs', json={
+        'reference_pack_id': source_pack['id'],
+        'pack_type': 'adult_glamour_creator',
+        'name': 'Adult Glamour Creator Style',
+        'content_class': 'adult_glamour',
+        'identity_authority': 'style',
+        'identity_core': False,
+        'style': {'tone': 'editorial, intimate, confident', 'wardrobe': ['lingerie', 'silk'], 'formats': ['reel', 'photo']},
+        'metadata': {'audience': 'adult subscribers'},
+        'reference_item_ids': [source_item['id']],
+    })
+    assert created.status_code == 201
+    content_pack = created.json()
+    assert content_pack['identity_core'] == 1
+    assert content_pack['identity_authority'] == 'identity_and_style'
+    assert client.get(f"/api/personas/maya_bhutia/content-packs/{content_pack['id']}/resolve").status_code == 409
+
+    approved = client.patch(
+        f"/api/personas/maya_bhutia/content-packs/{content_pack['id']}/review",
+        json={'review': 'approved'},
+    )
+    assert approved.status_code == 200
+    resolved = client.get(f"/api/personas/maya_bhutia/content-packs/{content_pack['id']}/resolve")
+    assert resolved.status_code == 200
+    resolved_pack = resolved.json()
+    assert resolved_pack['content_class'] == 'adult_glamour'
+    assert resolved_pack['identity_core'] is True
+    assert resolved_pack['identity_authority'] == 'identity_and_style'
+    assert resolved_pack['style']['tone'].startswith('editorial')
+    assert resolved_pack['anchors'][0]['asset_id'] == asset_id
+
+    rejected = client.patch(f'/api/assets/{asset_id}/review', json={'review': 'rejected'})
+    assert rejected.status_code == 200
+    assert client.get(f"/api/personas/maya_bhutia/content-packs/{content_pack['id']}/resolve").status_code == 409
+
+
 def test_link_redirect_and_review_validation(client):
     assert client.post('/api/links', json={"label": "Test", "destination": "http://example.com/"}).status_code == 400
     r = client.post('/api/links', json={"label": "Landing", "destination": "https://example.com/landing"})

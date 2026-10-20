@@ -224,6 +224,15 @@ Exit: Vault, Orchestrator, Photo Studio, CLI, and series workflows resolve the s
 - Permit reviewed adult/glamour assets to become canonical anchors.
 - Record authority, content class, review, consent, rights, and policy metadata.
 
+Phase 2 first slice completed: ContentPack and ContentPackItem persistence now
+binds every production content pack to one PersonaVersion and one reviewed,
+canonical ReferencePack. The resolver returns style directives together with
+approved identity anchors. Adult/glamour ContentPacks force
+`identity_core=true` and `identity_authority=identity_and_style`, so they guide
+content style while remaining part of the canonical identity system. Jobs and
+series queueing can resolve an approved ContentPack or fall back to the
+approved canonical asset for the active PersonaVersion.
+
 Exit: identity and style references are distinguishable, while approved adult/glamour references can participate in canonical identity anchoring.
 
 ### Phase 3 — Unified rendering and asset lifecycle
@@ -650,6 +659,26 @@ they pass an explicit, versioned media import/link step.
 
 Revisit when: ContentPack persistence and downstream render resolution consume
 the canonical selection directly and provide end-to-end lineage assertions.
+
+#### ADR-012 - ContentPacks resolve reviewed canonical anchors instead of copying media
+
+Decision: A production ContentPack stores style/content directives and links
+to selected ReferencePack items and their unified Assets. It does not copy or
+re-author identity media. Resolution is allowed only while the ContentPack,
+source ReferencePack, selected items, and linked assets remain approved and
+PersonaVersion-compatible.
+
+Adult/glamour rule: Adult/glamour ContentPacks are identity-core packs with
+`identity_and_style` authority. They are not isolated style presets and cannot
+be created from an unreviewed or non-canonical source pack.
+
+Trade-off: ContentPack creation is intentionally explicit and requires a
+reviewed canonical source. This prevents legacy or stale media from becoming
+active identity input, but requires the creator to complete the reference
+review workflow first.
+
+Revisit when: The full Master Persona UI can author and review ContentPack
+items directly while preserving the same resolver contract.
 
 ### Phase 0 exit criteria
 

@@ -32,8 +32,8 @@ from fastapi import APIRouter, HTTPException, Request
 
 from pydantic import BaseModel
 from . import database as db
-from .repositories import PersonaRepository, ReferencePackRepository
-from .schemas import ReferencePackAssetLinkIn, ReferencePackCanonicalIn, ReferencePackReviewIn
+from .repositories import ContentPackRepository, PersonaRepository, ReferencePackRepository
+from .schemas import ContentPackIn, ContentPackReviewIn, ReferencePackAssetLinkIn, ReferencePackCanonicalIn, ReferencePackReviewIn
 
 try:
 
@@ -905,6 +905,77 @@ def link_reference_pack_asset(persona_id: str, pack_id: str, item_id: str, paylo
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
     return {"persona_id": persona_id, "pack": pack}
+
+
+@router.get("/personas/{persona_id}/content-packs")
+def get_content_packs(persona_id: str):
+    load_personas()
+    if not PersonaRepository.get(persona_id):
+        raise HTTPException(404, f"Persona '{persona_id}' not found")
+    return {"persona_id": persona_id, "content_packs": ContentPackRepository.list(persona_id)}
+
+
+@router.post("/personas/{persona_id}/content-packs", status_code=201)
+def create_content_pack(persona_id: str, payload: ContentPackIn):
+    load_personas()
+    if not PersonaRepository.get(persona_id):
+        raise HTTPException(404, f"Persona '{persona_id}' not found")
+    version = PersonaRepository.version(persona_id, payload.persona_version_id) if payload.persona_version_id else PersonaRepository.current_version(persona_id)
+    if not version:
+        raise HTTPException(409, "Persona has no persisted identity version")
+    try:
+        pack = ContentPackRepository.create(
+            persona_id=persona_id, persona_version_id=version["id"],
+            reference_pack_id=payload.reference_pack_id, pack_type=payload.pack_type.strip(),
+            name=payload.name.strip(), content_class=payload.content_class.strip(),
+            identity_authority=payload.identity_authority.strip(), identity_core=payload.identity_core,
+            style=payload.style, metadata=payload.metadata, item_ids=payload.reference_item_ids,
+            created_at=_utc_now(),
+        )
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {"persona_id": persona_id, "content_pack": pack}
+
+
+@router.get("/personas/{persona_id}/content-packs/{pack_id}")
+def get_content_pack(persona_id: str, pack_id: str):
+    load_personas()
+    if not PersonaRepository.get(persona_id):
+        raise HTTPException(404, f"Persona '{persona_id}' not found")
+    pack = ContentPackRepository.get(persona_id, pack_id)
+    if not pack:
+        raise HTTPException(404, "ContentPack not found")
+    return {"persona_id": persona_id, "content_pack": pack}
+
+
+@router.patch("/personas/{persona_id}/content-packs/{pack_id}/review")
+def review_content_pack(persona_id: str, pack_id: str, payload: ContentPackReviewIn):
+    load_personas()
+    if not PersonaRepository.get(persona_id):
+        raise HTTPException(404, f"Persona '{persona_id}' not found")
+    try:
+        pack = ContentPackRepository.review(persona_id=persona_id, pack_id=pack_id, review=payload.review, reviewed_at=_utc_now())
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {"persona_id": persona_id, "content_pack": pack}
+
+
+@router.get("/personas/{persona_id}/content-packs/{pack_id}/resolve")
+def resolve_content_pack(persona_id: str, pack_id: str):
+    load_personas()
+    if not PersonaRepository.get(persona_id):
+        raise HTTPException(404, f"Persona '{persona_id}' not found")
+    try:
+        resolved = ContentPackRepository.resolve(persona_id, pack_id)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {"persona_id": persona_id, "content_pack": resolved}
 
 
 

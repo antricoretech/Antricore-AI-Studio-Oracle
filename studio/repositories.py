@@ -258,6 +258,25 @@ class ReferencePackRepository:
         ])
 
     @staticmethod
+    def resolve_canonical_asset(persona_id: str, persona_version_id: str | None = None):
+        sql = (
+            "SELECT assets.*, reference_packs.id AS reference_pack_id, reference_packs.pack_type AS reference_pack_type "
+            "FROM reference_pack_items "
+            "JOIN reference_packs ON reference_packs.id=reference_pack_items.pack_id "
+            "JOIN assets ON assets.id=reference_pack_items.asset_id "
+            "WHERE reference_packs.persona_id=? AND reference_packs.review='approved' "
+            "AND reference_packs.canonical_selected=1 AND reference_pack_items.canonical_selected=1 "
+            "AND reference_pack_items.review='approved' AND reference_pack_items.rights_confirmed=1 "
+            "AND assets.kind='image' AND assets.review='approved' AND assets.rights_confirmed=1"
+        )
+        args: list[str] = [persona_id]
+        if persona_version_id:
+            sql += " AND reference_packs.persona_version_id=? AND assets.persona_version_id=?"
+            args.extend([persona_version_id, persona_version_id])
+        sql += " ORDER BY CASE WHEN reference_packs.content_class='adult_glamour' THEN 0 ELSE 1 END, reference_pack_items.created_at DESC LIMIT 1"
+        return db.row(sql, tuple(args))
+
+    @staticmethod
     def import_legacy(*, persona_id: str, persona_version_id: str, packs: list[dict], created_at: str):
         statements = []
         imported = []
@@ -318,6 +337,160 @@ class ReferencePackRepository:
             ("DELETE FROM reference_pack_items WHERE pack_id IN (SELECT id FROM reference_packs WHERE persona_id=?)", (persona_id,)),
             ("DELETE FROM reference_packs WHERE persona_id=?", (persona_id,)),
         ])
+
+
+class ContentPackRepository:
+    @staticmethod
+    def _decode(pack: dict | None):
+        if not pack:
+            return None
+        result = dict(pack)
+        for field in ("style_json", "metadata_json"):
+            raw = result.pop(field, "{}")
+            try:
+                result[field.removesuffix("_json")] = json.loads(raw or "{}")
+            except (TypeError, json.JSONDecodeError):
+                result[field.removesuffix("_json")] = {}
+        result["items"] = db.all_rows(
+            "SELECT content_pack_items.*, reference_pack_items.role AS reference_role, "
+            "assets.kind AS asset_kind, assets.review AS asset_review, assets.persona_version_id AS asset_persona_version_id, "
+            "assets.filename AS asset_filename "
+            "FROM content_pack_items "
+            "JOIN reference_pack_items ON reference_pack_items.id=content_pack_items.reference_pack_item_id "
+            "JOIN assets ON assets.id=content_pack_items.asset_id "
+            "WHERE content_pack_items.content_pack_id=? ORDER BY content_pack_items.created_at, content_pack_items.id",
+            (result["id"],),
+        )
+        return result
+
+    @staticmethod
+    def list(persona_id: str):
+        return [ContentPackRepository._decode(row) for row in db.all_rows(
+            "SELECT * FROM content_packs WHERE persona_id=? ORDER BY created_at, pack_type, name",
+            (persona_id,),
+        )]
+
+    @staticmethod
+    def get(persona_id: str, pack_id: str):
+        return ContentPackRepository._decode(db.row(
+            "SELECT * FROM content_packs WHERE id=? AND persona_id=?",
+            (pack_id, persona_id),
+        ))
+
+    @staticmethod
+    def _validate_source(*, persona_id: str, persona_version_id: str, reference_pack_id: str, item_ids: list[str]):
+        source = ReferencePackRepository.get(persona_id, reference_pack_id)
+        if not source:
+            raise LookupError("Reference pack not found")
+        if source["persona_version_id"] != persona_version_id:
+            raise ValueError("Reference pack and ContentPack must share the same PersonaVersion")
+        if source["review"] != "approved" or not source["canonical_selected"]:
+            raise ValueError("ContentPack requires an approved reference pack with selected canonical anchors")
+        canonical_items = {
+            item["id"]: item for item in source["items"]
+            if item["canonical_selected"] and item["review"] == "approved" and item["rights_confirmed"] and item["asset_id"]
+        }
+        selected_ids = list(dict.fromkeys(item_ids)) or list(canonical_items)
+        if not selected_ids:
+            raise ValueError("ContentPack requires at least one canonical reference item")
+        if any(item_id not in canonical_items for item_id in selected_ids):
+            raise ValueError("ContentPack items must be selected canonical items from the reference pack")
+        for item_id in selected_ids:
+            item = canonical_items[item_id]
+            asset = db.row(
+                "SELECT id, persona_version_id, kind, review, rights_confirmed, filename FROM assets WHERE id=? AND persona_id=?",
+                (item["asset_id"], persona_id),
+            )
+            if not asset or asset["kind"] != "image" or asset["review"] != "approved" or not asset["rights_confirmed"]:
+                raise ValueError("ContentPack anchors require approved, rights-confirmed image assets")
+            if asset["persona_version_id"] != persona_version_id:
+                raise ValueError("ContentPack anchor asset does not match the PersonaVersion")
+            if not (db.OUTPUTS / asset["filename"]).is_file():
+                raise ValueError("ContentPack anchor asset file is missing from local media storage")
+        return source, selected_ids
+
+    @staticmethod
+    def create(*, persona_id: str, persona_version_id: str, reference_pack_id: str, pack_type: str,
+               name: str, content_class: str, identity_authority: str, identity_core: bool,
+               style: dict, metadata: dict, item_ids: list[str], created_at: str):
+        if content_class == "adult_glamour":
+            identity_core = True
+            identity_authority = "identity_and_style"
+        if identity_authority not in {"identity", "style", "identity_and_style"}:
+            raise ValueError("Unsupported ContentPack identity authority")
+        source, selected_ids = ContentPackRepository._validate_source(
+            persona_id=persona_id, persona_version_id=persona_version_id,
+            reference_pack_id=reference_pack_id, item_ids=item_ids,
+        )
+        if content_class == "adult_glamour" and source["content_class"] != "adult_glamour":
+            raise ValueError("Adult/glamour ContentPacks must use an adult/glamour reference pack")
+        content_pack_id = uuid.uuid4().hex
+        statements = [(
+            "INSERT INTO content_packs (id,persona_id,persona_version_id,reference_pack_id,pack_type,name,content_class,identity_authority,identity_core,review,created_at,style_json,metadata_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (content_pack_id, persona_id, persona_version_id, reference_pack_id, pack_type, name, content_class, identity_authority, int(identity_core), "pending", created_at, json.dumps(style, ensure_ascii=False, sort_keys=True), json.dumps(metadata, ensure_ascii=False, sort_keys=True)),
+        )]
+        source_items = {item["id"]: item for item in source["items"]}
+        for item_id in selected_ids:
+            item = source_items[item_id]
+            statements.append((
+                "INSERT INTO content_pack_items (id,content_pack_id,reference_pack_item_id,asset_id,role,created_at,metadata_json) VALUES (?,?,?,?,?,?,?)",
+                (uuid.uuid4().hex, content_pack_id, item_id, item["asset_id"], "canonical_anchor", created_at, json.dumps({"source": "reference_pack"}, sort_keys=True)),
+            ))
+        db.write_many(statements)
+        return ContentPackRepository.get(persona_id, content_pack_id)
+
+    @staticmethod
+    def review(*, persona_id: str, pack_id: str, review: str, reviewed_at: str):
+        if review not in {"approved", "rejected", "pending"}:
+            raise ValueError("Review must be approved, rejected, or pending")
+        pack = ContentPackRepository.get(persona_id, pack_id)
+        if not pack:
+            raise LookupError("ContentPack not found")
+        if review == "approved":
+            ContentPackRepository._validate_source(
+                persona_id=persona_id,
+                persona_version_id=pack["persona_version_id"],
+                reference_pack_id=pack["reference_pack_id"],
+                item_ids=[item["reference_pack_item_id"] for item in pack["items"]],
+            )
+        db.write(
+            "UPDATE content_packs SET review=? WHERE id=? AND persona_id=?",
+            (review, pack_id, persona_id),
+        )
+        return ContentPackRepository.get(persona_id, pack_id)
+
+    @staticmethod
+    def resolve(persona_id: str, pack_id: str):
+        pack = ContentPackRepository.get(persona_id, pack_id)
+        if not pack:
+            raise LookupError("ContentPack not found")
+        if pack["review"] != "approved":
+            raise ValueError("Approve the ContentPack before using it for generation")
+        source, selected_ids = ContentPackRepository._validate_source(
+            persona_id=persona_id,
+            persona_version_id=pack["persona_version_id"],
+            reference_pack_id=pack["reference_pack_id"],
+            item_ids=[item["reference_pack_item_id"] for item in pack["items"]],
+        )
+        anchors = [
+            {
+                "reference_pack_item_id": item["reference_pack_item_id"],
+                "asset_id": item["asset_id"],
+                "url": f"/api/assets/{item['asset_id']}/file",
+            }
+            for item in pack["items"] if item["reference_pack_item_id"] in selected_ids
+        ]
+        return {
+            "id": pack["id"],
+            "persona_id": pack["persona_id"],
+            "persona_version_id": pack["persona_version_id"],
+            "content_class": pack["content_class"],
+            "identity_authority": pack["identity_authority"],
+            "identity_core": bool(pack["identity_core"]),
+            "style": pack["style"],
+            "anchors": anchors,
+            "reference_pack_id": source["id"],
+        }
 
 
 class SeriesRepository:

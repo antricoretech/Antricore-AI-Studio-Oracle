@@ -45,10 +45,10 @@ from .model_registry import get as get_model, rows as model_rows, workflow_model
 from .policies import AI_DISCLOSURE
 from .preflight import workflow_preflight
 from .provenance import manifest, media_metadata, quality_report, sha256_bytes
-from .repositories import JobRepository, PersonaRepository, ReferencePackRepository, SeriesRepository
+from .repositories import ContentPackRepository, JobRepository, PersonaRepository, ReferencePackRepository, SeriesRepository
 from .readiness import evaluate as evaluate_readiness
 from .schemas import (
-    JobIn, LinkIn, PersonaIn, ReviewIn, ReferencePackReviewIn, ReferencePackCanonicalIn, ReferencePackAssetLinkIn,
+    ContentPackIn, ContentPackReviewIn, JobIn, LinkIn, PersonaIn, ReviewIn, ReferencePackReviewIn, ReferencePackCanonicalIn, ReferencePackAssetLinkIn,
     SeriesEpisodeIn, SeriesIn, SeriesQueueIn, VoiceIn, PhotoStudioPromptIn, PhotoStudioGenerateIn,
     OrchestratorCompilePersonaIn, OrchestratorCreatePersonaIn, OrchestratorRenderAnchorIn, OrchestratorLockAnchorIn,
     OrchestratorSynthesizeScenesIn, OrchestratorBatchGenerateIn
@@ -545,6 +545,70 @@ def link_reference_pack_asset(pid: str, pack_id: str, item_id: str, payload: Ref
         raise HTTPException(409, str(exc)) from exc
 
 
+@app.get("/api/personas/{pid}/content-packs")
+def list_content_packs(pid: str):
+    must_persona(pid)
+    return ContentPackRepository.list(pid)
+
+
+@app.post("/api/personas/{pid}/content-packs", status_code=201)
+def create_content_pack(pid: str, payload: ContentPackIn):
+    must_persona(pid)
+    version = PersonaRepository.version(pid, payload.persona_version_id) if payload.persona_version_id else PersonaRepository.current_version(pid)
+    if not version:
+        raise HTTPException(409, "Persona has no persisted identity version")
+    try:
+        return ContentPackRepository.create(
+            persona_id=pid,
+            persona_version_id=version["id"],
+            reference_pack_id=payload.reference_pack_id,
+            pack_type=payload.pack_type.strip(),
+            name=payload.name.strip(),
+            content_class=payload.content_class.strip(),
+            identity_authority=payload.identity_authority.strip(),
+            identity_core=payload.identity_core,
+            style=payload.style,
+            metadata=payload.metadata,
+            item_ids=payload.reference_item_ids,
+            created_at=now(),
+        )
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@app.get("/api/personas/{pid}/content-packs/{pack_id}")
+def get_content_pack(pid: str, pack_id: str):
+    must_persona(pid)
+    pack = ContentPackRepository.get(pid, pack_id)
+    if not pack:
+        raise HTTPException(404, "ContentPack not found")
+    return pack
+
+
+@app.patch("/api/personas/{pid}/content-packs/{pack_id}/review")
+def review_content_pack(pid: str, pack_id: str, payload: ContentPackReviewIn):
+    must_persona(pid)
+    try:
+        return ContentPackRepository.review(persona_id=pid, pack_id=pack_id, review=payload.review, reviewed_at=now())
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@app.get("/api/personas/{pid}/content-packs/{pack_id}/resolve")
+def resolve_content_pack(pid: str, pack_id: str):
+    must_persona(pid)
+    try:
+        return ContentPackRepository.resolve(pid, pack_id)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
 def series_response(row):
     result = dict(row)
     result["episodes"] = db.all_rows("SELECT * FROM series_episodes WHERE series_id=? ORDER BY episode_no", (result["id"],))
@@ -583,7 +647,11 @@ async def queue_series_episode(sid: str, eid: str, payload: SeriesQueueIn):
         raise HTTPException(404, "Series episode not found")
     if not row["identity_locked"]:
         raise HTTPException(409, "Freeze the persona identity before queueing a series episode")
-    if not payload.reference_id:
+    if not payload.reference_id and not payload.source_asset_id:
+        canonical = ReferencePackRepository.resolve_canonical_asset(row["persona_id"], row.get("persona_version_id"))
+        if canonical:
+            payload.source_asset_id = canonical["id"]
+    if not payload.reference_id and not payload.source_asset_id:
         latest = db.row("SELECT id, 'reference' AS source, created_at FROM reference_images WHERE persona_id=? UNION ALL SELECT id, 'asset' AS source, created_at FROM assets WHERE persona_id=? AND kind='image' AND review='approved' ORDER BY created_at DESC LIMIT 1", (row["persona_id"], row["persona_id"]))
         if latest:
             if latest["source"] == "reference":
@@ -592,6 +660,7 @@ async def queue_series_episode(sid: str, eid: str, payload: SeriesQueueIn):
                 payload.source_asset_id = latest["id"]
     job = JobIn(persona_id=row["persona_id"], workflow_id=payload.workflow_id, checkpoint=payload.checkpoint,
                 reference_id=payload.reference_id, source_asset_id=payload.source_asset_id, audio_asset_id=payload.audio_asset_id,
+                content_pack_id=payload.content_pack_id,
                 prompt=row["prompt"], video_prompt=row["video_prompt"], width=payload.width,
                 height=payload.height, seed=payload.seed if payload.seed is not None else secrets.randbelow(2147483647),
                 rights_confirmed=payload.rights_confirmed)
@@ -768,6 +837,24 @@ async def create_job(payload: JobIn):
     person = must_persona(payload.persona_id)
     if not payload.rights_confirmed:
         raise HTTPException(400, "Confirm all inputs and likeness rights before starting generation")
+    persona_version = PersonaRepository.current_version(person["id"])
+    if not persona_version:
+        raise HTTPException(409, "Persona has no persisted identity version")
+    if payload.content_pack_id:
+        try:
+            resolved_pack = ContentPackRepository.resolve(person["id"], payload.content_pack_id)
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        style_text = json.dumps(resolved_pack["style"], ensure_ascii=False, sort_keys=True)
+        payload.prompt = f"{payload.prompt}\nContentPack style directives: {style_text}"[:3000]
+        if not payload.reference_id and not payload.source_asset_id:
+            payload.source_asset_id = resolved_pack["anchors"][0]["asset_id"]
+    if not payload.reference_id and not payload.source_asset_id:
+        canonical = ReferencePackRepository.resolve_canonical_asset(person["id"], persona_version["id"])
+        if canonical:
+            payload.source_asset_id = canonical["id"]
     path = workflow_path(payload.workflow_id)
     text = path.read_text(encoding="utf8")
     if "{{CHECKPOINT}}" in text and not payload.checkpoint:
@@ -798,9 +885,6 @@ async def create_job(payload: JobIn):
             raise HTTPException(400, "Narration asset is missing rights confirmation")
     jid = uid()
     category = "video" if "video" in payload.workflow_id.lower() or "wan" in payload.workflow_id.lower() else "image"
-    persona_version = PersonaRepository.current_version(person["id"])
-    if not persona_version:
-        raise HTTPException(409, "Persona has no persisted identity version")
     try:
         request_json = payload.model_dump_json()
     except AttributeError:  # Pydantic v1 compatibility for older local installs.
@@ -816,6 +900,7 @@ async def create_job(payload: JobIn):
         "reference_id": payload.reference_id,
         "source_asset_id": payload.source_asset_id,
         "audio_asset_id": payload.audio_asset_id,
+        "content_pack_id": payload.content_pack_id,
         "seed": payload.seed,
         "width": payload.width,
         "height": payload.height,

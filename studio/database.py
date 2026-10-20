@@ -87,6 +87,37 @@ def initialize():
             metadata_json TEXT NOT NULL DEFAULT '{}',
             FOREIGN KEY(pack_id) REFERENCES reference_packs(id) ON DELETE CASCADE
         );
+        CREATE TABLE IF NOT EXISTS content_packs (
+            id TEXT PRIMARY KEY,
+            persona_id TEXT NOT NULL,
+            persona_version_id TEXT NOT NULL,
+            reference_pack_id TEXT NOT NULL,
+            pack_type TEXT NOT NULL,
+            name TEXT NOT NULL,
+            content_class TEXT NOT NULL DEFAULT 'identity',
+            identity_authority TEXT NOT NULL DEFAULT 'identity',
+            identity_core INTEGER NOT NULL DEFAULT 0,
+            review TEXT NOT NULL DEFAULT 'pending',
+            created_at TEXT NOT NULL,
+            style_json TEXT NOT NULL DEFAULT '{}',
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            UNIQUE(persona_id, persona_version_id, pack_type, name),
+            FOREIGN KEY(persona_id) REFERENCES personas(id),
+            FOREIGN KEY(reference_pack_id) REFERENCES reference_packs(id)
+        );
+        CREATE TABLE IF NOT EXISTS content_pack_items (
+            id TEXT PRIMARY KEY,
+            content_pack_id TEXT NOT NULL,
+            reference_pack_item_id TEXT NOT NULL,
+            asset_id TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'canonical_anchor',
+            created_at TEXT NOT NULL,
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            UNIQUE(content_pack_id, reference_pack_item_id),
+            FOREIGN KEY(content_pack_id) REFERENCES content_packs(id) ON DELETE CASCADE,
+            FOREIGN KEY(reference_pack_item_id) REFERENCES reference_pack_items(id),
+            FOREIGN KEY(asset_id) REFERENCES assets(id)
+        );
         CREATE TABLE IF NOT EXISTS jobs (
             id TEXT PRIMARY KEY, persona_id TEXT NOT NULL, workflow_id TEXT NOT NULL,
             type TEXT NOT NULL, prompt TEXT NOT NULL, status TEXT NOT NULL,
@@ -227,6 +258,9 @@ def initialize():
         CREATE INDEX IF NOT EXISTS idx_reference_packs_version ON reference_packs(persona_version_id, pack_type);
         CREATE INDEX IF NOT EXISTS idx_reference_pack_items_pack ON reference_pack_items(pack_id, created_at);
         CREATE INDEX IF NOT EXISTS idx_reference_pack_items_asset ON reference_pack_items(asset_id);
+        CREATE INDEX IF NOT EXISTS idx_content_packs_persona_version ON content_packs(persona_id, persona_version_id, review);
+        CREATE INDEX IF NOT EXISTS idx_content_pack_items_pack ON content_pack_items(content_pack_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_content_pack_items_asset ON content_pack_items(asset_id);
         CREATE INDEX IF NOT EXISTS idx_persona_versions_persona ON persona_versions(persona_id, version_no);
         CREATE INDEX IF NOT EXISTS idx_persona_versions_state ON persona_versions(state, created_at);
         CREATE INDEX IF NOT EXISTS idx_jobs_status_created ON jobs(status, created_at);
@@ -239,7 +273,7 @@ def initialize():
         CREATE INDEX IF NOT EXISTS idx_series_persona_version ON series(persona_version_id);
         CREATE INDEX IF NOT EXISTS idx_series_episodes_job ON series_episodes(job_id);
         """)
-        con.execute("INSERT INTO schema_meta(key,value) VALUES('schema_version','8') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+        con.execute("INSERT INTO schema_meta(key,value) VALUES('schema_version','9') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
         con.execute("UPDATE jobs SET status='interrupted', error='App restarted during job; retry from Studio', updated_at=? WHERE status IN ('running','submitted','queued','cancelling')", (datetime_now(),))
 
 
