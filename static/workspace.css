@@ -90,6 +90,24 @@ input::placeholder, textarea::placeholder { color: #71808e; }
 .asset-review-summary h3 { overflow-wrap: anywhere; }
 .asset-review-meta { display: grid; gap: 5px; margin-top: 10px; color: var(--muted); font-size: .78rem; }
 .asset-review-actions { display: flex; align-items: end; gap: 8px; flex-wrap: wrap; margin-top: 13px; }
+.readiness-grid { display: grid; gap: 8px; }
+.readiness-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-raised); padding: 10px 12px; }
+.readiness-item strong, .readiness-item span { display: block; }
+.readiness-item strong { font-size: .82rem; }
+.readiness-item span { margin-top: 3px; color: var(--muted); font-size: .75rem; }
+.readiness-callout { margin-top: 14px; }
+.queue-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.queue-summary div { border: 1px solid var(--border); border-radius: 8px; padding: 10px; text-align: center; }
+.queue-summary strong, .queue-summary span { display: block; }
+.queue-summary strong { font-size: 1.5rem; }
+.queue-summary span { color: var(--muted); font-size: .72rem; }
+.job-list { display: grid; gap: 10px; }
+.job-card { border: 1px solid var(--border); border-radius: 8px; background: var(--surface-raised); padding: 13px; }
+.job-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.job-heading h3 { overflow-wrap: anywhere; }
+.job-prompt { margin: 12px 0 8px; color: var(--muted); font-size: .8rem; white-space: pre-wrap; }
+.job-error { margin: 10px 0 0; border-left: 3px solid var(--danger); padding-left: 10px; color: var(--danger); font-size: .8rem; }
+.job-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .button { border: 1px solid transparent; border-radius: 7px; padding: 9px 13px; color: var(--text); font-weight: 750; }
 .button.primary { background: var(--accent); color: #21170c; }
 .button.secondary { border-color: var(--border); background: transparent; }
@@ -158,4 +176,6 @@ th { color: var(--muted); font-size: .7rem; font-weight: 750; letter-spacing: .0
   .form-grid { grid-template-columns: 1fr; }
   .version-card { align-items: flex-start; flex-direction: column; }
   .asset-review-summary { flex-direction: column; }
+  .readiness-item, .job-heading { align-items: flex-start; flex-direction: column; }
+  .job-actions { justify-content: flex-start; }
 }

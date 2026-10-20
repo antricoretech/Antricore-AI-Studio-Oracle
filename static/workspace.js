@@ -249,9 +249,42 @@ function renderContentPacks() {
   return `<section class="panel" aria-labelledby="content-heading"><div class="section-heading"><div><p class="eyebrow">Style + identity</p><h2 id="content-heading">ContentPacks for ${escapeHtml(activePersona()?.name || state.activePersonaId)}</h2></div><a class="button primary" href="/content-packs?persona_id=${encodeURIComponent(state.activePersonaId)}">Open authoring studio</a></div><p class="helper">The dedicated workspace creates pending packs from approved canonical ReferencePacks and keeps adult/glamour classes inside Identity Core.</p>${state.contentPacks.length ? `<div class="card-list">${state.contentPacks.map((pack) => `<article class="entity-card"><div><h3>${escapeHtml(pack.name)}</h3><p>${escapeHtml(pack.content_class)} · ${pack.items?.length || 0} linked anchor(s)</p><div class="entity-meta">${badge(pack.review)}${pack.identity_core ? badge('Identity Core') : ''}${badge(pack.identity_authority)}</div></div><div class="entity-actions"><a class="button secondary" href="/content-packs?persona_id=${encodeURIComponent(state.activePersonaId)}">Review</a></div></article>`).join('')}</div>` : emptyState('No ContentPacks have been created for this persona yet. Use the authoring studio to create one.')}</section>`;
 }
 
-function renderProduction() {
+function renderProductionLegacy() {
   if (!state.jobs.length) return emptyState('No production jobs are recorded yet.');
   return `<section class="panel" aria-labelledby="jobs-heading"><div class="section-heading"><div><p class="eyebrow">Execution lineage</p><h2 id="jobs-heading">Recent production jobs</h2></div></div><div class="table-wrap"><table><thead><tr><th>Job</th><th>Persona</th><th>Status</th><th>Version lineage</th></tr></thead><tbody>${state.jobs.map((job) => `<tr><td>${escapeHtml(job.id)}</td><td>${escapeHtml(job.persona_name || job.persona_id)}</td><td>${badge(job.status)}</td><td>${escapeHtml(job.lineage?.persona_version_id || 'not recorded')}</td></tr>`).join('')}</tbody></table></div></section>`;
+}
+
+function renderProductionCanonical() {
+  const persona = activePersona();
+  const version = persona?.current_version;
+  const activeJobs = state.jobs.filter((job) => ['queued', 'running', 'submitted', 'cancelling'].includes(job.status)).length;
+  return `<div class="panel-grid">
+    <section class="panel" aria-labelledby="readiness-heading">
+      <div class="section-heading"><div><p class="eyebrow">Generation readiness</p><h2 id="readiness-heading">Before a job starts</h2></div>${badge(activeJobs ? `${activeJobs} active` : 'idle')}</div>
+      <p class="helper">Queueing remains subject to the canonical backend gates. This panel makes the prerequisites visible without installing or selecting generation models.</p>
+      <div class="readiness-grid">
+        <div class="readiness-item"><div><strong>Master Persona</strong><span>${persona ? escapeHtml(persona.name) : 'Select a persona'}</span></div>${persona ? badge('ready') : badge('required')}</div>
+        <div class="readiness-item"><div><strong>PersonaVersion</strong><span>${version ? `${escapeHtml(version.id)} · ${escapeHtml(version.state)}` : 'Create a PersonaVersion'}</span></div>${version ? badge('lineage ready') : badge('required')}</div>
+        <div class="readiness-item"><div><strong>Rights and disclosure</strong><span>Every job must confirm likeness/input rights and carry disclosure metadata.</span></div>${badge('required')}</div>
+        <div class="readiness-item"><div><strong>Model installation gate</strong><span>Image, audio, and video models remain deferred until final installation.</span></div>${badge('deferred')}</div>
+      </div>
+      <div class="callout readiness-callout"><p><strong>Generation action status:</strong> The canonical job API is available for approved workflows and assets; a dedicated authoring form will be added after queue observability is verified.</p><p class="helper">Use ReferencePack, ContentPack, and Asset Review first so identity anchors and media approvals are explicit.</p></div>
+    </section>
+    <section class="panel" aria-labelledby="queue-summary-heading">
+      <div class="section-heading"><div><p class="eyebrow">Queue summary</p><h2 id="queue-summary-heading">Production Queue</h2></div>${badge(`${state.jobs.length} recorded`)}</div>
+      <div class="queue-summary"><div><strong>${activeJobs}</strong><span>active</span></div><div><strong>${state.jobs.filter((job) => job.status === 'completed').length}</strong><span>completed</span></div><div><strong>${state.jobs.filter((job) => ['failed', 'interrupted'].includes(job.status)).length}</strong><span>failed</span></div></div>
+    </section>
+  </div>
+  <section class="panel" aria-labelledby="jobs-heading">
+    <div class="section-heading"><div><p class="eyebrow">Execution lineage</p><h2 id="jobs-heading">Recent jobs</h2></div></div>
+    ${state.jobs.length ? `<div class="job-list">${state.jobs.map((job) => `<article class="job-card">
+      <div class="job-heading"><div><h3>${escapeHtml(job.workflow_id || job.id)}</h3><p class="helper">${escapeHtml(job.id)} · ${escapeHtml(job.persona_name || job.persona_id)} · attempt ${escapeHtml(job.attempt || 1)}</p></div><div class="entity-meta">${badge(job.status)}${badge(job.type || 'job')}</div></div>
+      <p class="job-prompt">${escapeHtml(job.prompt || 'No prompt recorded.')}</p>
+      <div class="entity-meta">${badge(`PersonaVersion ${job.lineage?.persona_version_id || 'not recorded'}`)}${job.lineage?.content_pack_id ? badge(`ContentPack ${job.lineage.content_pack_id}`) : ''}${job.lineage?.source_asset_id ? badge(`source ${job.lineage.source_asset_id}`) : ''}</div>
+      ${job.error ? `<p class="job-error">${escapeHtml(job.error)}</p>` : ''}
+      <div class="job-actions">${['queued', 'running', 'submitted', 'cancelling'].includes(job.status) ? `<button class="button secondary" type="button" data-job-action="cancel" data-job-id="${escapeHtml(job.id)}">Cancel job</button>` : ''}${['failed', 'interrupted', 'cancelled'].includes(job.status) ? `<button class="button secondary" type="button" data-job-action="retry" data-job-id="${escapeHtml(job.id)}">Retry job</button>` : ''}</div>
+    </article>`).join('')}</div>` : emptyState('No production jobs are recorded yet. Generation will appear here after a canonical job is queued.')}
+  </section>`;
 }
 
 function renderAssetsLegacy() {
@@ -277,7 +310,7 @@ function renderPublishing() {
 }
 
 function renderView() {
-  const renderer = { overview: renderOverview, personas: renderPersonasCanonical, references: renderReferencesCanonical, 'content-packs': renderContentPacks, production: renderProduction, assets: renderAssetsCanonical, publishing: renderPublishing }[state.view] || renderOverview;
+  const renderer = { overview: renderOverview, personas: renderPersonasCanonical, references: renderReferencesCanonical, 'content-packs': renderContentPacks, production: renderProductionCanonical, assets: renderAssetsCanonical, publishing: renderPublishing }[state.view] || renderOverview;
   $('#workspace-view').innerHTML = renderer();
 }
 
@@ -482,6 +515,16 @@ async function reviewAsset(event) {
   }
 }
 
+async function actOnJob(jobId, action) {
+  try {
+    await post(`/api/jobs/${encodeURIComponent(jobId)}/${action}`, {});
+    setStatus(`Job ${action} request accepted.`, 'success');
+    await loadViewData();
+  } catch (error) {
+    setStatus(error.message, 'error');
+  }
+}
+
 $('#workspace-nav').addEventListener('click', (event) => {
   const button = event.target.closest('[data-view]');
   if (button) navigate(button.dataset.view);
@@ -509,6 +552,11 @@ $('#workspace-view').addEventListener('click', (event) => {
   const clearCanonicalButton = event.target.closest('[data-clear-reference-canonical]');
   if (clearCanonicalButton) {
     clearReferenceCanonical(clearCanonicalButton.dataset.clearReferenceCanonical);
+    return;
+  }
+  const jobButton = event.target.closest('[data-job-action]');
+  if (jobButton) {
+    actOnJob(jobButton.dataset.jobId, jobButton.dataset.jobAction);
     return;
   }
   const button = event.target.closest('[data-view]');

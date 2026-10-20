@@ -276,6 +276,13 @@ transitions through the canonical API, and exposes package export only for
 approved assets. The next frontend slice is Production Queue and generation
 readiness, followed by the remaining legacy-shell parity work.
 
+Production Queue is now available at `/workspace#production`. It exposes the
+Persona/PersonaVersion, rights/disclosure, and final model-installation gates,
+shows active/completed/failed counts, preserves job and ContentPack lineage,
+surfaces errors, and provides guarded cancel/retry actions through the existing
+job API. A dedicated generation-authoring flow remains separate until the
+preflight, workflow catalog, and final model-installation boundary are ready.
+
 ### Cross-cutting frontend migration workstream
 
 The current static frontend is a legacy shell and is not considered aligned
