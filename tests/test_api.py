@@ -80,6 +80,9 @@ def test_canonical_workspace_page_is_served(client):
     assert 'data-job-action' in workspace_js.text
     assert '/api/jobs/' in workspace_js.text
     assert 'Generation readiness' in workspace_js.text
+    assert 'generation-form' in workspace_js.text
+    assert '/api/preflight?' in workspace_js.text
+    assert 'Queue generation' in workspace_js.text
     assert '/api/personas/' in workspace_js.text
     assert client.get('/static/workspace.css').status_code == 200
 

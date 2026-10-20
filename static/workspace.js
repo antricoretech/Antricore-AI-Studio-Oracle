@@ -38,6 +38,11 @@ const state = {
   contentPacks: [],
   jobs: [],
   assets: [],
+  workflows: [],
+  preflight: null,
+  preflighting: false,
+  submittingJob: false,
+  generationDraft: { workflow_id: '', prompt: '', width: 768, height: 1152, content_pack_id: '', rights_confirmed: false },
   submittingPersona: false,
   freezingPersona: false,
   controller: null,
@@ -254,11 +259,33 @@ function renderProductionLegacy() {
   return `<section class="panel" aria-labelledby="jobs-heading"><div class="section-heading"><div><p class="eyebrow">Execution lineage</p><h2 id="jobs-heading">Recent production jobs</h2></div></div><div class="table-wrap"><table><thead><tr><th>Job</th><th>Persona</th><th>Status</th><th>Version lineage</th></tr></thead><tbody>${state.jobs.map((job) => `<tr><td>${escapeHtml(job.id)}</td><td>${escapeHtml(job.persona_name || job.persona_id)}</td><td>${badge(job.status)}</td><td>${escapeHtml(job.lineage?.persona_version_id || 'not recorded')}</td></tr>`).join('')}</tbody></table></div></section>`;
 }
 
+function renderGenerationForm() {
+  const readyWorkflows = state.workflows.filter((workflow) => workflow.ready);
+  if (!state.generationDraft.workflow_id && readyWorkflows[0]) state.generationDraft.workflow_id = readyWorkflows[0].id;
+  const draft = state.generationDraft;
+  const selectedWorkflow = state.workflows.find((workflow) => workflow.id === draft.workflow_id);
+  const preflightChecks = state.preflight?.checks || [];
+  return `<section class="panel" aria-labelledby="generation-heading">
+    <div class="section-heading"><div><p class="eyebrow">Controlled generation</p><h2 id="generation-heading">Author a generation request</h2></div>${state.preflight ? badge(`preflight ${state.preflight.overall}`) : badge('preflight required')}</div>
+    <p class="helper">Select a locally verified workflow, describe the scene, and run the read-only preflight before queueing. Catalog recipes remain visible but cannot be queued until their verified graph and required model are installed.</p>
+    <form id="generation-form" class="generation-form">
+      <div class="form-grid generation-grid">
+        <div class="field"><label for="generation-workflow">Verified workflow</label><select id="generation-workflow" name="workflow_id" required>${state.workflows.length ? state.workflows.map((workflow) => `<option value="${escapeHtml(workflow.id)}" ${workflow.id === draft.workflow_id ? 'selected' : ''} ${workflow.ready ? '' : 'disabled'}>${escapeHtml(workflow.label || workflow.id)} · ${workflow.ready ? 'ready' : 'catalog / not installed'}</option>`).join('') : '<option value="">No workflow catalog entries available</option>'}</select></div>
+        <div class="field"><label for="generation-content-pack">ContentPack <span class="field-hint">optional</span></label><select id="generation-content-pack" name="content_pack_id"><option value="">Use approved canonical anchors</option>${state.contentPacks.map((pack) => `<option value="${escapeHtml(pack.id)}" ${pack.id === draft.content_pack_id ? 'selected' : ''} ${pack.review === 'approved' ? '' : 'disabled'}>${escapeHtml(pack.name)} · ${escapeHtml(pack.review)}</option>`).join('')}</select></div>
+      </div>
+      <div class="field"><label for="generation-prompt">Prompt</label><textarea id="generation-prompt" name="prompt" minlength="5" maxlength="3000" required placeholder="Describe the approved, disclosed scene to generate.">${escapeHtml(draft.prompt)}</textarea></div>
+      <div class="form-grid generation-dimensions"><div class="field"><label for="generation-width">Width</label><input id="generation-width" name="width" type="number" min="256" max="2048" step="8" value="${escapeHtml(draft.width)}" required></div><div class="field"><label for="generation-height">Height</label><input id="generation-height" name="height" type="number" min="256" max="2048" step="8" value="${escapeHtml(draft.height)}" required></div><label class="check-field generation-rights"><input type="checkbox" name="rights_confirmed" ${draft.rights_confirmed ? 'checked' : ''}> Rights and likeness confirmed</label></div>
+      <div class="form-actions"><button class="button secondary" type="button" data-generation-action="preflight" ${state.preflighting ? 'disabled' : ''}>${state.preflighting ? 'Checking…' : 'Run preflight'}</button><button class="button primary" type="submit" ${state.submittingJob || state.preflight?.overall !== 'ready' ? 'disabled' : ''}>${state.submittingJob ? 'Queueing…' : 'Queue generation'}</button></div>
+      ${preflightChecks.length ? `<div class="preflight-results" role="status"><div class="section-heading"><div><p class="eyebrow">Read-only validation</p><h3>Preflight checks</h3></div>${badge(state.preflight.overall)}</div>${preflightChecks.map((check) => `<div class="preflight-row"><span>${escapeHtml(check.id)}</span><span>${escapeHtml(check.detail || check.status)}</span>${badge(check.status)}</div>`).join('')}</div>` : `<p class="helper">${selectedWorkflow ? `Selected: ${escapeHtml(selectedWorkflow.label || selectedWorkflow.id)}${selectedWorkflow.requires_reference ? ' · reference input required' : ''}` : 'Choose a verified workflow before running preflight.'}</p>`}
+    </form>
+  </section>`;
+}
+
 function renderProductionCanonical() {
   const persona = activePersona();
   const version = persona?.current_version;
   const activeJobs = state.jobs.filter((job) => ['queued', 'running', 'submitted', 'cancelling'].includes(job.status)).length;
-  return `<div class="panel-grid">
+  return `${renderGenerationForm()}<div class="panel-grid">
     <section class="panel" aria-labelledby="readiness-heading">
       <div class="section-heading"><div><p class="eyebrow">Generation readiness</p><h2 id="readiness-heading">Before a job starts</h2></div>${badge(activeJobs ? `${activeJobs} active` : 'idle')}</div>
       <p class="helper">Queueing remains subject to the canonical backend gates. This panel makes the prerequisites visible without installing or selecting generation models.</p>
@@ -325,7 +352,7 @@ async function loadViewData() {
   renderView();
   setStatus('Loading canonical workspace data…');
   try {
-    const requests = { overview: [], personas: state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/versions`] : [], references: state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/reference-packs`, '/api/assets'] : [], 'content-packs': state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/content-packs`] : [], production: ['/api/jobs'], assets: ['/api/assets'], publishing: [] }[state.view] || [];
+    const requests = { overview: [], personas: state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/versions`] : [], references: state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/reference-packs`, '/api/assets'] : [], 'content-packs': state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/content-packs`] : [], production: state.activePersonaId ? ['/api/jobs', '/api/workflows', `/api/personas/${encodeURIComponent(state.activePersonaId)}/content-packs`] : ['/api/jobs', '/api/workflows'], assets: ['/api/assets'], publishing: [] }[state.view] || [];
     const results = await Promise.all(requests.map((url) => get(url, { signal })));
     if (signal.aborted || token !== state.requestToken) return;
     if (state.view === 'references') {
@@ -334,7 +361,11 @@ async function loadViewData() {
       if (!state.references.some((pack) => pack.id === state.selectedReferencePackId)) state.selectedReferencePackId = state.references[0]?.id || '';
     }
     if (state.view === 'content-packs') state.contentPacks = Array.isArray(results[0]) ? results[0] : results[0]?.content_packs || [];
-    if (state.view === 'production') state.jobs = results[0] || [];
+    if (state.view === 'production') {
+      state.jobs = results[0] || [];
+      state.workflows = Array.isArray(results[1]) ? results[1] : [];
+      if (state.activePersonaId) state.contentPacks = Array.isArray(results[2]) ? results[2] : [];
+    }
     if (state.view === 'assets') state.assets = results[0] || [];
     if (state.view === 'personas') state.versions = results[0] || [];
     renderView();
@@ -525,6 +556,78 @@ async function actOnJob(jobId, action) {
   }
 }
 
+function syncGenerationDraft(form) {
+  state.generationDraft = {
+    workflow_id: form.elements.workflow_id.value,
+    prompt: form.elements.prompt.value.trim(),
+    width: Number(form.elements.width.value),
+    height: Number(form.elements.height.value),
+    content_pack_id: form.elements.content_pack_id.value,
+    rights_confirmed: form.elements.rights_confirmed.checked,
+  };
+}
+
+async function runGenerationPreflight() {
+  const form = $('#generation-form');
+  if (!form) return;
+  if (!form.reportValidity()) return;
+  syncGenerationDraft(form);
+  if (!state.generationDraft.workflow_id) {
+    setStatus('Select a verified workflow before running preflight.', 'error');
+    return;
+  }
+  state.preflighting = true;
+  renderView();
+  const { workflow_id: workflowId, width, height } = state.generationDraft;
+  try {
+    state.preflight = await get(`/api/preflight?workflow_id=${encodeURIComponent(workflowId)}&width=${encodeURIComponent(width)}&height=${encodeURIComponent(height)}`);
+    state.preflighting = false;
+    renderView();
+    setStatus(`Preflight ${state.preflight.overall}.`, state.preflight.overall === 'ready' ? 'success' : 'error');
+  } catch (error) {
+    state.preflighting = false;
+    state.preflight = null;
+    renderView();
+    setStatus(error.message, 'error');
+  }
+}
+
+async function createGenerationJob(event) {
+  event.preventDefault();
+  const form = event.target;
+  if (!form.reportValidity()) return;
+  syncGenerationDraft(form);
+  if (!state.generationDraft.rights_confirmed) {
+    setStatus('Confirm rights and likeness inputs before queueing generation.', 'error');
+    return;
+  }
+  if (state.preflight?.overall !== 'ready') {
+    setStatus('Run a passing preflight before queueing generation.', 'error');
+    return;
+  }
+  state.submittingJob = true;
+  renderView();
+  try {
+    const queued = await post('/api/jobs', {
+      persona_id: state.activePersonaId,
+      workflow_id: state.generationDraft.workflow_id,
+      prompt: state.generationDraft.prompt,
+      width: state.generationDraft.width,
+      height: state.generationDraft.height,
+      content_pack_id: state.generationDraft.content_pack_id || null,
+      rights_confirmed: true,
+    });
+    state.submittingJob = false;
+    state.preflight = null;
+    setStatus(`Generation job ${queued.id} queued.`, 'success');
+    await loadViewData();
+  } catch (error) {
+    state.submittingJob = false;
+    renderView();
+    setStatus(error.message, 'error');
+  }
+}
+
 $('#workspace-nav').addEventListener('click', (event) => {
   const button = event.target.closest('[data-view]');
   if (button) navigate(button.dataset.view);
@@ -559,12 +662,21 @@ $('#workspace-view').addEventListener('click', (event) => {
     actOnJob(jobButton.dataset.jobId, jobButton.dataset.jobAction);
     return;
   }
+  const generationAction = event.target.closest('[data-generation-action]');
+  if (generationAction) {
+    runGenerationPreflight();
+    return;
+  }
   const button = event.target.closest('[data-view]');
   if (button) navigate(button.dataset.view);
 });
 $('#workspace-view').addEventListener('submit', (event) => {
   if (event.target.id === 'persona-create-form') {
     createPersona(event);
+    return;
+  }
+  if (event.target.id === 'generation-form') {
+    createGenerationJob(event);
     return;
   }
   if (event.target.matches('[data-reference-pack-review]')) {

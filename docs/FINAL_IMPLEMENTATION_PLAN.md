@@ -283,6 +283,13 @@ surfaces errors, and provides guarded cancel/retry actions through the existing
 job API. A dedicated generation-authoring flow remains separate until the
 preflight, workflow catalog, and final model-installation boundary are ready.
 
+The generation-authoring flow is now integrated into the same Production view.
+It loads workflow readiness, keeps catalog recipes disabled until their local
+verified graph is available, captures prompt/canvas/ContentPack/rights inputs,
+calls the read-only `/api/preflight` contract, and enables queue submission
+only after a passing result. This validates the application flow without
+installing or executing any image, audio, or video generation model.
+
 ### Cross-cutting frontend migration workstream
 
 The current static frontend is a legacy shell and is not considered aligned
