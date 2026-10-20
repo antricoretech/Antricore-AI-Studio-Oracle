@@ -56,6 +56,10 @@ def test_content_pack_workspace_page_is_served(client):
     assert '/static/content_packs.js' in response.text
     assert client.get('/static/content_packs.js').status_code == 200
     assert client.get('/static/content_packs.css').status_code == 200
+    api_module = client.get('/static/modules/api.js')
+    assert api_module.status_code == 200
+    assert 'export class ApiError' in api_module.text
+    assert 'AbortError' in api_module.text
 
 
 def test_persona_version_is_persisted_frozen_and_attached_to_series(client):

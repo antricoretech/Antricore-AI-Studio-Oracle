@@ -1,3 +1,5 @@
+import { api } from './modules/api.js';
+
 const state = {
   personas: [],
   referencePacks: [],
@@ -9,32 +11,6 @@ const state = {
 
 const $ = (selector) => document.querySelector(selector);
 const adultClasses = new Set(["adult_glamour", "lingerie", "boudoir", "nude_editorial"]);
-
-class ApiError extends Error {
-  constructor(message, status, payload) {
-    super(message);
-    this.name = "ApiError";
-    this.status = status;
-    this.payload = payload;
-  }
-}
-
-async function api(path, options = {}) {
-  const response = await fetch(path, {
-    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
-    ...options,
-  });
-  let payload = null;
-  const text = await response.text();
-  if (text) {
-    try { payload = JSON.parse(text); } catch (_) { payload = { detail: text }; }
-  }
-  if (!response.ok) {
-    const detail = payload?.detail || payload?.message || "Request failed";
-    throw new ApiError(typeof detail === "string" ? detail : JSON.stringify(detail), response.status, payload);
-  }
-  return payload;
-}
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>'"]/g, (character) => ({

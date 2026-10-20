@@ -241,6 +241,12 @@ family (`adult_glamour`, `lingerie`, `boudoir`, and `nude_editorial`) is forced
 through the same Identity Core plus style authority rule at the backend boundary
 so UI choices cannot downgrade these packs into style-only presets.
 
+The frontend API-client foundation is also complete: the shared module now
+normalizes API errors, propagates request cancellation, retries only safe GET
+requests on transient failures, and provides JSON GET/POST/PATCH helpers. The
+ContentPack workspace consumes this adapter; remaining legacy screens still
+require migration before the frontend workstream exits.
+
 ### Cross-cutting frontend migration workstream
 
 The current static frontend is a legacy shell and is not considered aligned

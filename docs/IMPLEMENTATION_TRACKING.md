@@ -59,7 +59,7 @@ Every completed activity must record:
 |---|---|---|---:|---|---|
 | 0 | Baseline and contracts | COMPLETED | 100% | User approval | Contracts, states, storage, API ownership, observability and runtime enforcement verified |
 | 1 | Canonical PersonaVersion | IN_PROGRESS | 70% | Phase 0 | SQLite canonical source; persistence, v2 compatibility, pack review/canonical selection, unified asset linkage, archive reconciliation, and migration boundary recorded |
-| 2 | Master Persona and content packs | IN_PROGRESS | 40% | Phase 1 | ContentPack persistence, canonical-anchor resolver, adult/glamour-family Identity Core rules, and focused author/review/resolve UI completed; frontend migration is a cross-cutting workstream |
+| 2 | Master Persona and content packs | IN_PROGRESS | 45% | Phase 1 | ContentPack persistence, canonical-anchor resolver, adult/glamour-family Identity Core rules, focused author/review/resolve UI, and shared frontend API-client foundation completed; broader frontend migration remains active |
 | 3 | Unified rendering and assets | PLANNED | 0% | Phase 1 | One job and asset contract |
 | 4 | Persistent local job runner | PLANNED | 0% | Phase 3 | Mac memory-aware execution |
 | 5 | Identity-conditioned rendering | PLANNED | 0% | Phases 2–4 | Benchmark before selection |
@@ -92,6 +92,7 @@ Every completed activity must record:
 | IMP-022 | Phase 2 | Add ContentPack persistence and canonical-anchor resolution | COMPLETED | `python -m compileall -q studio`; `pytest -q tests/test_api.py tests/test_comfy.py` — 26 passed; live DB schema version 9, 0 content packs, 0 content-pack items verified | 2026-10-21 | ContentPacks bind style directives and canonical ReferencePack anchors to one PersonaVersion; adult/glamour forces identity-core and identity-and-style authority; job/series resolution is active |
 | IMP-023 | Phase 2 | Add Master Persona ContentPack authoring, review, and resolution workspace | COMPLETED | `.\\.venv\\Scripts\\python.exe -m compileall -q studio`; `.\\.venv\\Scripts\\python.exe -m pytest -q tests/test_api.py tests/test_comfy.py` — 27 passed; `node --check static/content_packs.js`; route/static smoke check returned 200 | 2026-10-21 | Added `/content-packs`, canonical-source eligibility display, style/metadata authoring, explicit review actions, anchor resolution, and adult/glamour-family client/server Identity Core enforcement; no model/dependency installation performed |
 | PLAN-001 | Cross-cutting | Record frontend migration and dependency-installation boundary | COMPLETED | Final plan ADR-013, frontend migration workstream, and installation policy updated | 2026-10-21 | Current frontend is recorded as a legacy shell; canonical UI replacement is required across the implementation; application dependencies/tooling may be installed or updated, while generation models remain final-gate-only |
+| UI-001 | Cross-cutting | Strengthen shared frontend API client and adopt it in ContentPack workspace | COMPLETED | `node --check static/modules/api.js`; `node --check static/content_packs.js`; `.\\.venv\\Scripts\\python.exe -m pytest -q tests/test_api.py tests/test_comfy.py` — 27 passed; Playwright Chromium smoke passed; `.\\.venv\\Scripts\\python.exe -m pip check` passed | 2026-10-21 | Added normalized `ApiError`, JSON parsing, 401 handling, AbortController propagation, bounded GET retries, and shared GET/POST/PATCH helpers; ContentPack UI no longer owns a duplicate fetch adapter. `tests/test_frontend.py` still has the known legacy-shell failure because `/` loads `static/app.js` without `type="module"`; main-shell migration remains planned. |
 | IMP-003 | Phase 1 | Introduce canonical PersonaVersion persistence | PLANNED | Not started | — | Requires Phase 0 |
 | IMP-004 | Phase 1 | Convert v2 JSON persona data to import/export | PLANNED | Not started | — | Preserve backup compatibility |
 | IMP-005 | Phase 2 | Reclassify and review Master Persona packs | PLANNED | Not started | — | Adult/glamour can be canonical when approved |
@@ -112,7 +113,7 @@ PersonaVersion/ReferencePack/ContentPack journey.
 
 | Work item | Status | Required outcome |
 |---|---|---|
-| Canonical API client and normalized error handling | PLANNED | One request layer with cancellation, stale-response protection, and consistent errors |
+| Canonical API client and normalized error handling | COMPLETED | `static/modules/api.js` now centralizes normalized errors, cancellation, bounded GET retries, and JSON helpers; broader shell adoption remains in progress |
 | Persona and PersonaVersion screens | PLANNED | New Master Personas use the canonical creation/version flow and unique IDs |
 | ReferencePack review and canonical selection screens | PLANNED | Review, rights, asset linkage, and canonical state are visible and enforceable |
 | ContentPack author/review/resolve screen | COMPLETED | `/content-packs` is available on the Phase 2 branch |
@@ -349,6 +350,7 @@ rollback notes.
 | RUNTIME-003 | ComfyUI and approved custom nodes | Optional graph execution | Official repository and node licenses | Local service stability and disk use | TBD | Feature/Final | NOT INSTALLED |
 | RUNTIME-004 | FFmpeg | Media assembly and validation | Official distribution/license record | Apple Silicon executable and codec coverage | TBD | Feature/Final | NOT INSTALLED |
 | RUNTIME-005 | OpenCV and auxiliary vision packages | Face/quality evaluation | Official package sources and licenses | Install size and MPS/CPU behavior | TBD | Feature/Final | NOT INSTALLED |
+| RUNTIME-006 | Playwright 1.64.0 + Chromium test browser 156.0.8078.4 | Frontend smoke and responsive UI validation | PyPI Playwright package and official Playwright browser distribution | Windows development validation; not a generation runtime | ~39 MB package plus browser cache | Feature | INSTALLED |
 
 Each row must later gain: pinned version/revision, checksum, download URL,
 installation date, installer identity, validation command, measured peak memory,
@@ -374,4 +376,5 @@ disk usage, and rollback/removal instructions.
 | 2026-10-21 | Started Phase 2 ContentPack implementation | Created `phase/02-master-persona-content-packs`; added schema version 9 ContentPack persistence, resolver APIs, canonical job/series fallback, adult/glamour identity-core enforcement, and 26-test backend gate |
 | 2026-10-21 | Completed Phase 2 ContentPack workspace slice | Added `/content-packs` author/review/resolve UI, expanded adult/glamour-family Identity Core enforcement, added route/UI regression coverage, and passed 27-test backend gate; model installation remains deferred |
 | 2026-10-21 | Recorded frontend migration and dependency boundary | Current frontend is designated a legacy shell requiring canonical replacement; application/tooling dependencies may be installed or updated, while image/audio/video generation models remain final-gate-only |
+| 2026-10-21 | Completed shared frontend API-client foundation | Installed Playwright 1.64.0 and Chromium test browser; centralized API errors/cancellation/retries/helpers; ContentPack browser smoke and 27-test backend gate passed; no generation models installed |
 
