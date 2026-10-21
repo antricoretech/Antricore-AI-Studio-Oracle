@@ -71,7 +71,9 @@ def manifest(asset: dict, *, job: dict | None = None, persona: dict | None = Non
         "asset": {
             "id": asset.get("id"), "filename": asset.get("filename"), "kind": asset.get("kind"),
             "sha256": asset.get("sha256"), "metadata": parse(asset.get("metadata_json")),
-            "review": asset.get("review"), "disclosure": asset.get("disclosure") or AI_DISCLOSURE,
+            "review": asset.get("review"), "reviewed_at": asset.get("reviewed_at"),
+            "reviewer": asset.get("reviewer"), "review_reason": asset.get("review_reason"),
+            "disclosure": asset.get("disclosure") or AI_DISCLOSURE,
         },
         "persona": {
             "id": (persona or {}).get("id", asset.get("persona_id")),

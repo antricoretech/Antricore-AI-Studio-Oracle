@@ -1331,9 +1331,21 @@ def test_phase5_asset_manifest_and_approved_export_package(client):
     assert manifest.status_code == 200
     assert manifest.json()['schema_version'] == 'asset-manifest-1.0'
     assert manifest.json()['asset']['sha256']
+    quality = client.post('/api/assets/' + aid + '/quality')
+    assert quality.status_code == 200
+    assert any(check['id'] == 'rights' and check['status'] == 'ready' for check in quality.json()['quality']['checks'])
     assert client.get('/api/assets/' + aid + '/package').status_code == 409
-    approved = client.patch('/api/assets/' + aid + '/review', json={'review': 'approved'})
+    approved = client.patch('/api/assets/' + aid + '/review', json={
+        'review': 'approved', 'reviewer': 'qa_operator',
+        'reason': 'Integrity, disclosure, rights, and provenance review passed.',
+    })
     assert approved.status_code == 200
+    assert approved.json()['reviewer'] == 'qa_operator'
+    assert approved.json()['review_reason'].startswith('Integrity')
+    stored = next(item for item in client.get('/api/assets').json() if item['id'] == aid)
+    assert stored['reviewed_at']
+    assert stored['reviewer'] == 'qa_operator'
+    assert stored['review_reason'].startswith('Integrity')
     package = client.get('/api/assets/' + aid + '/package')
     assert package.status_code == 200
     with zipfile.ZipFile(io.BytesIO(package.content)) as archive:

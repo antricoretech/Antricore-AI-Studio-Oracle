@@ -50,6 +50,10 @@ def test_frontend_is_module_split_and_static_modules_are_served():
         assert 'content-artifact-edit-form' in workspace_js.text
         assert 'Save artifact revision' in workspace_js.text
         assert 'content_artifacts' in workspace_js.text
+        assert 'Refresh quality' in workspace_js.text
+        assert 'name="reviewer"' in workspace_js.text
+        assert 'name="reason"' in workspace_js.text
+        assert 'assessAssetQuality' in workspace_js.text
         for module in ('core.js', 'api.js', 'navigation.js', 'photostudio.js'):
             response = client.get('/static/modules/' + module)
             assert response.status_code == 200

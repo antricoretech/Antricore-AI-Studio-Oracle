@@ -62,6 +62,7 @@ const state = {
   creatingBenchmark: false,
   jobs: [],
   assets: [],
+  assessingAssetId: '',
   workflows: [],
   preflight: null,
   preflightFingerprint: '',
@@ -464,6 +465,12 @@ function renderAssetsLegacy() {
   return `<section class="panel" aria-labelledby="assets-heading"><div class="section-heading"><div><p class="eyebrow">Human review gate</p><h2 id="assets-heading">Recent assets</h2></div></div><div class="table-wrap"><table><thead><tr><th>Asset</th><th>Kind</th><th>Persona</th><th>Review</th><th>File</th></tr></thead><tbody>${state.assets.map((asset) => `<tr><td>${escapeHtml(asset.id)}</td><td>${escapeHtml(asset.kind)}</td><td>${escapeHtml(asset.persona_name || asset.persona_id)}</td><td>${badge(asset.review)}</td><td><a class="asset-link" href="/api/assets/${encodeURIComponent(asset.id)}/file" target="_blank" rel="noreferrer">Open media</a></td></tr>`).join('')}</tbody></table></div></section>`;
 }
 
+function renderAssetQuality(asset) {
+  const checks = Array.isArray(asset.quality?.checks) ? asset.quality.checks : [];
+  if (!checks.length) return '<p class="helper">Quality checks not recorded yet.</p>';
+  return `<div class="artifact-quality-checks" aria-label="Asset quality checks">${checks.map((check) => `<div class="artifact-quality-check"><span>${escapeHtml(check.id || 'check')}</span>${badge(check.status || 'unknown')}<small>${escapeHtml(check.detail || '')}</small></div>`).join('')}</div>`;
+}
+
 function renderAssetsCanonical() {
   return `<section class="panel" aria-labelledby="assets-heading">
     <div class="section-heading"><div><p class="eyebrow">Human review gate</p><h2 id="assets-heading">Asset Review</h2></div>${badge(`${state.assets.length} asset${state.assets.length === 1 ? '' : 's'}`)}</div>
@@ -471,7 +478,9 @@ function renderAssetsCanonical() {
     ${state.assets.length ? `<div class="asset-review-list">${state.assets.map((asset) => `<article class="asset-review-card">
       <div class="asset-review-summary"><div><p class="eyebrow">${escapeHtml(asset.kind || 'media')}</p><h3>${escapeHtml(asset.filename || asset.id)}</h3><p class="helper">${escapeHtml(asset.id)} · ${escapeHtml(asset.persona_name || asset.persona_id)} · PersonaVersion ${escapeHtml(asset.persona_version_id || 'not recorded')}</p></div><div class="entity-meta">${badge(asset.review)}${badge(asset.quality?.status || 'quality pending')}${asset.rights_confirmed ? badge('rights confirmed') : badge('rights required')}</div></div>
       <div class="asset-review-meta"><span>${escapeHtml(asset.prompt || 'No generation/import description recorded.')}</span><span>${asset.disclosure ? `Disclosure: ${escapeHtml(asset.disclosure)}` : 'Disclosure not recorded'}</span></div>
-      <div class="asset-review-actions"><form class="inline-form" data-asset-review="${escapeHtml(asset.id)}"><label>Review<select name="review">${reviewOption('pending', asset.review)}${reviewOption('approved', asset.review)}${reviewOption('rejected', asset.review)}</select></label><button class="button primary" type="submit">Save review</button></form><a class="button secondary" href="/api/assets/${encodeURIComponent(asset.id)}/file" target="_blank" rel="noreferrer">Open media</a>${asset.review === 'approved' ? `<a class="button secondary" href="/api/assets/${encodeURIComponent(asset.id)}/package" target="_blank" rel="noreferrer">Export package</a>` : ''}</div>
+      ${renderAssetQuality(asset)}
+      ${asset.reviewed_at ? `<p class="helper">Reviewed by ${escapeHtml(asset.reviewer || 'local operator')} at ${escapeHtml(asset.reviewed_at)}: ${escapeHtml(asset.review_reason || 'No reason recorded.')}</p>` : '<p class="helper">Review evidence has not been recorded yet.</p>'}
+      <div class="asset-review-actions"><form class="inline-form" data-asset-review="${escapeHtml(asset.id)}"><label>Review<select name="review">${reviewOption('pending', asset.review)}${reviewOption('approved', asset.review)}${reviewOption('rejected', asset.review)}</select></label><label>Reviewer<input name="reviewer" maxlength="120" value="${escapeHtml(asset.reviewer || 'local_operator')}" required></label><label>Reason<input name="reason" maxlength="1000" value="${escapeHtml(asset.review_reason || '')}" placeholder="Why is this decision being made?" required></label><button class="button primary" type="submit">Save review</button></form><button class="button secondary" type="button" data-asset-quality="${escapeHtml(asset.id)}" ${state.assessingAssetId === asset.id ? 'disabled' : ''}>${state.assessingAssetId === asset.id ? 'Refreshing quality…' : 'Refresh quality'}</button><a class="button secondary" href="/api/assets/${encodeURIComponent(asset.id)}/file" target="_blank" rel="noreferrer">Open media</a>${asset.review === 'approved' ? `<a class="button secondary" href="/api/assets/${encodeURIComponent(asset.id)}/package" target="_blank" rel="noreferrer">Export package</a>` : ''}</div>
     </article>`).join('')}</div>` : emptyState('No generated or imported assets are recorded yet. Assets will appear here after an import or generation job.')}
   </section>`;
 }
@@ -862,10 +871,29 @@ async function reviewAsset(event) {
   const form = event.target;
   const assetId = form.dataset.assetReview;
   try {
-    await patch(`/api/assets/${encodeURIComponent(assetId)}/review`, { review: form.elements.review.value });
+    await patch(`/api/assets/${encodeURIComponent(assetId)}/review`, {
+      review: form.elements.review.value,
+      reviewer: form.elements.reviewer.value.trim(),
+      reason: form.elements.reason.value.trim(),
+    });
     setStatus('Asset review state saved.', 'success');
     await loadViewData();
   } catch (error) {
+    setStatus(error.message, 'error');
+  }
+}
+
+async function assessAssetQuality(assetId) {
+  state.assessingAssetId = assetId;
+  renderView();
+  try {
+    await post(`/api/assets/${encodeURIComponent(assetId)}/quality`, {});
+    state.assessingAssetId = '';
+    setStatus('Asset quality evidence refreshed.', 'success');
+    await loadViewData();
+  } catch (error) {
+    state.assessingAssetId = '';
+    renderView();
     setStatus(error.message, 'error');
   }
 }
@@ -1349,6 +1377,11 @@ $('#workspace-view').addEventListener('click', (event) => {
   const qualityArtifactButton = event.target.closest('[data-artifact-quality]');
   if (qualityArtifactButton) {
     assessContentArtifact(qualityArtifactButton.dataset.artifactQuality);
+    return;
+  }
+  const qualityAssetButton = event.target.closest('[data-asset-quality]');
+  if (qualityAssetButton) {
+    assessAssetQuality(qualityAssetButton.dataset.assetQuality);
     return;
   }
   const approveBriefButton = event.target.closest('[data-brief-approve]');

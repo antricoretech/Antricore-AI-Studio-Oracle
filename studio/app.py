@@ -1881,6 +1881,14 @@ def _asset_bundle(aid: str):
     quality = quality_report(path, asset["kind"], asset.get("disclosure") or AI_DISCLOSURE,
                              lineage={"job_id": asset.get("job_id")} if asset.get("job_id") else None,
                              expected_sha256=asset.get("sha256"))
+    rights_ok = bool(asset.get("rights_confirmed"))
+    quality["checks"].append({
+        "id": "rights",
+        "status": "ready" if rights_ok else "warning",
+        "detail": "Rights confirmation recorded" if rights_ok else "Rights confirmation is required before approval or export",
+    })
+    statuses = [item["status"] for item in quality.get("checks", [])]
+    quality["status"] = "error" if "error" in statuses else "warning" if "warning" in statuses else "ready"
     return asset, job, person, quality
 
 
@@ -1896,11 +1904,22 @@ def asset_quality(aid: str):
     return quality
 
 
+@app.post("/api/assets/{aid}/quality")
+def refresh_asset_quality(aid: str):
+    _asset, _job, _person, quality = _asset_bundle(aid)
+    db.write("UPDATE assets SET quality_json=? WHERE id=?", (json.dumps(quality, ensure_ascii=False), aid))
+    return {"id": aid, "quality": quality}
+
+
 @app.get("/api/assets/{aid}/package")
 def asset_package(aid: str):
     asset, job, person, quality = _asset_bundle(aid)
     if asset["review"] != "approved":
         raise HTTPException(409, "Approve the asset before exporting a package")
+    if not asset.get("rights_confirmed"):
+        raise HTTPException(409, "Confirm rights before exporting a package")
+    if len((asset.get("disclosure") or "").strip()) < 20:
+        raise HTTPException(409, "Add a clear AI-generated disclosure before exporting a package")
     if quality["status"] == "error":
         raise HTTPException(409, "Quality checks found an integrity error; resolve it before export")
     payload = manifest(asset, job=job, persona=person, quality=quality)
@@ -1920,15 +1939,28 @@ def set_review(aid: str, payload: ReviewIn):
         raise HTTPException(400, "Review must be approved, rejected, or pending")
     if not db.row("SELECT id FROM assets WHERE id=?", (aid,)):
         raise HTTPException(404)
+    reviewer = (payload.reviewer or "local_operator").strip()[:120] or "local_operator"
+    reason = (payload.reason or "").strip()[:1000] or f"Operator marked asset {payload.review}"
+    reviewed_at = now()
     if payload.review == "approved":
         asset, job, _person, quality = _asset_bundle(aid)
+        if not asset.get("rights_confirmed"):
+            raise HTTPException(409, "Confirm rights before approving the asset")
+        if len((asset.get("disclosure") or "").strip()) < 20:
+            raise HTTPException(409, "Add a clear AI-generated disclosure before approving the asset")
         if quality["status"] == "error":
             raise HTTPException(409, "Quality checks found an integrity error; inspect the asset before approving")
-        db.write("UPDATE assets SET review=?, quality_json=? WHERE id=?", (payload.review, json.dumps(quality), aid))
-        return {"id": aid, "review": payload.review, "quality": quality}
-    db.write("UPDATE assets SET review=? WHERE id=?", (payload.review, aid))
+        db.write(
+            "UPDATE assets SET review=?, quality_json=?, reviewed_at=?, reviewer=?, review_reason=? WHERE id=?",
+            (payload.review, json.dumps(quality, ensure_ascii=False), reviewed_at, reviewer, reason, aid),
+        )
+        return {"id": aid, "review": payload.review, "quality": quality, "reviewed_at": reviewed_at, "reviewer": reviewer, "review_reason": reason}
+    db.write(
+        "UPDATE assets SET review=?, reviewed_at=?, reviewer=?, review_reason=? WHERE id=?",
+        (payload.review, reviewed_at, reviewer, reason, aid),
+    )
     ReferencePackRepository.invalidate_canonical_for_asset(aid)
-    return {"id": aid, "review": payload.review}
+    return {"id": aid, "review": payload.review, "reviewed_at": reviewed_at, "reviewer": reviewer, "review_reason": reason}
 
 
 @app.post("/api/voice", status_code=202)

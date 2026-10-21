@@ -880,6 +880,16 @@ instructions.
 
 Add checks for file integrity, identity similarity, anatomy, hands, video flicker, facial drift, audio timing, disclosure, rights, content class, and destination policy.
 
+The first model-independent slice is now implemented: asset bytes, SHA-256,
+image decoding, disclosure, rights confirmation, and available job lineage are
+recorded as explicit quality checks; review decisions persist status, reason,
+reviewer, and timestamp; manifests carry that review evidence; and approval or
+package export fails closed when rights, disclosure, or integrity requirements
+are missing. Adult/glamour and lingerie/boudoir assets remain eligible for the
+same review path because the gate evaluates provenance and quality rather than
+content style. Model-backed identity/anatomy/video/audio checks and destination
+policy evaluation remain later Phase 7 activities.
+
 Exit: every review decision records status, reason, reviewer, and timestamp; approved assets export with manifest and disclosure sidecar.
 
 ### Phase 8 — Publishing integration

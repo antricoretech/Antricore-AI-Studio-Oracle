@@ -38,6 +38,8 @@ class JobIn(BaseModel):
 
 class ReviewIn(BaseModel):
     review: str
+    reason: str = Field(default="", max_length=1000)
+    reviewer: str = Field(default="local_operator", max_length=120)
 
 
 class ReferencePackReviewIn(BaseModel):

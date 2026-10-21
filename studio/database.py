@@ -199,7 +199,10 @@ def initialize():
             review TEXT NOT NULL DEFAULT 'pending', rights_confirmed INTEGER NOT NULL DEFAULT 0,
             disclosure TEXT NOT NULL DEFAULT 'Fictional adult character. AI-generated synthetic media.',
             created_at TEXT NOT NULL, sha256 TEXT, metadata_json TEXT NOT NULL DEFAULT '{}',
-            quality_json TEXT NOT NULL DEFAULT '{}'
+            quality_json TEXT NOT NULL DEFAULT '{}',
+            reviewed_at TEXT,
+            reviewer TEXT,
+            review_reason TEXT
         );
         CREATE TABLE IF NOT EXISTS identity_benchmarks (
             id TEXT PRIMARY KEY,
@@ -283,6 +286,13 @@ def initialize():
             con.execute("ALTER TABLE content_artifacts ADD COLUMN quality_status TEXT NOT NULL DEFAULT 'pending'")
         if "quality_json" not in content_artifact_columns:
             con.execute("ALTER TABLE content_artifacts ADD COLUMN quality_json TEXT NOT NULL DEFAULT '{}'")
+        asset_columns = {row[1] for row in con.execute("PRAGMA table_info(assets)").fetchall()}
+        if "reviewed_at" not in asset_columns:
+            con.execute("ALTER TABLE assets ADD COLUMN reviewed_at TEXT")
+        if "reviewer" not in asset_columns:
+            con.execute("ALTER TABLE assets ADD COLUMN reviewer TEXT")
+        if "review_reason" not in asset_columns:
+            con.execute("ALTER TABLE assets ADD COLUMN review_reason TEXT")
         reference_columns = {row[1] for row in con.execute("PRAGMA table_info(reference_images)").fetchall()}
         if "asset_id" not in reference_columns:
             con.execute("ALTER TABLE reference_images ADD COLUMN asset_id TEXT")
@@ -434,7 +444,7 @@ def initialize():
         CREATE INDEX IF NOT EXISTS idx_series_episodes_job ON series_episodes(job_id);
         """)
         con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_idempotency_key ON jobs(idempotency_key) WHERE idempotency_key IS NOT NULL")
-        con.execute("INSERT INTO schema_meta(key,value) VALUES('schema_version','18') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+        con.execute("INSERT INTO schema_meta(key,value) VALUES('schema_version','19') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
         # A durable queued row is safe to dispatch after restart. Only work
         # that may already have reached ComfyUI is interrupted and requires
         # prompt reconciliation or explicit operator retry.
