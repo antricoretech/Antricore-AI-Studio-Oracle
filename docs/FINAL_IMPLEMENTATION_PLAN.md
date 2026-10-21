@@ -418,6 +418,16 @@ asset files fail closed through the API, while every newly registered output
 starts in pending review. Direct generation still runs outside the persistent
 Job service in some routes; that migration is the next Phase 3 slice.
 
+Phase 3 slice 2 is complete: direct Photo Studio, voice, Orchestrator anchor,
+and Orchestrator batch requests now create a Job record, attach the Job ID to
+registered outputs, persist the final result summary, and accept a bounded
+`Idempotency-Key`. Repeated requests with the same key reuse the completed
+result instead of creating duplicate media. Canonical `/api/jobs` requests
+also persist idempotency and result metadata. The local execution remains
+request-bound until persistent worker, retry, cancellation, and restart
+recovery work in Phase 4; the unique database index also closes concurrent
+idempotency races.
+
 ### Cross-cutting frontend migration workstream
 
 The current static frontend is a legacy shell and is not considered aligned

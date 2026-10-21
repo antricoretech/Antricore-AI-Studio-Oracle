@@ -522,9 +522,13 @@ class SeriesRepository:
 
 class JobRepository:
     @staticmethod
-    def create(*, job_id: str, persona_id: str, workflow_id: str, kind: str, prompt: str, request_json: str, lineage_json: str = "{}", created_at: str):
+    def create(*, job_id: str, persona_id: str, workflow_id: str, kind: str, prompt: str, request_json: str, lineage_json: str = "{}", created_at: str, idempotency_key: str | None = None):
         db.write(
-            "INSERT INTO jobs (id,persona_id,workflow_id,type,prompt,status,created_at,request_json,updated_at,lineage_json) VALUES (?,?,?,?,?,?,?,?,?,?)",
-            (job_id, persona_id, workflow_id, kind, prompt, "queued", created_at, request_json, created_at, lineage_json),
+            "INSERT INTO jobs (id,persona_id,workflow_id,type,prompt,status,created_at,request_json,updated_at,lineage_json,idempotency_key) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (job_id, persona_id, workflow_id, kind, prompt, "queued", created_at, request_json, created_at, lineage_json, idempotency_key),
         )
+
+    @staticmethod
+    def by_idempotency_key(key: str):
+        return db.row("SELECT * FROM jobs WHERE idempotency_key=?", (key,))
 

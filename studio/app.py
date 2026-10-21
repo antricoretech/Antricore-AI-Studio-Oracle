@@ -12,6 +12,7 @@ import json
 import os
 import re
 import secrets
+import sqlite3
 import shutil
 import sys
 import tempfile
@@ -34,7 +35,7 @@ DEFAULT_WORKFLOW_LABELS = {
 }
 load_dotenv(ROOT / ".env")
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Request
+from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from . import database as db
@@ -62,6 +63,7 @@ logger = logging.getLogger("studio")
 _request_id_context: ContextVar[str] = ContextVar("studio_request_id", default="")
 _correlation_id_context: ContextVar[str] = ContextVar("studio_correlation_id", default="")
 _TRACE_ID_PATTERN = re.compile(r"[A-Za-z0-9._:-]{1,128}")
+_IDEMPOTENCY_KEY_PATTERN = re.compile(r"[A-Za-z0-9._:-]{1,128}")
 
 
 def now():
@@ -89,6 +91,85 @@ def _log_data(data: dict | None = None) -> dict:
     if data:
         payload.update(data)
     return {"data": payload}
+
+
+def _normalized_idempotency_key(value: str | None) -> str | None:
+    key = (value or "").strip()
+    if not key:
+        return None
+    if not _IDEMPOTENCY_KEY_PATTERN.fullmatch(key):
+        raise HTTPException(400, "Idempotency-Key must contain only letters, numbers, '.', '_', ':', or '-'")
+    return key
+
+
+def _payload_json(payload) -> str:
+    try:
+        return payload.model_dump_json()
+    except AttributeError:
+        return payload.json()
+
+
+def _reusable_idempotent_result(existing: dict) -> dict:
+    try:
+        return json.loads(existing.get("result_json") or "{}")
+    except (TypeError, json.JSONDecodeError):
+        raise HTTPException(409, "Completed idempotent job has no reusable result") from None
+
+
+def _raise_idempotency_conflict(existing: dict):
+    if existing["status"] == "completed":
+        return _reusable_idempotent_result(existing)
+    raise HTTPException(409, f"Idempotency key is already associated with job {existing['id']} ({existing['status']})")
+
+
+def _start_direct_job(*, person: dict, workflow_id: str, kind: str, prompt: str, payload, lineage: dict, idempotency_key: str | None):
+    key = _normalized_idempotency_key(idempotency_key)
+    if key:
+        existing = JobRepository.by_idempotency_key(key)
+        if existing:
+            return None, _raise_idempotency_conflict(existing)
+
+    job_id = uid()
+    created = now()
+    try:
+        JobRepository.create(
+            job_id=job_id,
+            persona_id=person["id"],
+            workflow_id=workflow_id,
+            kind=kind,
+            prompt=prompt,
+            request_json=_payload_json(payload),
+            lineage_json=json.dumps(lineage, separators=(",", ":")),
+            created_at=created,
+            idempotency_key=key,
+        )
+    except sqlite3.IntegrityError:
+        # The lookup above is only an optimization; the unique partial index is
+        # the authority when two requests arrive at the same time.
+        if not key:
+            raise
+        existing = JobRepository.by_idempotency_key(key)
+        if not existing:
+            raise
+        return None, _raise_idempotency_conflict(existing)
+    return job_id, None
+
+
+async def _finish_direct_job(job_id: str, handler):
+    db.write("UPDATE jobs SET status='running', updated_at=? WHERE id=?", (now(), job_id))
+    try:
+        result = await handler()
+        db.write(
+            "UPDATE jobs SET status='completed', result_json=?, finished_at=?, updated_at=? WHERE id=?",
+            (json.dumps(result, ensure_ascii=False), now(), now(), job_id),
+        )
+        return result
+    except HTTPException as exc:
+        db.write("UPDATE jobs SET status='failed', error=?, finished_at=?, updated_at=? WHERE id=?", (str(exc.detail)[:1500], now(), now(), job_id))
+        raise
+    except Exception as exc:
+        db.write("UPDATE jobs SET status='failed', error=?, finished_at=?, updated_at=? WHERE id=?", (str(exc)[:1500], now(), now(), job_id))
+        raise HTTPException(500, str(exc)[:300]) from exc
 
 
 @asynccontextmanager
@@ -839,6 +920,7 @@ async def execute_job(job_id, payload: JobIn, person: dict):
             files = output_files(outputs)
             if not files:
                 raise RuntimeError("Workflow completed but no SaveImage / SaveVideo or compatible output was detected")
+            asset_ids = []
             for item in files[:20]:
                 content = await client.download(item)
                 if len(content) > get_settings().output_max_bytes:
@@ -848,7 +930,7 @@ async def execute_job(job_id, payload: JobIn, person: dict):
                     continue
                 kind = "video" if ext in {".mp4", ".webm", ".gif"} else "audio" if ext in {".wav", ".mp3", ".flac"} else "image"
                 disclosure = person.get("disclosure") or AI_DISCLOSURE
-                register_media_asset(
+                asset = register_media_asset(
                     persona_id=person["id"],
                     persona_version_id=persona_version["id"] if persona_version else None,
                     job_id=job_id,
@@ -860,7 +942,9 @@ async def execute_job(job_id, payload: JobIn, person: dict):
                     original_filename=item["filename"],
                     lineage={"job_id": job_id, "workflow_id": payload.workflow_id},
                 )
-            db.write("UPDATE jobs SET status='completed', finished_at=?, updated_at=? WHERE id=?", (now(), now(), job_id))
+                asset_ids.append(asset["id"])
+            result = {"job_id": job_id, "asset_ids": asset_ids, "output_count": len(asset_ids)}
+            db.write("UPDATE jobs SET status='completed', result_json=?, finished_at=?, updated_at=? WHERE id=?", (json.dumps(result), now(), now(), job_id))
             db.write("UPDATE series_episodes SET status='completed' WHERE job_id=?", (job_id,))
             logger.info("job_completed", extra=_log_data({"job_id": job_id, "outputs": len(files)}))
     except Exception as e:
@@ -870,7 +954,7 @@ async def execute_job(job_id, payload: JobIn, person: dict):
 
 
 @app.post("/api/jobs", status_code=202)
-async def create_job(payload: JobIn):
+async def create_job(payload: JobIn, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     person = must_persona(payload.persona_id)
     if not payload.rights_confirmed:
         raise HTTPException(400, "Confirm all inputs and likeness rights before starting generation")
@@ -920,6 +1004,13 @@ async def create_job(payload: JobIn):
             raise HTTPException(400, "Approve the narration in Media Review before attaching it")
         if not audio["rights_confirmed"]:
             raise HTTPException(400, "Narration asset is missing rights confirmation")
+    normalized_key = _normalized_idempotency_key(idempotency_key)
+    if normalized_key:
+        existing = JobRepository.by_idempotency_key(normalized_key)
+        if existing:
+            result = _raise_idempotency_conflict(existing)
+            return {"id": existing["id"], "status": existing["status"], "result": result}
+
     jid = uid()
     category = "video" if "video" in payload.workflow_id.lower() or "wan" in payload.workflow_id.lower() else "image"
     try:
@@ -942,9 +1033,19 @@ async def create_job(payload: JobIn):
         "width": payload.width,
         "height": payload.height,
     }
-    JobRepository.create(job_id=jid, persona_id=person["id"], workflow_id=payload.workflow_id,
-                         kind=category, prompt=payload.prompt, request_json=request_json,
-                         lineage_json=json.dumps(lineage, separators=(",", ":")), created_at=created)
+    try:
+        JobRepository.create(job_id=jid, persona_id=person["id"], workflow_id=payload.workflow_id,
+                             kind=category, prompt=payload.prompt, request_json=request_json,
+                             lineage_json=json.dumps(lineage, separators=(",", ":")), created_at=created,
+                             idempotency_key=normalized_key)
+    except sqlite3.IntegrityError:
+        if not normalized_key:
+            raise
+        existing = JobRepository.by_idempotency_key(normalized_key)
+        if not existing:
+            raise
+        result = _raise_idempotency_conflict(existing)
+        return {"id": existing["id"], "status": existing["status"], "result": result}
     _job_task(jid, payload, person)
     logger.info("job_queued", extra=_log_data({"job_id": jid, "persona_id": person["id"], "workflow_id": payload.workflow_id}))
     return {"id": jid, "status": "queued"}
@@ -1024,6 +1125,10 @@ def get_jobs():
             item["lineage"] = json.loads(item.pop("lineage_json") or "{}")
         except (TypeError, json.JSONDecodeError):
             item["lineage"] = {}
+        try:
+            item["result"] = json.loads(item.pop("result_json") or "{}")
+        except (TypeError, json.JSONDecodeError):
+            item["result"] = {}
     return rows
 
 
@@ -1159,33 +1264,47 @@ def set_review(aid: str, payload: ReviewIn):
 
 
 @app.post("/api/voice", status_code=202)
-async def create_voice(payload: VoiceIn):
+async def create_voice(payload: VoiceIn, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     person = must_persona(payload.persona_id)
-    aid = uid()
-    from .voice import synthesize
-    temp_path = Path(tempfile.gettempdir()) / f"studio_voice_{aid}.wav"
-    try:
-        await asyncio.to_thread(synthesize, payload.text, payload.voice, temp_path)
-        raw = temp_path.read_bytes()
-    except Exception as e:
-        raise HTTPException(503, f"Voice generation unavailable: {str(e)[:250]}") from e
-    finally:
-        temp_path.unlink(missing_ok=True)
-    disclosure = person.get("disclosure") or AI_DISCLOSURE
     persona_version = PersonaRepository.current_version(person["id"])
-    asset = register_media_asset(
-        persona_id=person["id"],
-        persona_version_id=persona_version["id"] if persona_version else None,
-        job_id=None,
+    job_id, reused = _start_direct_job(
+        person=person,
+        workflow_id="voice_generation",
         kind="audio",
         prompt=payload.text,
-        raw=raw,
-        disclosure=disclosure,
-        rights_confirmed=True,
-        original_filename="voice.wav",
-        lineage={"source": "voice_generation"},
+        payload=payload,
+        lineage={"execution_mode": "voice", "persona_version_id": persona_version["id"] if persona_version else None, "voice": payload.voice},
+        idempotency_key=idempotency_key,
     )
-    return {"id": asset["id"], "url": f"/api/assets/{asset['id']}/file"}
+    if reused is not None:
+        return reused
+
+    async def run_voice():
+        from .voice import synthesize
+        temp_path = Path(tempfile.gettempdir()) / f"studio_voice_{job_id}.wav"
+        try:
+            await asyncio.to_thread(synthesize, payload.text, payload.voice, temp_path)
+            raw = temp_path.read_bytes()
+        except Exception as exc:
+            raise HTTPException(503, f"Voice generation unavailable: {str(exc)[:250]}") from exc
+        finally:
+            temp_path.unlink(missing_ok=True)
+        disclosure = person.get("disclosure") or AI_DISCLOSURE
+        asset = register_media_asset(
+            persona_id=person["id"],
+            persona_version_id=persona_version["id"] if persona_version else None,
+            job_id=job_id,
+            kind="audio",
+            prompt=payload.text,
+            raw=raw,
+            disclosure=disclosure,
+            rights_confirmed=True,
+            original_filename="voice.wav",
+            lineage={"job_id": job_id, "execution_mode": "voice"},
+        )
+        return {"id": asset["id"], "job_id": job_id, "url": f"/api/assets/{asset['id']}/file"}
+
+    return await _finish_direct_job(job_id, run_voice)
 
 
 @app.post("/api/links", status_code=201)
@@ -1315,81 +1434,92 @@ def compile_photo_studio_prompt(payload: PhotoStudioPromptIn):
 
 
 @app.post("/api/photo-studio/generate", status_code=201)
-async def photo_studio_generate(payload: PhotoStudioGenerateIn):
+async def photo_studio_generate(payload: PhotoStudioGenerateIn, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     person = must_persona(payload.persona_id)
     if not payload.rights_confirmed:
         raise HTTPException(400, "Rights confirmation required")
-
-    temp_id = uid()
-    destination = Path(tempfile.gettempdir()) / f"studio_photo_{temp_id}.png"
     seed = payload.seed if payload.seed is not None else secrets.randbelow(1_000_000_000)
-
-    from types import SimpleNamespace
-    from .free_cli import make_image
-
-    args = SimpleNamespace(
-        prompt=payload.prompt,
-        negative_prompt=payload.negative_prompt or "anime, cartoon, 3d render, illustration, blurry, bad anatomy, plastic skin",
-        model=payload.model,
-        width=payload.width,
-        height=payload.height,
-        steps=payload.steps,
-        guidance=payload.guidance,
-        seed=seed,
-        output=str(destination),
-        reference=None,
-        cpu_offload=False,
-        offline=True,
-    )
-
-    try:
-        await asyncio.to_thread(make_image, args)
-    except Exception as exc:
-        logger.exception("photo_studio_generate_failed", extra=_log_data({"persona_id": person.get("id")}))
-        raise HTTPException(500, f"Image generation failed: {str(exc)[:300]}") from exc
-
-    if not destination.is_file():
-        raise HTTPException(500, "Image generation produced no output file")
-
-    raw = destination.read_bytes()
-    destination.unlink(missing_ok=True)
-    disclosure = person.get("disclosure") or AI_DISCLOSURE
     version = PersonaRepository.current_version(person["id"])
-    asset = register_media_asset(
-        persona_id=person["id"],
-        persona_version_id=version["id"] if version else None,
-        job_id=None,
+    job_id, reused = _start_direct_job(
+        person=person,
+        workflow_id="photo_studio_generation",
         kind="image",
         prompt=payload.prompt,
-        raw=raw,
-        disclosure=disclosure,
-        rights_confirmed=payload.rights_confirmed,
-        original_filename="photo_studio.png",
-        lineage={"source": "photo_studio_generation", "seed": seed},
+        payload=payload,
+        lineage={"execution_mode": "photo_studio", "persona_version_id": version["id"] if version else None, "model": payload.model, "seed": seed},
+        idempotency_key=idempotency_key,
     )
-    aid = asset["id"]
-    filename = asset["filename"]
-    rid = uid()
-    label = f"Photo Studio: {payload.prompt[:35]}..."
-    content_class = "adult_glamour" if any(term in payload.prompt.lower() for term in ("adult", "boudoir", "lingerie", "glamour", "intimate")) else "identity"
-    db.write(
-        "INSERT INTO reference_images (id, persona_id, filename, label, created_at, asset_id, persona_version_id, role, content_class, review, rights_confirmed, metadata_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-        (rid, person["id"], filename, label, now(), aid, version["id"] if version else None, "supporting", content_class, "pending", 1, json.dumps({"source": "photo_studio_generation"})),
-    )
+    if reused is not None:
+        return reused
 
-    return {
-        "id": aid,
-        "reference_id": rid,
-        "filename": filename,
-        "url": f"/api/assets/{aid}/file",
-        "prompt": payload.prompt,
-        "negative_prompt": payload.negative_prompt,
-        "seed": seed,
-        "width": payload.width,
-        "height": payload.height,
-        "model": payload.model,
-        "created_at": now(),
-    }
+    async def run_photo_studio():
+        from types import SimpleNamespace
+        from .free_cli import make_image
+
+        destination = Path(tempfile.gettempdir()) / f"studio_photo_{job_id}.png"
+        args = SimpleNamespace(
+            prompt=payload.prompt,
+            negative_prompt=payload.negative_prompt or "anime, cartoon, 3d render, illustration, blurry, bad anatomy, plastic skin",
+            model=payload.model,
+            width=payload.width,
+            height=payload.height,
+            steps=payload.steps,
+            guidance=payload.guidance,
+            seed=seed,
+            output=str(destination),
+            reference=None,
+            cpu_offload=False,
+            offline=True,
+        )
+        try:
+            await asyncio.to_thread(make_image, args)
+            if not destination.is_file():
+                raise RuntimeError("Image generation produced no output file")
+            raw = destination.read_bytes()
+        except Exception as exc:
+            logger.exception("photo_studio_generate_failed", extra=_log_data({"persona_id": person.get("id"), "job_id": job_id}))
+            raise HTTPException(500, f"Image generation failed: {str(exc)[:300]}") from exc
+        finally:
+            destination.unlink(missing_ok=True)
+
+        disclosure = person.get("disclosure") or AI_DISCLOSURE
+        asset = register_media_asset(
+            persona_id=person["id"],
+            persona_version_id=version["id"] if version else None,
+            job_id=job_id,
+            kind="image",
+            prompt=payload.prompt,
+            raw=raw,
+            disclosure=disclosure,
+            rights_confirmed=payload.rights_confirmed,
+            original_filename="photo_studio.png",
+            lineage={"job_id": job_id, "execution_mode": "photo_studio", "seed": seed},
+        )
+        aid = asset["id"]
+        filename = asset["filename"]
+        rid = uid()
+        label = f"Photo Studio: {payload.prompt[:35]}..."
+        content_class = "adult_glamour" if any(term in payload.prompt.lower() for term in ("adult", "boudoir", "lingerie", "glamour", "intimate")) else "identity"
+        db.write(
+            "INSERT INTO reference_images (id, persona_id, filename, label, created_at, asset_id, persona_version_id, role, content_class, review, rights_confirmed, metadata_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (rid, person["id"], filename, label, now(), aid, version["id"] if version else None, "supporting", content_class, "pending", 1, json.dumps({"source": "photo_studio_generation", "job_id": job_id})),
+        )
+        return {
+            "id": aid,
+            "job_id": job_id,
+            "reference_id": rid,
+            "filename": filename,
+            "url": f"/api/assets/{aid}/file",
+            "prompt": payload.prompt,
+            "negative_prompt": payload.negative_prompt,
+            "seed": seed,
+            "width": payload.width,
+            "height": payload.height,
+            "model": payload.model,
+            "created_at": now(),
+        }
+
+    return await _finish_direct_job(job_id, run_photo_studio)
 
 
 # =====================================================================
@@ -1494,55 +1624,71 @@ def orchestrator_create_persona(payload: OrchestratorCreatePersonaIn):
 
 
 @app.post("/api/orchestrator/render-anchor", status_code=201)
-async def orchestrator_render_anchor(payload: OrchestratorRenderAnchorIn):
+async def orchestrator_render_anchor(payload: OrchestratorRenderAnchorIn, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     person = must_persona(payload.persona_id)
     width, height = orchestrator.ASPECT_RATIOS.get(payload.aspect_ratio, (768, 1152))
     seed = payload.seed if payload.seed is not None else secrets.randbelow(1_000_000_000)
-
-    try:
-        dest_path = await asyncio.to_thread(
-            orchestrator.generate_orchestrator_image,
-            prompt=payload.prompt,
-            negative_prompt=payload.negative_prompt,
-            model_id=payload.model,
-            width=width,
-            height=height,
-            seed=seed,
-            quality=payload.quality,
-        )
-    except Exception as exc:
-        logger.exception("orchestrator_render_anchor_failed", extra=_log_data({"persona_id": person.get("id")}))
-        raise HTTPException(500, f"Master Anchor generation failed: {str(exc)[:300]}") from exc
-
-    raw = dest_path.read_bytes()
-    dest_path.unlink(missing_ok=True)
-    disclosure = person.get("disclosure") or AI_DISCLOSURE
     version = PersonaRepository.current_version(person["id"])
-    asset = register_media_asset(
-        persona_id=person["id"],
-        persona_version_id=version["id"] if version else None,
-        job_id=None,
+    job_id, reused = _start_direct_job(
+        person=person,
+        workflow_id="orchestrator_anchor_generation",
         kind="image",
         prompt=payload.prompt,
-        raw=raw,
-        disclosure=disclosure,
-        rights_confirmed=True,
-        original_filename=dest_path.name,
-        lineage={"source": "orchestrator_anchor_generation", "seed": seed},
+        payload=payload,
+        lineage={"execution_mode": "orchestrator_anchor", "persona_version_id": version["id"] if version else None, "model": payload.model, "seed": seed},
+        idempotency_key=idempotency_key,
     )
+    if reused is not None:
+        return reused
 
-    return {
-        "asset_id": asset["id"],
-        "filename": asset["filename"],
-        "url": f"/api/assets/{asset['id']}/file",
-        "prompt": payload.prompt,
-        "negative_prompt": payload.negative_prompt,
-        "seed": seed,
-        "width": width,
-        "height": height,
-        "quality": payload.quality,
-        "model": payload.model,
-    }
+    async def run_anchor():
+        try:
+            dest_path = await asyncio.to_thread(
+                orchestrator.generate_orchestrator_image,
+                prompt=payload.prompt,
+                negative_prompt=payload.negative_prompt,
+                model_id=payload.model,
+                width=width,
+                height=height,
+                seed=seed,
+                quality=payload.quality,
+            )
+            raw = dest_path.read_bytes()
+        except Exception as exc:
+            logger.exception("orchestrator_render_anchor_failed", extra=_log_data({"persona_id": person.get("id"), "job_id": job_id}))
+            raise HTTPException(500, f"Master Anchor generation failed: {str(exc)[:300]}") from exc
+        finally:
+            if "dest_path" in locals():
+                dest_path.unlink(missing_ok=True)
+
+        disclosure = person.get("disclosure") or AI_DISCLOSURE
+        asset = register_media_asset(
+            persona_id=person["id"],
+            persona_version_id=version["id"] if version else None,
+            job_id=job_id,
+            kind="image",
+            prompt=payload.prompt,
+            raw=raw,
+            disclosure=disclosure,
+            rights_confirmed=True,
+            original_filename=dest_path.name,
+            lineage={"job_id": job_id, "execution_mode": "orchestrator_anchor", "seed": seed},
+        )
+        return {
+            "asset_id": asset["id"],
+            "job_id": job_id,
+            "filename": asset["filename"],
+            "url": f"/api/assets/{asset['id']}/file",
+            "prompt": payload.prompt,
+            "negative_prompt": payload.negative_prompt,
+            "seed": seed,
+            "width": width,
+            "height": height,
+            "quality": payload.quality,
+            "model": payload.model,
+        }
+
+    return await _finish_direct_job(job_id, run_anchor)
 
 
 @app.post("/api/orchestrator/lock-anchor")
@@ -1616,74 +1762,93 @@ def orchestrator_synthesize_scenes(payload: OrchestratorSynthesizeScenesIn):
 
 
 @app.post("/api/orchestrator/generate-batch", status_code=201)
-async def orchestrator_generate_batch(payload: OrchestratorBatchGenerateIn):
+async def orchestrator_generate_batch(payload: OrchestratorBatchGenerateIn, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     person = must_persona(payload.persona_id)
     if not payload.rights_confirmed:
         raise HTTPException(400, "Rights confirmation required")
 
     width, height = orchestrator.ASPECT_RATIOS.get(payload.aspect_ratio, (768, 1152))
-    generated_assets = []
     version = PersonaRepository.current_version(person["id"])
+    job_id, reused = _start_direct_job(
+        person=person,
+        workflow_id="orchestrator_batch_generation",
+        kind="image_batch",
+        prompt="\n".join(scene.prompt for scene in payload.scenes)[:3000],
+        payload=payload,
+        lineage={"execution_mode": "orchestrator_batch", "persona_version_id": version["id"] if version else None, "model": payload.model, "scene_count": len(payload.scenes)},
+        idempotency_key=idempotency_key,
+    )
+    if reused is not None:
+        return reused
 
-    for i, scene in enumerate(payload.scenes):
-        seed = secrets.randbelow(1_000_000_000)
-        try:
-            dest_path = await asyncio.to_thread(
-                orchestrator.generate_orchestrator_image,
-                prompt=scene.prompt,
-                negative_prompt=scene.negative_prompt,
-                model_id=payload.model,
-                width=width,
-                height=height,
-                seed=seed,
-                quality=payload.quality,
-                steps=payload.steps,
-                guidance=payload.guidance,
-            )
-        except Exception as exc:
-            logger.exception("orchestrator_batch_scene_failed", extra=_log_data({"persona_id": person.get("id"), "scene_index": i}))
-            raise HTTPException(500, f"Generation failed at scene {i+1}: {str(exc)[:300]}") from exc
-
-        raw = dest_path.read_bytes()
-        dest_path.unlink(missing_ok=True)
+    async def run_batch():
+        generated_assets = []
         disclosure = person.get("disclosure") or AI_DISCLOSURE
-        asset = register_media_asset(
-            persona_id=person["id"],
-            persona_version_id=version["id"] if version else None,
-            job_id=None,
-            kind="image",
-            prompt=scene.prompt,
-            raw=raw,
-            disclosure=disclosure,
-            rights_confirmed=payload.rights_confirmed,
-            original_filename=dest_path.name,
-            lineage={"source": "orchestrator_batch_generation", "seed": seed, "scene_index": i},
-        )
+        for i, scene in enumerate(payload.scenes):
+            seed = secrets.randbelow(1_000_000_000)
+            dest_path = None
+            try:
+                dest_path = await asyncio.to_thread(
+                    orchestrator.generate_orchestrator_image,
+                    prompt=scene.prompt,
+                    negative_prompt=scene.negative_prompt,
+                    model_id=payload.model,
+                    width=width,
+                    height=height,
+                    seed=seed,
+                    quality=payload.quality,
+                    steps=payload.steps,
+                    guidance=payload.guidance,
+                )
+                raw = dest_path.read_bytes()
+            except Exception as exc:
+                logger.exception("orchestrator_batch_scene_failed", extra=_log_data({"persona_id": person.get("id"), "job_id": job_id, "scene_index": i}))
+                raise HTTPException(500, f"Generation failed at scene {i+1}: {str(exc)[:300]}") from exc
+            finally:
+                if dest_path:
+                    dest_path.unlink(missing_ok=True)
 
-        generated_assets.append({
-            "asset_id": asset["id"],
-            "filename": asset["filename"],
-            "url": f"/api/assets/{asset['id']}/file",
-            "title": scene.title,
-            "location": scene.location,
-            "costume": scene.costume,
-            "expression": scene.expression,
-            "shot": scene.shot,
-            "prompt": scene.prompt,
-            "negative_prompt": scene.negative_prompt,
-            "seed": seed,
-            "width": width,
-            "height": height,
-            "quality": payload.quality,
-            "created_at": now(),
-        })
+            asset = register_media_asset(
+                persona_id=person["id"],
+                persona_version_id=version["id"] if version else None,
+                job_id=job_id,
+                kind="image",
+                prompt=scene.prompt,
+                raw=raw,
+                disclosure=disclosure,
+                rights_confirmed=payload.rights_confirmed,
+                original_filename=dest_path.name if dest_path else "orchestrator_batch.png",
+                lineage={"job_id": job_id, "execution_mode": "orchestrator_batch", "seed": seed, "scene_index": i},
+            )
 
-    return {
-        "persona_id": person["id"],
-        "persona_name": person["name"],
-        "total_generated": len(generated_assets),
-        "assets": generated_assets,
-    }
+            generated_assets.append({
+                "asset_id": asset["id"],
+                "job_id": job_id,
+                "filename": asset["filename"],
+                "url": f"/api/assets/{asset['id']}/file",
+                "title": scene.title,
+                "location": scene.location,
+                "costume": scene.costume,
+                "expression": scene.expression,
+                "shot": scene.shot,
+                "prompt": scene.prompt,
+                "negative_prompt": scene.negative_prompt,
+                "seed": seed,
+                "width": width,
+                "height": height,
+                "quality": payload.quality,
+                "created_at": now(),
+            })
+
+        return {
+            "job_id": job_id,
+            "persona_id": person["id"],
+            "persona_name": person["name"],
+            "total_generated": len(generated_assets),
+            "assets": generated_assets,
+        }
+
+    return await _finish_direct_job(job_id, run_batch)
 
 
 @app.get("/api/orchestrator/export-json/{persona_id}")

@@ -124,7 +124,9 @@ def initialize():
             error TEXT, comfy_prompt_id TEXT, created_at TEXT NOT NULL, finished_at TEXT,
             request_json TEXT NOT NULL DEFAULT '{}', updated_at TEXT,
             lineage_json TEXT NOT NULL DEFAULT '{}', attempt INTEGER NOT NULL DEFAULT 1,
-            cancel_requested INTEGER NOT NULL DEFAULT 0
+            cancel_requested INTEGER NOT NULL DEFAULT 0,
+            idempotency_key TEXT,
+            result_json TEXT NOT NULL DEFAULT '{}'
         );
         CREATE TABLE IF NOT EXISTS assets (
             id TEXT PRIMARY KEY, persona_id TEXT NOT NULL, persona_version_id TEXT, job_id TEXT,
@@ -218,6 +220,10 @@ def initialize():
             con.execute("ALTER TABLE jobs ADD COLUMN attempt INTEGER NOT NULL DEFAULT 1")
         if "cancel_requested" not in job_columns:
             con.execute("ALTER TABLE jobs ADD COLUMN cancel_requested INTEGER NOT NULL DEFAULT 0")
+        if "idempotency_key" not in job_columns:
+            con.execute("ALTER TABLE jobs ADD COLUMN idempotency_key TEXT")
+        if "result_json" not in job_columns:
+            con.execute("ALTER TABLE jobs ADD COLUMN result_json TEXT NOT NULL DEFAULT '{}'")
         # Backfill one deterministic version for legacy personas before the
         # repository starts creating new canonical PersonaVersion records.
         legacy_personas = con.execute(
@@ -273,7 +279,8 @@ def initialize():
         CREATE INDEX IF NOT EXISTS idx_series_persona_version ON series(persona_version_id);
         CREATE INDEX IF NOT EXISTS idx_series_episodes_job ON series_episodes(job_id);
         """)
-        con.execute("INSERT INTO schema_meta(key,value) VALUES('schema_version','9') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+        con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_idempotency_key ON jobs(idempotency_key) WHERE idempotency_key IS NOT NULL")
+        con.execute("INSERT INTO schema_meta(key,value) VALUES('schema_version','10') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
         con.execute("UPDATE jobs SET status='interrupted', error='App restarted during job; retry from Studio', updated_at=? WHERE status IN ('running','submitted','queued','cancelling')", (datetime_now(),))
 
 

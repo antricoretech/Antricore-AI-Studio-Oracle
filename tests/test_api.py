@@ -366,16 +366,23 @@ def test_photo_studio_generation_starts_in_pending_review(client, monkeypatch):
         Image.new('RGB', (32, 32), 'beige').save(args.output, format='PNG')
 
     monkeypatch.setattr(free_cli, 'make_image', fake_make_image)
-    response = client.post('/api/photo-studio/generate', json={
+    request = {
         'persona_id': persona['id'],
         'prompt': 'Editorial portrait in a studio',
         'rights_confirmed': True,
-    })
+    }
+    response = client.post('/api/photo-studio/generate', json=request, headers={'Idempotency-Key': 'photo-studio-repeat-1'})
     assert response.status_code == 201
     asset = next(item for item in client.get('/api/assets').json() if item['id'] == response.json()['id'])
     assert asset['review'] == 'pending'
     assert asset['filename'].startswith('asset_')
     assert (db.OUTPUTS / asset['filename']).is_file()
+    repeated = client.post('/api/photo-studio/generate', json=request, headers={'Idempotency-Key': 'photo-studio-repeat-1'})
+    assert repeated.status_code == 201
+    assert repeated.json()['id'] == response.json()['id']
+    jobs = [job for job in client.get('/api/jobs').json() if job['id'] == response.json()['job_id']]
+    assert jobs and jobs[0]['status'] == 'completed'
+    assert jobs[0]['result']['id'] == response.json()['id']
 
 
 def test_import_local_pipeline_output_requires_disclosure_and_starts_pending_review(client):
