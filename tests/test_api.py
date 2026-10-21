@@ -491,6 +491,29 @@ def test_content_brief_requires_creator_system_and_frozen_version_for_production
     assert handoff['content_pillar']['identity_core'] is True
     assert handoff['content_pillar']['identity_authority'] == 'identity_and_style'
     assert handoff['creator_profile']['id'] == profile.json()['profile']['id']
+    caption = client.post(f"/api/personas/{pid}/content-briefs/{brief['id']}/artifacts", json={
+        'artifact_type': 'caption',
+    })
+    assert caption.status_code == 201
+    artifact = caption.json()
+    assert artifact['status'] == 'draft'
+    assert artifact['source'] == 'deterministic_template'
+    assert 'Disclosure:' in artifact['content']
+    edited_artifact = client.put(f"/api/personas/{pid}/content-artifacts/{artifact['id']}", json={
+        'artifact_type': 'caption',
+        'content': 'A reviewed caption draft. Fictional adult creator. AI-generated synthetic media.',
+    })
+    assert edited_artifact.status_code == 200
+    assert edited_artifact.json()['revision'] == 2
+    assert edited_artifact.json()['source'] == 'operator'
+    approved_artifact = client.patch(f"/api/personas/{pid}/content-artifacts/{artifact['id']}/review", json={'review': 'approved'})
+    assert approved_artifact.status_code == 200
+    resolved_artifact = client.get(f"/api/personas/{pid}/content-artifacts/{artifact['id']}/resolve")
+    assert resolved_artifact.status_code == 200
+    assert resolved_artifact.json()['content_brief_id'] == brief['id']
+    assert resolved_artifact.json()['persona_version_id'] == handoff['persona_version_id']
+    duplicate_artifact = client.post(f"/api/personas/{pid}/content-briefs/{brief['id']}/artifacts", json={'artifact_type': 'caption'})
+    assert duplicate_artifact.status_code == 409
     immutable = client.put(f"/api/personas/{pid}/content-briefs/{brief['id']}", json=revised_payload)
     assert immutable.status_code == 409
     assert client.get(f'/api/personas/{pid}/content-briefs').json()[0]['id'] == brief['id']

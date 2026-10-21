@@ -84,6 +84,24 @@ def initialize():
             FOREIGN KEY(creator_profile_id) REFERENCES creator_profiles(id),
             FOREIGN KEY(content_pack_id) REFERENCES content_packs(id)
         );
+        CREATE TABLE IF NOT EXISTS content_artifacts (
+            id TEXT PRIMARY KEY,
+            persona_id TEXT NOT NULL,
+            persona_version_id TEXT NOT NULL,
+            content_brief_id TEXT NOT NULL,
+            artifact_type TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'draft',
+            revision INTEGER NOT NULL DEFAULT 1,
+            content TEXT NOT NULL,
+            disclosure TEXT NOT NULL,
+            source TEXT NOT NULL DEFAULT 'deterministic_template',
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(persona_id) REFERENCES personas(id),
+            FOREIGN KEY(persona_version_id) REFERENCES persona_versions(id),
+            FOREIGN KEY(content_brief_id) REFERENCES content_briefs(id) ON DELETE CASCADE
+        );
         CREATE TABLE IF NOT EXISTS reference_images (
             id TEXT PRIMARY KEY, persona_id TEXT NOT NULL,
             filename TEXT NOT NULL, label TEXT NOT NULL, created_at TEXT NOT NULL,
@@ -256,6 +274,9 @@ def initialize():
         content_brief_columns = {row[1] for row in con.execute("PRAGMA table_info(content_briefs)").fetchall()}
         if "revision" not in content_brief_columns:
             con.execute("ALTER TABLE content_briefs ADD COLUMN revision INTEGER NOT NULL DEFAULT 1")
+        content_artifact_columns = {row[1] for row in con.execute("PRAGMA table_info(content_artifacts)").fetchall()}
+        if "source" not in content_artifact_columns:
+            con.execute("ALTER TABLE content_artifacts ADD COLUMN source TEXT NOT NULL DEFAULT 'deterministic_template'")
         reference_columns = {row[1] for row in con.execute("PRAGMA table_info(reference_images)").fetchall()}
         if "asset_id" not in reference_columns:
             con.execute("ALTER TABLE reference_images ADD COLUMN asset_id TEXT")
@@ -388,6 +409,9 @@ def initialize():
         CREATE INDEX IF NOT EXISTS idx_content_briefs_persona ON content_briefs(persona_id, updated_at);
         CREATE INDEX IF NOT EXISTS idx_content_briefs_version ON content_briefs(persona_version_id, status);
         CREATE INDEX IF NOT EXISTS idx_content_briefs_status ON content_briefs(status, updated_at);
+        CREATE INDEX IF NOT EXISTS idx_content_artifacts_persona ON content_artifacts(persona_id, updated_at);
+        CREATE INDEX IF NOT EXISTS idx_content_artifacts_brief ON content_artifacts(content_brief_id, artifact_type, status);
+        CREATE INDEX IF NOT EXISTS idx_content_artifacts_status ON content_artifacts(status, updated_at);
         CREATE INDEX IF NOT EXISTS idx_jobs_status_created ON jobs(status, created_at);
         CREATE INDEX IF NOT EXISTS idx_jobs_dispatch ON jobs(status, next_retry_at, created_at);
         CREATE INDEX IF NOT EXISTS idx_jobs_persona_created ON jobs(persona_id, created_at);
@@ -404,7 +428,7 @@ def initialize():
         CREATE INDEX IF NOT EXISTS idx_series_episodes_job ON series_episodes(job_id);
         """)
         con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_idempotency_key ON jobs(idempotency_key) WHERE idempotency_key IS NOT NULL")
-        con.execute("INSERT INTO schema_meta(key,value) VALUES('schema_version','16') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+        con.execute("INSERT INTO schema_meta(key,value) VALUES('schema_version','17') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
         # A durable queued row is safe to dispatch after restart. Only work
         # that may already have reached ComfyUI is interrupted and requires
         # prompt reconciliation or explicit operator retry.

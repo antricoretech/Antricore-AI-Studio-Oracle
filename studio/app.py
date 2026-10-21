@@ -49,10 +49,10 @@ from .policies import AI_DISCLOSURE
 from .preflight import resource_preflight, workflow_preflight
 from .provenance import manifest, media_metadata, quality_report, sha256_bytes
 from .identity_conditioning import method_catalog, scenario_catalog
-from .repositories import ContentBriefRepository, ContentPackRepository, CreatorProfileRepository, IdentityBenchmarkRepository, JobRepository, PersonaRepository, ReferencePackRepository, SeriesRepository
+from .repositories import ContentArtifactRepository, ContentBriefRepository, ContentPackRepository, CreatorProfileRepository, IdentityBenchmarkRepository, JobRepository, PersonaRepository, ReferencePackRepository, SeriesRepository
 from .readiness import evaluate as evaluate_readiness
 from .schemas import (
-    ContentBriefIn, ContentPackIn, ContentPackReviewIn, CreatorProfileIn, IdentityBenchmarkIn, IdentityBenchmarkResultIn, JobIn, LinkIn, PersonaIn, ReviewIn, ReferencePackReviewIn, ReferencePackCanonicalIn, ReferencePackAssetLinkIn,
+    ContentArtifactIn, ContentArtifactReviewIn, ContentBriefIn, ContentPackIn, ContentPackReviewIn, CreatorProfileIn, IdentityBenchmarkIn, IdentityBenchmarkResultIn, JobIn, LinkIn, PersonaIn, ReviewIn, ReferencePackReviewIn, ReferencePackCanonicalIn, ReferencePackAssetLinkIn,
     SeriesEpisodeIn, SeriesIn, SeriesQueueIn, VoiceIn, PhotoStudioPromptIn, PhotoStudioGenerateIn,
     OrchestratorCompilePersonaIn, OrchestratorCreatePersonaIn, OrchestratorRenderAnchorIn, OrchestratorLockAnchorIn,
     OrchestratorSynthesizeScenesIn, OrchestratorBatchGenerateIn
@@ -981,6 +981,93 @@ def resolve_content_brief(pid: str, brief_id: str):
     must_persona(pid)
     try:
         return ContentBriefRepository.resolve(pid, brief_id)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@app.get("/api/personas/{pid}/content-artifacts")
+def list_content_artifacts(pid: str):
+    must_persona(pid)
+    return ContentArtifactRepository.list(pid)
+
+
+@app.get("/api/personas/{pid}/content-briefs/{brief_id}/artifacts")
+def list_brief_artifacts(pid: str, brief_id: str):
+    must_persona(pid)
+    if not ContentBriefRepository.get(pid, brief_id):
+        raise HTTPException(404, "ContentBrief not found")
+    return ContentArtifactRepository.list_for_brief(pid, brief_id)
+
+
+@app.post("/api/personas/{pid}/content-briefs/{brief_id}/artifacts", status_code=201)
+def create_content_artifact(pid: str, brief_id: str, payload: ContentArtifactIn):
+    must_persona(pid)
+    try:
+        return ContentArtifactRepository.create(
+            persona_id=pid,
+            brief_id=brief_id,
+            artifact_type=payload.artifact_type,
+            content=payload.content,
+            metadata=payload.metadata,
+            created_at=now(),
+        )
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@app.get("/api/personas/{pid}/content-artifacts/{artifact_id}")
+def get_content_artifact(pid: str, artifact_id: str):
+    must_persona(pid)
+    artifact = ContentArtifactRepository.get(pid, artifact_id)
+    if not artifact:
+        raise HTTPException(404, "Content artifact not found")
+    return artifact
+
+
+@app.put("/api/personas/{pid}/content-artifacts/{artifact_id}")
+def update_content_artifact(pid: str, artifact_id: str, payload: ContentArtifactIn):
+    must_persona(pid)
+    existing = ContentArtifactRepository.get(pid, artifact_id)
+    if not existing:
+        raise HTTPException(404, "Content artifact not found")
+    try:
+        if payload.artifact_type.strip().lower() != existing["artifact_type"]:
+            raise ValueError("Content artifact type cannot be changed")
+        return ContentArtifactRepository.update(
+            persona_id=pid,
+            artifact_id=artifact_id,
+            content=payload.content,
+            metadata=payload.metadata,
+            updated_at=now(),
+        )
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@app.patch("/api/personas/{pid}/content-artifacts/{artifact_id}/review")
+def review_content_artifact(pid: str, artifact_id: str, payload: ContentArtifactReviewIn):
+    must_persona(pid)
+    try:
+        return ContentArtifactRepository.review(
+            persona_id=pid, artifact_id=artifact_id, review=payload.review, reviewed_at=now(),
+        )
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@app.get("/api/personas/{pid}/content-artifacts/{artifact_id}/resolve")
+def resolve_content_artifact(pid: str, artifact_id: str):
+    must_persona(pid)
+    try:
+        return ContentArtifactRepository.resolve(pid, artifact_id)
     except LookupError as exc:
         raise HTTPException(404, str(exc)) from exc
     except ValueError as exc:

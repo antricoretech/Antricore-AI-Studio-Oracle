@@ -42,6 +42,9 @@ def test_frontend_is_module_split_and_static_modules_are_served():
         assert 'Edit draft' in workspace_js.text
         assert 'revision' in workspace_js.text
         assert 'Hand off to Production' in workspace_js.text
+        assert 'content-artifact-create-form' in workspace_js.text
+        assert '/content-artifacts/' in workspace_js.text
+        assert 'deterministic template' in workspace_js.text
         for module in ('core.js', 'api.js', 'navigation.js', 'photostudio.js'):
             response = client.get('/static/modules/' + module)
             assert response.status_code == 200

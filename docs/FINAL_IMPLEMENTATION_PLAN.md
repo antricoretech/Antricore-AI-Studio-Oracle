@@ -98,6 +98,16 @@ Every reference records role, file, prompt, model, workflow, seed, hash, review 
 
 Every brief records PersonaVersion, content pillar, format, narrative, visual direction, emotional goal, platform, disclosure, and approval status.
 
+### ContentArtifact
+
+Caption and script artifacts are reviewable outputs derived only from an approved
+ContentBrief. Each artifact retains PersonaVersion and ContentBrief lineage,
+disclosure, source, revision, and review status. The first implementation uses
+deterministic templates from the stored brief directions, while allowing an
+operator to revise draft copy. Approval is explicit and resolution is limited to
+approved artifacts; this layer does not execute a generation model or publish
+externally.
+
 ### Job and Asset
 
 All rendering paths use the same lifecycle:
@@ -831,15 +841,23 @@ re-run adult/glamour pillar and ContentPack compatibility checks. Once a brief
 is approved or archived, it is immutable; a changed production direction must
 be authored as a new draft so the approved handoff remains auditable.
 
+Reviewable caption and script ContentArtifacts now derive from approved briefs.
+Deterministic templates preserve the brief's disclosure and identity lineage;
+operators can revise draft copy, and explicit artifact approval is required
+before downstream resolution. Adult/glamour briefs continue to inherit the
+Identity Core/style authority rules through the brief and any linked ContentPack.
+No automatic model execution, media generation, or external publishing occurs
+at this stage.
+
 Use this brief formula:
 
 ~~~text
 Identity + Story + Visual + Emotion + Format + Audience Goal + Disclosure
 ~~~
 
-Exit: a reusable brief can be approved and resolved into a production handoff
-without manually repeating persona behavior, visual identity, or disclosure
-instructions.
+Exit: a reusable brief can be approved, produce reviewable caption/script
+artifacts, and resolve into a production handoff without manually repeating
+persona behavior, visual identity, or disclosure instructions.
 
 ### Phase 7 — Quality, review, and export
 

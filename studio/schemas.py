@@ -114,6 +114,16 @@ class ContentBriefIn(BaseModel):
     metadata: dict = Field(default_factory=dict)
 
 
+class ContentArtifactIn(BaseModel):
+    artifact_type: str = Field(min_length=2, max_length=20)
+    content: str = Field(default="", max_length=5000)
+    metadata: dict = Field(default_factory=dict)
+
+
+class ContentArtifactReviewIn(BaseModel):
+    review: str
+
+
 class IdentityBenchmarkIn(BaseModel):
     persona_version_id: str | None = None
     base_model_id: str | None = Field(default=None, max_length=160)

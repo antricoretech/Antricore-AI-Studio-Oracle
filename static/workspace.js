@@ -49,7 +49,10 @@ const state = {
   creatorProfile: null,
   savingCreatorProfile: false,
   contentBriefs: [],
+  contentArtifacts: [],
   creatingContentBrief: false,
+  creatingContentArtifact: false,
+  approvingContentArtifact: '',
   approvingContentBrief: '',
   editingContentBriefId: '',
   benchmarkCatalog: { execution_status: 'deferred_final_gate', methods: [], scenarios: [] },
@@ -556,6 +559,12 @@ function renderContentBriefs() {
   </div>`;
 }
 
+function renderContentArtifacts() {
+  const approvedBriefs = state.contentBriefs.filter((brief) => brief.status === 'approved');
+  const briefNames = Object.fromEntries(state.contentBriefs.map((brief) => [brief.id, brief.title]));
+  return `<section class="panel content-artifacts-panel" aria-labelledby="content-artifacts-heading"><div class="section-heading"><div><p class="eyebrow">Reviewable output</p><h2 id="content-artifacts-heading">Caption and Script Drafts</h2></div>${badge(`${state.contentArtifacts.length} artifact${state.contentArtifacts.length === 1 ? '' : 's'}`)}</div><p class="helper">Create deterministic draft templates from an approved ContentBrief, then review the copy before any production or publishing handoff. These templates are not model-generated.</p>${approvedBriefs.length ? `<form id="content-artifact-create-form" class="content-artifact-form"><div class="form-grid"><label>Approved ContentBrief<select name="content_brief_id" required>${approvedBriefs.map((brief) => `<option value="${escapeHtml(brief.id)}">${escapeHtml(brief.title)} · ${escapeHtml(brief.content_class)}</option>`).join('')}</select></label><label>Artifact type<select name="artifact_type"><option value="caption">Caption draft</option><option value="script">Script draft</option></select></label></div><label>Optional operator copy <span class="field-hint">leave blank to create a structured template</span><textarea name="content" rows="4" maxlength="5000" placeholder="Paste or write reviewed copy here, or leave blank for the deterministic template."></textarea><p id="content-artifact-form-error" class="form-error" role="alert" hidden></p><div class="form-actions"><button class="button primary" type="submit" ${state.creatingContentArtifact ? 'disabled' : ''}>${state.creatingContentArtifact ? 'Creating...' : 'Create draft artifact'}</button></div></form>` : `<div class="callout readiness-callout"><p><strong>Approve a ContentBrief first.</strong></p><p class="helper">Caption and script artifacts inherit the frozen PersonaVersion, disclosure, and adult/glamour Identity Core checks from the approved brief.</p></div>`}${state.contentArtifacts.length ? `<div class="card-list artifact-list">${state.contentArtifacts.map((artifact) => `<article class="entity-card"><div><h3>${escapeHtml(artifact.artifact_type)} · ${escapeHtml(briefNames[artifact.content_brief_id] || artifact.content_brief_id)}</h3><div class="entity-meta">${badge(artifact.status)}${badge(`revision ${artifact.revision || 1}`)}${badge(artifact.source || 'operator')}</div><p class="artifact-content">${escapeHtml(artifact.content)}</p><p class="helper">Disclosure: ${escapeHtml(artifact.disclosure)}</p></div><div class="entity-actions">${artifact.status === 'draft' ? `<button class="button secondary" type="button" data-artifact-approve="${escapeHtml(artifact.id)}" ${state.approvingContentArtifact ? 'disabled' : ''}>${state.approvingContentArtifact === artifact.id ? 'Approving...' : 'Approve artifact'}</button>` : ''}${artifact.status === 'approved' ? `<span class="badge approved">Ready for handoff</span>` : ''}</div></article>`).join('')}</div>` : emptyState('No caption or script artifacts exist yet. Approve a brief, then create the first draft above.')}</section>`;
+}
+
 function renderContentBriefsWithEditing() {
   const editingBrief = state.contentBriefs.find((brief) => brief.id === state.editingContentBriefId && brief.status === 'draft');
   if (editingBrief) {
@@ -570,7 +579,7 @@ function renderContentBriefsWithEditing() {
   }
   const drafts = state.contentBriefs.filter((brief) => brief.status === 'draft');
   const controls = drafts.length ? `<section class="panel" aria-labelledby="brief-edit-list-heading"><div class="section-heading"><div><p class="eyebrow">Draft maintenance</p><h2 id="brief-edit-list-heading">Revise before approval</h2></div>${badge(`${drafts.length} editable`)}</div><p class="helper">Edit a draft to refine the creative direction. Each successful save increments its revision; approved briefs remain immutable.</p><div class="entity-actions">${drafts.map((brief) => `<button class="button secondary" type="button" data-brief-edit="${escapeHtml(brief.id)}">Edit ${escapeHtml(brief.title)}</button>`).join('')}</div></section>` : '';
-  return `${renderContentBriefs()}${controls}`;
+  return `${renderContentBriefs()}${controls}${renderContentArtifacts()}`;
 }
 
 function renderIdentityBenchmarks() {
@@ -604,7 +613,7 @@ async function loadViewData() {
   renderView();
   setStatus('Loading canonical workspace data…');
   try {
-    const requests = { overview: [], personas: state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/versions`] : [], references: state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/reference-packs`, '/api/assets'] : [], 'content-packs': state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/content-packs`] : [], creator: state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/creator-profile`] : [], 'content-briefs': state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/content-briefs`, `/api/personas/${encodeURIComponent(state.activePersonaId)}/creator-profile`, `/api/personas/${encodeURIComponent(state.activePersonaId)}/content-packs`] : [], benchmarks: state.activePersonaId ? ['/api/identity-conditioning/catalog', `/api/personas/${encodeURIComponent(state.activePersonaId)}/identity-benchmarks`] : ['/api/identity-conditioning/catalog'], production: state.activePersonaId ? ['/api/jobs', '/api/workflows', `/api/personas/${encodeURIComponent(state.activePersonaId)}/content-packs`] : ['/api/jobs', '/api/workflows'], assets: state.activePersonaId ? ['/api/assets', `/api/personas/${encodeURIComponent(state.activePersonaId)}/reference-packs`] : ['/api/assets'], publishing: [] }[state.view] || [];
+    const requests = { overview: [], personas: state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/versions`] : [], references: state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/reference-packs`, '/api/assets'] : [], 'content-packs': state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/content-packs`] : [], creator: state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/creator-profile`] : [], 'content-briefs': state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/content-briefs`, `/api/personas/${encodeURIComponent(state.activePersonaId)}/creator-profile`, `/api/personas/${encodeURIComponent(state.activePersonaId)}/content-packs`, `/api/personas/${encodeURIComponent(state.activePersonaId)}/content-artifacts`] : [], benchmarks: state.activePersonaId ? ['/api/identity-conditioning/catalog', `/api/personas/${encodeURIComponent(state.activePersonaId)}/identity-benchmarks`] : ['/api/identity-conditioning/catalog'], production: state.activePersonaId ? ['/api/jobs', '/api/workflows', `/api/personas/${encodeURIComponent(state.activePersonaId)}/content-packs`] : ['/api/jobs', '/api/workflows'], assets: state.activePersonaId ? ['/api/assets', `/api/personas/${encodeURIComponent(state.activePersonaId)}/reference-packs`] : ['/api/assets'], publishing: [] }[state.view] || [];
     const results = await Promise.all(requests.map((url) => get(url, { signal })));
     if (signal.aborted || token !== state.requestToken) return;
     if (state.view === 'references') {
@@ -618,6 +627,7 @@ async function loadViewData() {
       state.contentBriefs = Array.isArray(results[0]) ? results[0] : results[0]?.content_briefs || [];
       state.creatorProfile = results[1] || null;
       state.contentPacks = Array.isArray(results[2]) ? results[2] : results[2]?.content_packs || [];
+      state.contentArtifacts = Array.isArray(results[3]) ? results[3] : results[3]?.content_artifacts || [];
     }
     if (state.view === 'benchmarks') {
       state.benchmarkCatalog = results[0] || { execution_status: 'deferred_final_gate', methods: [], scenarios: [] };
@@ -881,6 +891,51 @@ async function createContentBrief(event) {
     state.creatingContentBrief = false;
     renderView();
     showContentBriefFormError(error.message);
+    setStatus(error.message, 'error');
+  }
+}
+
+function showContentArtifactFormError(message) {
+  const target = $('#content-artifact-form-error');
+  if (!target) return;
+  target.textContent = message;
+  target.hidden = !message;
+}
+
+async function createContentArtifact(event) {
+  event.preventDefault();
+  const form = event.target;
+  showContentArtifactFormError('');
+  if (!form.reportValidity()) return;
+  state.creatingContentArtifact = true;
+  renderView();
+  try {
+    await post(`/api/personas/${encodeURIComponent(state.activePersonaId)}/content-briefs/${encodeURIComponent(form.elements.content_brief_id.value)}/artifacts`, {
+      artifact_type: form.elements.artifact_type.value,
+      content: form.elements.content.value.trim(),
+    });
+    state.creatingContentArtifact = false;
+    setStatus('Content artifact draft created for review.', 'success');
+    await loadViewData();
+  } catch (error) {
+    state.creatingContentArtifact = false;
+    renderView();
+    showContentArtifactFormError(error.message);
+    setStatus(error.message, 'error');
+  }
+}
+
+async function approveContentArtifact(artifactId) {
+  state.approvingContentArtifact = artifactId;
+  renderView();
+  try {
+    await patch(`/api/personas/${encodeURIComponent(state.activePersonaId)}/content-artifacts/${encodeURIComponent(artifactId)}/review`, { review: 'approved' });
+    state.approvingContentArtifact = '';
+    setStatus('Content artifact approved and ready for downstream handoff.', 'success');
+    await loadViewData();
+  } catch (error) {
+    state.approvingContentArtifact = '';
+    renderView();
     setStatus(error.message, 'error');
   }
 }
@@ -1201,6 +1256,11 @@ $('#workspace-view').addEventListener('click', (event) => {
     renderView();
     return;
   }
+  const approveArtifactButton = event.target.closest('[data-artifact-approve]');
+  if (approveArtifactButton) {
+    approveContentArtifact(approveArtifactButton.dataset.artifactApprove);
+    return;
+  }
   const approveBriefButton = event.target.closest('[data-brief-approve]');
   if (approveBriefButton) {
     approveContentBrief(approveBriefButton.dataset.briefApprove);
@@ -1229,6 +1289,10 @@ $('#workspace-view').addEventListener('submit', (event) => {
   }
   if (event.target.id === 'content-brief-form') {
     createContentBrief(event);
+    return;
+  }
+  if (event.target.id === 'content-artifact-create-form') {
+    createContentArtifact(event);
     return;
   }
   if (event.target.id === 'identity-benchmark-create-form') {
