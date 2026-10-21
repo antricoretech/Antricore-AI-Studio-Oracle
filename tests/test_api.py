@@ -941,6 +941,35 @@ def test_phase4_shutdown_reconciles_only_active_managed_jobs(client):
     assert queued['error'] is None
 
 
+def test_phase4_standalone_diffusion_registration_uses_canonical_asset_store(client):
+    from io import BytesIO
+    import studio.app as backend
+    import studio.database as test_db
+    import studio.diffusion_engine as diffusion_engine
+    from PIL import Image
+
+    persona = client.post('/api/personas', json={
+        'name': 'Diffusion Boundary Persona', 'age': 31,
+        'appearance': 'dark hair and green eyes',
+        'description': 'fictional adult editorial creator'
+    }).json()
+    image = Image.new('RGB', (24, 24), '#456789')
+    buffer = BytesIO()
+    image.save(buffer, format='PNG')
+
+    asset = diffusion_engine._register_render_asset(
+        persona_id=persona['id'], persona_name=persona['name'],
+        prompt='A canonical diffusion boundary test', raw=buffer.getvalue(),
+        original_filename='legacy_render.png', model_id='test-model', seed=42,
+        aspect_ratio='1:1', width=24, height=24,
+    )
+    assert asset['review'] == 'pending'
+    assert asset['rights_confirmed'] == 0
+    assert asset['persona_version_id'] == persona['current_version']['id']
+    assert test_db.OUTPUTS.joinpath(asset['filename']).is_file()
+    assert backend.app.url_path_for('asset_file', aid=asset['id']) == f"/api/assets/{asset['id']}/file"
+
+
 def test_phase4_job_lease_recovery_and_retry_backoff(client, monkeypatch):
     import datetime
     import studio.app as backend

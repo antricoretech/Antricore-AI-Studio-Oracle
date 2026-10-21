@@ -70,6 +70,43 @@ def get_pipeline(model_id: str = "juggernaut-xl-v10"):
         print(f"[Diffusion Engine] Model {model_id} ready on {device}!")
         return _current_pipe
 
+
+def _register_render_asset(*, persona_id: str, persona_name: str, prompt: str,
+                           raw: bytes, original_filename: str, model_id: str,
+                           seed: int, aspect_ratio: str, width: int, height: int) -> dict:
+    """Register a standalone render through the canonical media boundary."""
+
+    from . import database as db
+    from .assets import register_media_asset
+
+    persona = db.row("SELECT id FROM personas WHERE id=?", (persona_id,))
+    if not persona:
+        raise ValueError("Standalone diffusion registration requires a canonical Persona")
+    version = db.row(
+        "SELECT id FROM persona_versions WHERE persona_id=? ORDER BY version_no DESC LIMIT 1",
+        (persona_id,),
+    )
+    return register_media_asset(
+        persona_id=persona_id,
+        persona_version_id=version["id"] if version else None,
+        job_id=None,
+        kind="image",
+        prompt=prompt,
+        raw=raw,
+        rights_confirmed=False,
+        original_filename=original_filename,
+        lineage={
+            "execution_mode": "standalone_diffusion",
+            "model": model_id,
+            "persona_name": persona_name,
+            "seed": seed,
+            "aspect_ratio": aspect_ratio,
+            "width": width,
+            "height": height,
+        },
+    )
+
+
 def generate_render(
     prompt: str,
     negative_prompt: Optional[str] = None,
@@ -121,24 +158,24 @@ def generate_render(
     rel_url = f"/generated/renders/{filename}"
     print(f"[Diffusion Engine] Saved render in {elapsed}s to {rel_url}")
 
-    # The canonical API route registers bytes through studio.assets so it can
-    # attach Job lineage, hashes, quality metadata, and the configured output
-    # store. Keep the legacy registration path for vault compatibility until
-    # that background workflow is migrated separately.
+    asset = None
     if register_asset:
         try:
-            from . import database as db
-            aid = f"render-{timestamp}-{actual_seed}"
-            version = db.row(
-                "SELECT id FROM persona_versions WHERE persona_id=? ORDER BY version_no DESC LIMIT 1",
-                (persona_id,),
+            asset = _register_render_asset(
+                persona_id=persona_id,
+                persona_name=persona_name,
+                prompt=prompt,
+                raw=out_path.read_bytes(),
+                original_filename=filename,
+                model_id=model_id,
+                seed=actual_seed,
+                aspect_ratio=aspect_ratio,
+                width=width,
+                height=height,
             )
-            db.write(
-                "INSERT INTO assets (id, persona_id, persona_version_id, filename, kind, prompt, review, rights_confirmed, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (aid, persona_id, version["id"] if version else None, filename, "image", prompt, "pending", 1, time.strftime("%Y-%m-%d %H:%M:%S"))
-            )
+            print(f"[Diffusion Engine] Registered canonical pending asset {asset['id']}")
         except Exception as db_err:
-            print(f"[Diffusion Engine] Database write notice: {db_err}")
+            print(f"[Diffusion Engine] Canonical asset registration notice: {db_err}")
 
     return {
         "status": "completed",
@@ -151,5 +188,7 @@ def generate_render(
         "model": model_id,
         "persona_id": persona_id,
         "persona_name": persona_name,
-        "filename": filename
+        "filename": filename,
+        "asset_id": asset["id"] if asset else None,
+        "asset_url": f"/api/assets/{asset['id']}/file" if asset else None,
     }

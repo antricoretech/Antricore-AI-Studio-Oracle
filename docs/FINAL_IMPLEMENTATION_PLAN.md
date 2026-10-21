@@ -610,6 +610,22 @@ active-versus-queued boundary. Broader standalone CLI/diffusion compatibility
 cleanup and the final model-installation/readiness gate remain outside this
 slice. Generation models remain deferred.
 
+### Phase 4 slice 8 — standalone diffusion asset-boundary migration
+
+The optional registration mode in `studio/diffusion_engine.py` now requires a
+canonical Persona, resolves its latest PersonaVersion, and delegates storage
+to `register_media_asset`. Standalone renders therefore use the canonical
+output store and receive the shared hash, quality, disclosure, provenance,
+review, and lineage metadata. They begin as pending assets with rights
+unconfirmed because the standalone CLI has not collected an operator rights
+assertion. The legacy `generated/renders` URL remains in the return payload so
+preserved consumers do not break during migration.
+
+This removes the diffusion engine's direct SQLite asset insert. The free CLI
+still writes caller-selected image/video/audio files and remains an explicit
+compatibility path until it receives a PersonaVersion-aware import/registration
+contract. Generation models remain deferred.
+
 ### Cross-cutting frontend migration workstream
 
 The current static frontend is a legacy shell and is not considered aligned
