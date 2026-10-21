@@ -15,6 +15,7 @@ from .identity_conditioning import (
     BENCHMARK_STATUSES,
     CASE_STATUSES,
     normalize_selection,
+    summarize_cases,
     validate_completed_metrics,
     validate_metrics,
 )
@@ -540,6 +541,7 @@ class IdentityBenchmarkRepository:
                 (result["id"],),
             )
         ]
+        result["summary"] = summarize_cases(result["cases"])
         return result
 
     @staticmethod

@@ -770,6 +770,13 @@ weights. The final Mac gate remains the only place where adapters, checkpoints,
 and measured MPS results can be introduced. Until then, benchmark runs remain
 planned or manually recordable, and no method is promoted to production.
 
+The catalog endpoint also exposes each candidate's capability class, required
+runtime/model inputs, and deferred execution status. Completed cases produce a
+deterministic method summary with coverage, weighted identity/prompt/anatomy/
+style score, latency, peak memory, and selection eligibility. The summary is a
+decision aid only: it never promotes a method automatically, and incomplete
+or blocked cases cannot qualify.
+
 Measure face similarity, body consistency, prompt adherence, pose diversity, adult/glamour identity consistency, video drift, latency, memory use, and human approval rate.
 
 Exit: one production identity method is selected from measured results on project personas and target hardware.

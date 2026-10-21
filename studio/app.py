@@ -48,6 +48,7 @@ from .model_registry import get as get_model, rows as model_rows, workflow_model
 from .policies import AI_DISCLOSURE
 from .preflight import resource_preflight, workflow_preflight
 from .provenance import manifest, media_metadata, quality_report, sha256_bytes
+from .identity_conditioning import method_catalog, scenario_catalog
 from .repositories import ContentPackRepository, IdentityBenchmarkRepository, JobRepository, PersonaRepository, ReferencePackRepository, SeriesRepository
 from .readiness import evaluate as evaluate_readiness
 from .schemas import (
@@ -836,6 +837,15 @@ def resolve_content_pack(pid: str, pack_id: str):
         raise HTTPException(404, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
+
+
+@app.get("/api/identity-conditioning/catalog")
+def identity_conditioning_catalog():
+    return {
+        "execution_status": "deferred_final_gate",
+        "methods": method_catalog(),
+        "scenarios": scenario_catalog(),
+    }
 
 
 @app.get("/api/personas/{pid}/identity-benchmarks")

@@ -326,6 +326,14 @@ def test_content_pack_persists_style_and_resolves_canonical_identity(client, tmp
 def test_identity_benchmark_binds_frozen_version_and_adult_glamour_anchor(client, tmp_path, monkeypatch):
     import studio.api_v2 as api_v2
 
+    catalog = client.get('/api/identity-conditioning/catalog')
+    assert catalog.status_code == 200
+    assert catalog.json()['execution_status'] == 'deferred_final_gate'
+    assert {method['id'] for method in catalog.json()['methods']} == {
+        'text_only', 'ip_adapter_faceid', 'instantid', 'pulid', 'lora'
+    }
+    assert any(item['content_class'] == 'adult_glamour' for item in catalog.json()['scenarios'])
+
     monkeypatch.setattr(api_v2, 'PERSONAS_FILE', tmp_path / 'personas_v2.json')
     packs = client.get('/api/v2/personas/maya_bhutia/reference-packs').json()['packs']
     source_pack = next(item for item in packs if item['pack_type'] == 'adult_glamour')
@@ -388,6 +396,10 @@ def test_identity_benchmark_binds_frozen_version_and_adult_glamour_anchor(client
     assert recorded.status_code == 200
     assert recorded.json()['status'] == 'in_progress'
     assert next(case for case in recorded.json()['cases'] if case['id'] == first_case['id'])['status'] == 'completed'
+    text_summary = next(item for item in recorded.json()['summary'] if item['method'] == 'text_only')
+    assert text_summary['completed_cases'] == 1
+    assert text_summary['coverage'] == 0.5
+    assert text_summary['eligible_for_selection'] is False
 
 
 def test_link_redirect_and_review_validation(client):
