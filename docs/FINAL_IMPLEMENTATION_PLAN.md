@@ -799,6 +799,22 @@ Exit: one production identity method is selected from measured results on projec
 
 Add personality, values, interests, humor, voice, mannerisms, audience, content pillars, emotional objectives, brand positioning, captions, and scripts.
 
+The first Phase 6 slice is now model-independent. A Creator Profile is bound
+to one PersonaVersion and stores personality, audience, brand positioning,
+voice, disclosure, and structured content pillars. Draft PersonaVersions can be
+edited through the canonical workspace; frozen versions are read-only until a
+new draft version exists. Adult/glamour, lingerie, boudoir, and related adult
+editorial pillars remain inside the same Creator System and automatically retain
+Identity Core plus `identity_and_style` authority when saved.
+
+The canonical workspace exposes this at `/workspace#creator`. The editor starts
+with the content-pillar system used by the reference analysis - lifestyle,
+fashion, travel, storytelling, product reviews, tutorials, brand content, and
+adult/glamour editorial - while allowing each Master Persona to refine the
+descriptions, formats, audience goal, and authority. Later Phase 6 slices will
+turn approved pillars into reusable ContentBriefs, captions, scripts, and
+production-ready creative objectives.
+
 Use this brief formula:
 
 ~~~text

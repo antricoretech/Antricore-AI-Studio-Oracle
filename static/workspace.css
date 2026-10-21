@@ -102,6 +102,15 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .canonical-option { display: flex; align-items: center; gap: 7px; border: 1px solid var(--border); border-radius: 7px; padding: 8px 10px; color: var(--text); font-size: .8rem; }
 .benchmark-plan-form { display: grid; gap: 14px; margin-top: 18px; border-top: 1px solid var(--border); padding-top: 18px; }
 .benchmark-options { min-width: 0; border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+.creator-profile-form { display: grid; gap: 15px; margin-top: 18px; }
+.creator-profile-form fieldset { display: grid; gap: 18px; min-width: 0; border: 0; padding: 0; }
+.creator-section { border-top: 1px solid var(--border); padding-top: 16px; }
+.creator-section .section-heading { margin-bottom: 10px; }
+.creator-pillar-list { display: grid; gap: 12px; }
+.creator-pillar { border: 1px solid var(--border); border-radius: 8px; background: var(--surface-raised); padding: 13px; }
+.creator-pillar-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.creator-pillar-grid .span-2 { grid-column: 1 / -1; }
+.creator-pillar-grid .check-field { align-items: center; }
 .benchmark-options legend { padding: 0 6px; color: var(--muted); font-size: .76rem; font-weight: 750; }
 .benchmark-option-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .benchmark-option { display: flex; align-items: flex-start; gap: 8px; border: 1px solid var(--border); border-radius: 7px; padding: 9px; }
@@ -229,7 +238,8 @@ th { color: var(--muted); font-size: .7rem; font-weight: 750; letter-spacing: .0
   .form-grid { grid-template-columns: 1fr; }
   .generation-dimensions { grid-template-columns: 1fr 1fr; }
   .generation-rights { grid-column: 1 / -1; }
-  .benchmark-option-grid, .benchmark-result-grid, .benchmark-metrics { grid-template-columns: 1fr; }
+  .benchmark-option-grid, .benchmark-result-grid, .benchmark-metrics, .creator-pillar-grid { grid-template-columns: 1fr; }
+  .creator-pillar-grid .span-2 { grid-column: auto; }
   .version-card { align-items: flex-start; flex-direction: column; }
   .asset-review-summary { flex-direction: column; }
   .readiness-item, .job-heading { align-items: flex-start; flex-direction: column; }

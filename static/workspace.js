@@ -1,4 +1,4 @@
-import { get, post, patch } from './modules/api.js';
+import { get, put, post, patch } from './modules/api.js';
 
 const navGroups = [
   { label: 'Identity', items: [
@@ -6,6 +6,7 @@ const navGroups = [
     ['personas', 'Master Personas', '◎'],
     ['references', 'Reference Packs', '◇'],
     ['content-packs', 'ContentPacks', '◆'],
+    ['creator', 'Creator System', 'C'],
     ['benchmarks', 'Identity Benchmarks', '◉'],
   ] },
   { label: 'Production', items: [
@@ -22,6 +23,7 @@ const viewMeta = {
   personas: ['Master Personas', 'Create and inspect PersonaVersion-bound identities.'],
   references: ['Reference Packs', 'Review identity sources, rights, assets, and canonical selection.'],
   'content-packs': ['ContentPacks', 'Bind creator style and adult/glamour identity anchors to one version.'],
+  creator: ['Creator System', 'Define personality, audience, voice, brand, and content pillars for one PersonaVersion.'],
   benchmarks: ['Identity Benchmarks', 'Compare identity-conditioning methods against one frozen PersonaVersion.'],
   production: ['Production Queue', 'Track jobs and their PersonaVersion lineage.'],
   assets: ['Asset Review', 'Review generated and imported media before it becomes publishable.'],
@@ -42,6 +44,8 @@ const state = {
   assetReferenceLinks: [],
   selectedReferencePackId: '',
   contentPacks: [],
+  creatorProfile: null,
+  savingCreatorProfile: false,
   benchmarkCatalog: { execution_status: 'deferred_final_gate', methods: [], scenarios: [] },
   benchmarks: [],
   creatingBenchmark: false,
@@ -476,6 +480,39 @@ function renderBenchmarkCase(benchmark, item) {
   return `<article class="benchmark-case"><div class="section-heading"><div><p class="eyebrow">${escapeHtml(item.method)}</p><h3>${escapeHtml(item.scenario_label)}</h3><p class="helper">${escapeHtml(item.content_class)} · ${escapeHtml(item.scenario_id)}</p></div>${badge(item.status)}</div><p class="benchmark-prompt">${escapeHtml(item.prompt)}</p>${item.error ? `<p class="job-error">${escapeHtml(item.error)}</p>` : ''}${terminal ? `<div class="entity-meta">${item.output_asset_id ? badge(`asset ${item.output_asset_id}`) : badge('no output asset')}${item.metrics?.identity_score !== undefined ? badge(`identity ${item.metrics.identity_score}`) : ''}</div>` : `<form class="benchmark-result-form" data-identity-benchmark-result="${escapeHtml(item.id)}" data-benchmark-id="${escapeHtml(benchmark.id)}"><div class="benchmark-result-grid"><div class="field"><label>Status<select name="status"><option value="completed">Completed</option><option value="blocked">Blocked</option><option value="failed">Failed</option></select></label></div><div class="field"><label>Output Asset ID <span class="field-hint">optional</span><input name="output_asset_id" placeholder="asset id"></label></div></div><div class="benchmark-metrics"><div class="field"><label>Identity score<input name="identity_score" type="number" min="0" max="1" step="0.01" placeholder="0–1"></label></div><div class="field"><label>Prompt adherence<input name="prompt_adherence" type="number" min="0" max="1" step="0.01" placeholder="0–1"></label></div><div class="field"><label>Anatomy score<input name="anatomy_score" type="number" min="0" max="1" step="0.01" placeholder="0–1"></label></div><div class="field"><label>Style consistency<input name="style_consistency" type="number" min="0" max="1" step="0.01" placeholder="0–1"></label></div><div class="field"><label>Latency (ms)<input name="latency_ms" type="number" min="0" step="1" placeholder="optional"></label></div><div class="field"><label>Peak memory (MB)<input name="peak_memory_mb" type="number" min="0" step="1" placeholder="optional"></label></div></div><label class="field"><span>Notes or failure detail</span><textarea name="notes" rows="2" placeholder="Record measurement context or why this case was blocked."></textarea></label><div class="form-actions"><button class="button secondary" type="submit">Record case result</button></div></form>`}</article>`;
 }
 
+const DEFAULT_CREATOR_PILLARS = [
+  { key: 'lifestyle', name: 'Lifestyle', description: 'Daily life, routines, and believable personal moments.', formats: ['photos', 'reels', 'stories'], content_classes: ['lifestyle'], identity_authority: 'style', identity_core: false, audience_goal: 'Build familiarity and trust.' },
+  { key: 'fashion', name: 'Fashion', description: 'Outfits, styling, trends, and signature wardrobe choices.', formats: ['photos', 'reels', 'brand_content'], content_classes: ['fashion'], identity_authority: 'style', identity_core: false, audience_goal: 'Create visual recognition and saveable inspiration.' },
+  { key: 'travel', name: 'Travel', description: 'Places, experiences, and culture through the persona point of view.', formats: ['photos', 'cinematic_campaigns', 'stories'], content_classes: ['travel'], identity_authority: 'style', identity_core: false, audience_goal: 'Invite discovery and conversation.' },
+  { key: 'storytelling', name: 'Storytelling', description: 'Personal stories, points of view, and day-in-the-life narratives.', formats: ['reels', 'stories', 'captions'], content_classes: ['storytelling'], identity_authority: 'identity', identity_core: false, audience_goal: 'Build emotional connection.' },
+  { key: 'product_reviews', name: 'Product Reviews', description: 'Honest reviews, unboxings, demonstrations, and comparisons.', formats: ['reels', 'photos', 'brand_content'], content_classes: ['product_reviews'], identity_authority: 'style', identity_core: false, audience_goal: 'Help the audience make confident decisions.' },
+  { key: 'tutorials', name: 'Tutorials', description: 'Practical tips and how-to content taught in the creator voice.', formats: ['reels', 'carousels', 'stories'], content_classes: ['tutorials'], identity_authority: 'identity', identity_core: false, audience_goal: 'Deliver useful, repeatable value.' },
+  { key: 'brand_content', name: 'Brand Content', description: 'Collaborations, campaigns, and UGC with clear brand fit.', formats: ['product_ads', 'reels', 'photos'], content_classes: ['brand_content'], identity_authority: 'style', identity_core: false, audience_goal: 'Create credible commercial partnerships.' },
+  { key: 'adult_glamour', name: 'Adult/Glamour Editorial', description: 'Adult glamour, lingerie, boudoir, and editorial styling within the same canonical identity.', formats: ['editorial_photos', 'reels', 'brand_content'], content_classes: ['adult_glamour'], identity_authority: 'identity_and_style', identity_core: true, audience_goal: 'Express confident adult glamour without creating a separate identity system.' },
+];
+
+function creatorCsv(value) {
+  return Array.isArray(value) ? value.join(', ') : String(value || '');
+}
+
+function renderCreatorPillar(pillar) {
+  return `<article class="creator-pillar" data-creator-pillar><div class="section-heading"><div><p class="eyebrow">Content pillar</p><h3>${escapeHtml(pillar.name || 'New pillar')}</h3></div>${pillar.identity_core ? badge('Identity Core') : badge('style authority')}</div><div class="form-grid creator-pillar-grid"><label>Key<input name="pillar_key" value="${escapeHtml(pillar.key)}" maxlength="80"></label><label>Name<input name="pillar_name" value="${escapeHtml(pillar.name)}" maxlength="120" required></label><label class="span-2">Description<textarea name="pillar_description" rows="2" maxlength="500">${escapeHtml(pillar.description)}</textarea></label><label>Formats<input name="pillar_formats" value="${escapeHtml(creatorCsv(pillar.formats))}" placeholder="photos, reels, stories"></label><label>Content classes<input name="pillar_content_classes" value="${escapeHtml(creatorCsv(pillar.content_classes))}" placeholder="lifestyle, fashion"></label><label>Identity authority<select name="pillar_identity_authority"><option value="identity" ${pillar.identity_authority === 'identity' ? 'selected' : ''}>Identity</option><option value="style" ${pillar.identity_authority === 'style' ? 'selected' : ''}>Style</option><option value="identity_and_style" ${pillar.identity_authority === 'identity_and_style' ? 'selected' : ''}>Identity and style</option></select></label><label>Audience goal<input name="pillar_audience_goal" value="${escapeHtml(pillar.audience_goal)}" maxlength="300"></label><label class="check-field"><input name="pillar_identity_core" type="checkbox" ${pillar.identity_core ? 'checked' : ''}><span>Use as Identity Core anchor</span></label></div></article>`;
+}
+
+function renderCreatorSystem() {
+  if (!state.activePersonaId) return emptyState('Select or create a Master Persona before defining the Creator System.', 'personas');
+  const persona = activePersona();
+  const envelope = state.creatorProfile || {};
+  const profile = envelope.profile || {};
+  const frozen = (envelope.version_state || persona?.current_version?.state) === 'frozen';
+  const pillars = profile.content_pillars?.length ? profile.content_pillars : DEFAULT_CREATOR_PILLARS;
+  const personality = profile.personality || {};
+  const audience = profile.audience || {};
+  const brand = profile.brand || {};
+  const voice = profile.voice || {};
+  return `<section class="panel" aria-labelledby="creator-system-heading"><div class="section-heading"><div><p class="eyebrow">Phase 6 · canonical creative system</p><h2 id="creator-system-heading">Creator System</h2></div>${badge(frozen ? 'frozen' : 'draft')}</div><p class="helper">Define how this Master Persona thinks, speaks, serves its audience, and turns one identity into repeatable content. Adult/glamour remains a content pillar inside the same Identity Core, not a separate persona.</p>${frozen ? '<div class="callout readiness-callout"><p><strong>This PersonaVersion is frozen.</strong></p><p class="helper">Create a new draft PersonaVersion before changing the Creator System.</p></div>' : ''}<form id="creator-profile-form" class="creator-profile-form"><fieldset ${frozen ? 'disabled' : ''}><legend class="sr-only">Creator identity and content system</legend><div class="creator-section"><div class="section-heading"><div><p class="eyebrow">Who they are</p><h3>Personality and voice</h3></div></div><div class="form-grid"><label>Personality traits<textarea name="personality_traits" rows="2" placeholder="Confident, witty, curious">${escapeHtml(personality.traits)}</textarea></label><label>Interests and values<textarea name="personality_interests" rows="2" placeholder="Fashion, travel, self-expression">${escapeHtml(personality.interests_and_values)}</textarea></label><label>Speaking style<textarea name="personality_speech_style" rows="2" placeholder="Smart, warm, concise, relatable">${escapeHtml(personality.speech_style)}</textarea></label><label>Humor<textarea name="personality_humor" rows="2" placeholder="Dry wit, playful observations">${escapeHtml(personality.humor)}</textarea></label><label>Signature behaviors<textarea name="personality_mannerisms" rows="2" placeholder="A recurring greeting, pose, or phrase">${escapeHtml(personality.mannerisms)}</textarea></label></div></div><div class="creator-section"><div class="section-heading"><div><p class="eyebrow">Who they serve</p><h3>Audience definition</h3></div></div><div class="form-grid"><label>Primary audience<textarea name="audience_primary" rows="2" placeholder="Adults interested in ...">${escapeHtml(audience.primary)}</textarea></label><label>Audience needs<textarea name="audience_needs" rows="2" placeholder="Inspiration, education, confidence">${escapeHtml(audience.needs)}</textarea></label><label>Relationship to audience<textarea name="audience_relationship" rows="2" placeholder="Trusted friend and practical guide">${escapeHtml(audience.relationship)}</textarea></label><label>Locales and language<textarea name="audience_locales" rows="2" placeholder="English, global urban audience">${escapeHtml(audience.locales)}</textarea></label></div></div><div class="creator-section"><div class="section-heading"><div><p class="eyebrow">How the brand behaves</p><h3>Positioning and disclosure</h3></div></div><div class="form-grid"><label>Brand positioning<textarea name="brand_positioning" rows="2" placeholder="Luxury fashion and relatable lifestyle creator">${escapeHtml(brand.positioning)}</textarea></label><label>Brand promise<textarea name="brand_promise" rows="2" placeholder="What the audience can consistently expect">${escapeHtml(brand.promise)}</textarea></label><label>Boundaries<textarea name="brand_boundaries" rows="2" placeholder="Topics, claims, or collaborations to avoid">${escapeHtml(brand.boundaries)}</textarea></label><label>Voice tone<textarea name="voice_tone" rows="2" placeholder="Smart, confident, warm">${escapeHtml(voice.tone)}</textarea></label><label>Vocabulary and CTA style<textarea name="voice_vocabulary" rows="2" placeholder="Preferred words, rhythm, and calls to action">${escapeHtml(voice.vocabulary)}</textarea></label><label>Disclosure<textarea name="disclosure" rows="2" minlength="20" maxlength="300" required>${escapeHtml(profile.disclosure || 'Fictional adult character. AI-generated synthetic media.')}</textarea></label></div></div><div class="creator-section"><div class="section-heading"><div><p class="eyebrow">What they share</p><h3>Content pillars</h3></div>${badge(`${pillars.length} pillars`)}</div><p class="helper">Each pillar can guide story, visual style, audience goal, and format. The adult/glamour pillar is intentionally marked as Identity Core plus style authority.</p><div class="creator-pillar-list">${pillars.map(renderCreatorPillar).join('')}</div></div></fieldset><p id="creator-profile-form-error" class="form-error" role="alert" hidden></p><div class="form-actions"><button class="button primary" type="submit" ${frozen || state.savingCreatorProfile ? 'disabled' : ''}>${state.savingCreatorProfile ? 'Saving...' : 'Save Creator System'}</button></div></form></section>`;
+}
+
 function renderIdentityBenchmarks() {
   if (!state.activePersonaId) return emptyState('Select or create a Master Persona before planning identity benchmarks.', 'personas');
   const persona = activePersona();
@@ -491,7 +528,7 @@ function renderPublishing() {
 }
 
 function renderView() {
-  const renderer = { overview: renderOverview, personas: renderPersonasCanonical, references: renderReferencesCanonical, 'content-packs': renderContentPacks, benchmarks: renderIdentityBenchmarks, production: renderProductionCanonical, assets: renderAssetsCanonical, publishing: renderPublishing }[state.view] || renderOverview;
+  const renderer = { overview: renderOverview, personas: renderPersonasCanonical, references: renderReferencesCanonical, 'content-packs': renderContentPacks, creator: renderCreatorSystem, benchmarks: renderIdentityBenchmarks, production: renderProductionCanonical, assets: renderAssetsCanonical, publishing: renderPublishing }[state.view] || renderOverview;
   $('#workspace-view').innerHTML = `${renderCrossViewLineageNotice()}${renderAssetLineagePanel()}${renderer()}`;
 }
 
@@ -507,7 +544,7 @@ async function loadViewData() {
   renderView();
   setStatus('Loading canonical workspace data…');
   try {
-    const requests = { overview: [], personas: state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/versions`] : [], references: state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/reference-packs`, '/api/assets'] : [], 'content-packs': state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/content-packs`] : [], benchmarks: state.activePersonaId ? ['/api/identity-conditioning/catalog', `/api/personas/${encodeURIComponent(state.activePersonaId)}/identity-benchmarks`] : ['/api/identity-conditioning/catalog'], production: state.activePersonaId ? ['/api/jobs', '/api/workflows', `/api/personas/${encodeURIComponent(state.activePersonaId)}/content-packs`] : ['/api/jobs', '/api/workflows'], assets: state.activePersonaId ? ['/api/assets', `/api/personas/${encodeURIComponent(state.activePersonaId)}/reference-packs`] : ['/api/assets'], publishing: [] }[state.view] || [];
+    const requests = { overview: [], personas: state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/versions`] : [], references: state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/reference-packs`, '/api/assets'] : [], 'content-packs': state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/content-packs`] : [], creator: state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/creator-profile`] : [], benchmarks: state.activePersonaId ? ['/api/identity-conditioning/catalog', `/api/personas/${encodeURIComponent(state.activePersonaId)}/identity-benchmarks`] : ['/api/identity-conditioning/catalog'], production: state.activePersonaId ? ['/api/jobs', '/api/workflows', `/api/personas/${encodeURIComponent(state.activePersonaId)}/content-packs`] : ['/api/jobs', '/api/workflows'], assets: state.activePersonaId ? ['/api/assets', `/api/personas/${encodeURIComponent(state.activePersonaId)}/reference-packs`] : ['/api/assets'], publishing: [] }[state.view] || [];
     const results = await Promise.all(requests.map((url) => get(url, { signal })));
     if (signal.aborted || token !== state.requestToken) return;
     if (state.view === 'references') {
@@ -516,6 +553,7 @@ async function loadViewData() {
       if (!state.references.some((pack) => pack.id === state.selectedReferencePackId)) state.selectedReferencePackId = state.references[0]?.id || '';
     }
     if (state.view === 'content-packs') state.contentPacks = Array.isArray(results[0]) ? results[0] : results[0]?.content_packs || [];
+    if (state.view === 'creator') state.creatorProfile = results[0] || null;
     if (state.view === 'benchmarks') {
       state.benchmarkCatalog = results[0] || { execution_status: 'deferred_final_gate', methods: [], scenarios: [] };
       state.benchmarks = state.activePersonaId ? (Array.isArray(results[1]) ? results[1] : []) : [];
@@ -728,6 +766,72 @@ async function reviewAsset(event) {
     setStatus('Asset review state saved.', 'success');
     await loadViewData();
   } catch (error) {
+    setStatus(error.message, 'error');
+  }
+}
+
+function creatorList(value) {
+  return String(value || '').split(',').map((item) => item.trim()).filter(Boolean);
+}
+
+function showCreatorFormError(message) {
+  const target = $('#creator-profile-form-error');
+  if (!target) return;
+  target.textContent = message;
+  target.hidden = !message;
+}
+
+async function saveCreatorProfile(event) {
+  event.preventDefault();
+  const form = event.target;
+  showCreatorFormError('');
+  const rows = [...form.querySelectorAll('[data-creator-pillar]')];
+  const contentPillars = rows.map((row) => ({
+    key: row.elements.pillar_key.value.trim(),
+    name: row.elements.pillar_name.value.trim(),
+    description: row.elements.pillar_description.value.trim(),
+    formats: creatorList(row.elements.pillar_formats.value),
+    content_classes: creatorList(row.elements.pillar_content_classes.value),
+    identity_authority: row.elements.pillar_identity_authority.value,
+    identity_core: row.elements.pillar_identity_core.checked,
+    audience_goal: row.elements.pillar_audience_goal.value.trim(),
+  }));
+  state.savingCreatorProfile = true;
+  renderView();
+  try {
+    await put(`/api/personas/${encodeURIComponent(state.activePersonaId)}/creator-profile`, {
+      personality: {
+        traits: form.elements.personality_traits.value.trim(),
+        interests_and_values: form.elements.personality_interests.value.trim(),
+        speech_style: form.elements.personality_speech_style.value.trim(),
+        humor: form.elements.personality_humor.value.trim(),
+        mannerisms: form.elements.personality_mannerisms.value.trim(),
+      },
+      audience: {
+        primary: form.elements.audience_primary.value.trim(),
+        needs: form.elements.audience_needs.value.trim(),
+        relationship: form.elements.audience_relationship.value.trim(),
+        locales: form.elements.audience_locales.value.trim(),
+      },
+      brand: {
+        positioning: form.elements.brand_positioning.value.trim(),
+        promise: form.elements.brand_promise.value.trim(),
+        boundaries: form.elements.brand_boundaries.value.trim(),
+      },
+      voice: {
+        tone: form.elements.voice_tone.value.trim(),
+        vocabulary: form.elements.voice_vocabulary.value.trim(),
+      },
+      disclosure: form.elements.disclosure.value.trim(),
+      content_pillars: contentPillars,
+    });
+    state.savingCreatorProfile = false;
+    setStatus('Creator System saved for the active PersonaVersion.', 'success');
+    await loadViewData();
+  } catch (error) {
+    state.savingCreatorProfile = false;
+    renderView();
+    showCreatorFormError(error.message);
     setStatus(error.message, 'error');
   }
 }
@@ -949,6 +1053,10 @@ $('#workspace-view').addEventListener('submit', (event) => {
   }
   if (event.target.id === 'generation-form') {
     createGenerationJob(event);
+    return;
+  }
+  if (event.target.id === 'creator-profile-form') {
+    saveCreatorProfile(event);
     return;
   }
   if (event.target.id === 'identity-benchmark-create-form') {

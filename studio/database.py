@@ -39,6 +39,23 @@ def initialize():
             UNIQUE(persona_id, version_no),
             FOREIGN KEY(persona_id) REFERENCES personas(id)
         );
+        CREATE TABLE IF NOT EXISTS creator_profiles (
+            id TEXT PRIMARY KEY,
+            persona_id TEXT NOT NULL,
+            persona_version_id TEXT NOT NULL UNIQUE,
+            status TEXT NOT NULL DEFAULT 'draft',
+            personality_json TEXT NOT NULL DEFAULT '{}',
+            audience_json TEXT NOT NULL DEFAULT '{}',
+            content_pillars_json TEXT NOT NULL DEFAULT '[]',
+            brand_json TEXT NOT NULL DEFAULT '{}',
+            voice_json TEXT NOT NULL DEFAULT '{}',
+            disclosure TEXT NOT NULL DEFAULT 'Fictional adult character. AI-generated synthetic media.',
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(persona_id) REFERENCES personas(id),
+            FOREIGN KEY(persona_version_id) REFERENCES persona_versions(id)
+        );
         CREATE TABLE IF NOT EXISTS reference_images (
             id TEXT PRIMARY KEY, persona_id TEXT NOT NULL,
             filename TEXT NOT NULL, label TEXT NOT NULL, created_at TEXT NOT NULL,
@@ -335,6 +352,8 @@ def initialize():
         CREATE INDEX IF NOT EXISTS idx_content_pack_items_asset ON content_pack_items(asset_id);
         CREATE INDEX IF NOT EXISTS idx_persona_versions_persona ON persona_versions(persona_id, version_no);
         CREATE INDEX IF NOT EXISTS idx_persona_versions_state ON persona_versions(state, created_at);
+        CREATE INDEX IF NOT EXISTS idx_creator_profiles_persona ON creator_profiles(persona_id, updated_at);
+        CREATE INDEX IF NOT EXISTS idx_creator_profiles_status ON creator_profiles(status, updated_at);
         CREATE INDEX IF NOT EXISTS idx_jobs_status_created ON jobs(status, created_at);
         CREATE INDEX IF NOT EXISTS idx_jobs_dispatch ON jobs(status, next_retry_at, created_at);
         CREATE INDEX IF NOT EXISTS idx_jobs_persona_created ON jobs(persona_id, created_at);
@@ -351,7 +370,7 @@ def initialize():
         CREATE INDEX IF NOT EXISTS idx_series_episodes_job ON series_episodes(job_id);
         """)
         con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_idempotency_key ON jobs(idempotency_key) WHERE idempotency_key IS NOT NULL")
-        con.execute("INSERT INTO schema_meta(key,value) VALUES('schema_version','13') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+        con.execute("INSERT INTO schema_meta(key,value) VALUES('schema_version','14') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
         # A durable queued row is safe to dispatch after restart. Only work
         # that may already have reached ComfyUI is interrupted and requires
         # prompt reconciliation or explicit operator retry.

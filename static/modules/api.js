@@ -88,6 +88,13 @@ export const post = (url, data, options = {}) => api(url, {
   body: JSON.stringify(data),
 });
 
+export const put = (url, data, options = {}) => api(url, {
+  ...options,
+  method: 'PUT',
+  headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+  body: JSON.stringify(data),
+});
+
 export const patch = (url, data, options = {}) => api(url, {
   ...options,
   method: 'PATCH',

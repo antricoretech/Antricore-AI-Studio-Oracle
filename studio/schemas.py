@@ -7,7 +7,7 @@ import secrets
 from pydantic import BaseModel, Field
 
 from .brief import PersonaCharacteristics
-from .policies import DEFAULT_NEGATIVE_PROMPT
+from .policies import AI_DISCLOSURE, DEFAULT_NEGATIVE_PROMPT
 
 
 class PersonaIn(BaseModel):
@@ -69,6 +69,30 @@ class ContentPackIn(BaseModel):
 
 class ContentPackReviewIn(BaseModel):
     review: str
+
+
+class ContentPillarIn(BaseModel):
+    key: str = Field(default="", max_length=80)
+    name: str = Field(min_length=2, max_length=120)
+    description: str = Field(default="", max_length=500)
+    formats: list[str] = Field(default_factory=list, max_length=12)
+    content_classes: list[str] = Field(default_factory=lambda: ["identity"], max_length=12)
+    identity_authority: str = Field(default="style", max_length=40)
+    identity_core: bool = False
+    audience_goal: str = Field(default="", max_length=300)
+    style_directives: dict = Field(default_factory=dict)
+    metadata: dict = Field(default_factory=dict)
+
+
+class CreatorProfileIn(BaseModel):
+    persona_version_id: str | None = None
+    personality: dict = Field(default_factory=dict)
+    audience: dict = Field(default_factory=dict)
+    content_pillars: list[ContentPillarIn] = Field(default_factory=list, max_length=20)
+    brand: dict = Field(default_factory=dict)
+    voice: dict = Field(default_factory=dict)
+    disclosure: str = Field(default=AI_DISCLOSURE, min_length=20, max_length=300)
+    metadata: dict = Field(default_factory=dict)
 
 
 class IdentityBenchmarkIn(BaseModel):

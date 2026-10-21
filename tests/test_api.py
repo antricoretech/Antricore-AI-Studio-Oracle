@@ -402,6 +402,42 @@ def test_identity_benchmark_binds_frozen_version_and_adult_glamour_anchor(client
     assert text_summary['eligible_for_selection'] is False
 
 
+def test_creator_profile_binds_persona_version_and_keeps_adult_pillar_in_identity_core(client):
+    persona = client.post('/api/personas', json={
+        'name': 'Creator Profile Test', 'age': 28,
+        'description': 'A fictional adult creator with a defined editorial voice.',
+        'appearance': 'Dark hair, warm skin, natural editorial features.',
+    }).json()
+    pid = persona['id']
+    empty = client.get(f'/api/personas/{pid}/creator-profile')
+    assert empty.status_code == 200
+    assert empty.json()['profile'] is None
+    saved = client.put(f'/api/personas/{pid}/creator-profile', json={
+        'personality': {'traits': 'Confident and witty', 'speech_style': 'Warm and direct'},
+        'audience': {'primary': 'Adults interested in fashion and lifestyle'},
+        'brand': {'positioning': 'Luxury fashion with relatable storytelling'},
+        'voice': {'tone': 'Smart and warm'},
+        'disclosure': 'Fictional adult creator. AI-generated synthetic media.',
+        'content_pillars': [
+            {'name': 'Fashion', 'content_classes': ['fashion'], 'identity_authority': 'style'},
+            {'name': 'Adult Glamour', 'content_classes': ['adult_glamour'], 'identity_authority': 'style'},
+        ],
+    })
+    assert saved.status_code == 200
+    body = saved.json()
+    assert body['version_state'] == 'draft'
+    assert body['profile']['persona_version_id'] == body['persona_version_id']
+    glamour = next(item for item in body['profile']['content_pillars'] if item['name'] == 'Adult Glamour')
+    assert glamour['identity_core'] is True
+    assert glamour['identity_authority'] == 'identity_and_style'
+    assert client.post(f'/api/personas/{pid}/freeze').status_code == 200
+    frozen = client.put(f'/api/personas/{pid}/creator-profile', json={
+        'disclosure': 'Fictional adult creator. AI-generated synthetic media.',
+        'content_pillars': [],
+    })
+    assert frozen.status_code == 409
+
+
 def test_link_redirect_and_review_validation(client):
     assert client.post('/api/links', json={"label": "Test", "destination": "http://example.com/"}).status_code == 400
     r = client.post('/api/links', json={"label": "Landing", "destination": "https://example.com/landing"})

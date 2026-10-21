@@ -32,6 +32,105 @@ def is_adult_glamour_content_class(content_class: str) -> bool:
     return content_class.strip().lower() in ADULT_GLAMOUR_CONTENT_CLASSES
 
 
+class CreatorProfileRepository:
+    JSON_FIELDS = ("personality_json", "audience_json", "content_pillars_json", "brand_json", "voice_json", "metadata_json")
+
+    @staticmethod
+    def _decode(profile: dict | None):
+        if not profile:
+            return None
+        result = dict(profile)
+        for field in CreatorProfileRepository.JSON_FIELDS:
+            raw = result.pop(field, "{}")
+            try:
+                result[field.removesuffix("_json")] = json.loads(raw or ("[]" if field == "content_pillars_json" else "{}"))
+            except (TypeError, json.JSONDecodeError):
+                result[field.removesuffix("_json")] = [] if field == "content_pillars_json" else {}
+        return result
+
+    @staticmethod
+    def get(persona_id: str, persona_version_id: str | None = None):
+        version = PersonaRepository.version(persona_id, persona_version_id) if persona_version_id else PersonaRepository.current_version(persona_id)
+        if not version:
+            return None
+        return CreatorProfileRepository._decode(db.row(
+            "SELECT * FROM creator_profiles WHERE persona_id=? AND persona_version_id=?",
+            (persona_id, version["id"]),
+        ))
+
+    @staticmethod
+    def _normalize_pillars(pillars: list[dict]) -> list[dict]:
+        normalized = []
+        for index, raw in enumerate(pillars):
+            name = str(raw.get("name") or "").strip()
+            if len(name) < 2:
+                raise ValueError("Every content pillar requires a name")
+            content_classes = list(dict.fromkeys(
+                str(value).strip().lower() for value in (raw.get("content_classes") or ["identity"]) if str(value).strip()
+            )) or ["identity"]
+            adult_glamour = any(is_adult_glamour_content_class(value) for value in content_classes)
+            identity_authority = str(raw.get("identity_authority") or "style").strip().lower()
+            if identity_authority not in {"identity", "style", "identity_and_style"}:
+                raise ValueError(f"Unsupported identity authority for content pillar '{name}'")
+            if adult_glamour:
+                identity_authority = "identity_and_style"
+            key = str(raw.get("key") or "").strip().lower()
+            if not key:
+                key = "".join(character if character.isalnum() else "_" for character in name).strip("_")[:80]
+            normalized.append({
+                "key": key or f"pillar_{index + 1}",
+                "name": name,
+                "description": str(raw.get("description") or "").strip()[:500],
+                "formats": list(dict.fromkeys(str(value).strip() for value in (raw.get("formats") or []) if str(value).strip()))[:12],
+                "content_classes": content_classes[:12],
+                "identity_authority": identity_authority,
+                "identity_core": bool(raw.get("identity_core")) or adult_glamour,
+                "audience_goal": str(raw.get("audience_goal") or "").strip()[:300],
+                "style_directives": dict(raw.get("style_directives") or {}),
+                "metadata": dict(raw.get("metadata") or {}),
+            })
+        return normalized
+
+    @staticmethod
+    def upsert(*, persona_id: str, persona_version_id: str | None, personality: dict,
+               audience: dict, content_pillars: list[dict], brand: dict, voice: dict,
+               disclosure: str, metadata: dict, updated_at: str):
+        version = PersonaRepository.version(persona_id, persona_version_id) if persona_version_id else PersonaRepository.current_version(persona_id)
+        if not version:
+            raise LookupError("PersonaVersion not found")
+        if version["state"] != "draft":
+            raise ValueError("Create a new draft PersonaVersion before editing the Creator Profile")
+        disclosure = disclosure.strip()
+        if len(disclosure) < 20:
+            raise ValueError("Creator Profile disclosure must be at least 20 characters")
+        normalized_pillars = CreatorProfileRepository._normalize_pillars(content_pillars)
+        existing = db.row(
+            "SELECT id, created_at FROM creator_profiles WHERE persona_id=? AND persona_version_id=?",
+            (persona_id, version["id"]),
+        )
+        profile_id = existing["id"] if existing else uuid.uuid4().hex
+        created_at = existing["created_at"] if existing else updated_at
+        db.write(
+            "INSERT INTO creator_profiles "
+            "(id,persona_id,persona_version_id,status,personality_json,audience_json,content_pillars_json,brand_json,voice_json,disclosure,metadata_json,created_at,updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) "
+            "ON CONFLICT(persona_version_id) DO UPDATE SET status=excluded.status, personality_json=excluded.personality_json, "
+            "audience_json=excluded.audience_json, content_pillars_json=excluded.content_pillars_json, brand_json=excluded.brand_json, "
+            "voice_json=excluded.voice_json, disclosure=excluded.disclosure, metadata_json=excluded.metadata_json, updated_at=excluded.updated_at",
+            (
+                profile_id, persona_id, version["id"], "draft",
+                json.dumps(dict(personality or {}), ensure_ascii=False, sort_keys=True),
+                json.dumps(dict(audience or {}), ensure_ascii=False, sort_keys=True),
+                json.dumps(normalized_pillars, ensure_ascii=False, sort_keys=True),
+                json.dumps(dict(brand or {}), ensure_ascii=False, sort_keys=True),
+                json.dumps(dict(voice or {}), ensure_ascii=False, sort_keys=True),
+                disclosure, json.dumps(dict(metadata or {}), ensure_ascii=False, sort_keys=True),
+                created_at, updated_at,
+            ),
+        )
+        return CreatorProfileRepository.get(persona_id, version["id"])
+
+
 class PersonaRepository:
     @staticmethod
     def get(persona_id: str):

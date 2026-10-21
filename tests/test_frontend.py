@@ -33,6 +33,9 @@ def test_frontend_is_module_split_and_static_modules_are_served():
         assert 'identity-benchmark-create-form' in workspace_js.text
         assert 'recordIdentityBenchmarkResult' in workspace_js.text
         assert '/api/identity-conditioning/catalog' in workspace_js.text
+        assert "['creator', 'Creator System'" in workspace_js.text
+        assert 'creator-profile-form' in workspace_js.text
+        assert 'Adult/glamour remains a content pillar inside the same Identity Core' in workspace_js.text
         for module in ('core.js', 'api.js', 'navigation.js', 'photostudio.js'):
             response = client.get('/static/modules/' + module)
             assert response.status_code == 200

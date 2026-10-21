@@ -49,10 +49,10 @@ from .policies import AI_DISCLOSURE
 from .preflight import resource_preflight, workflow_preflight
 from .provenance import manifest, media_metadata, quality_report, sha256_bytes
 from .identity_conditioning import method_catalog, scenario_catalog
-from .repositories import ContentPackRepository, IdentityBenchmarkRepository, JobRepository, PersonaRepository, ReferencePackRepository, SeriesRepository
+from .repositories import ContentPackRepository, CreatorProfileRepository, IdentityBenchmarkRepository, JobRepository, PersonaRepository, ReferencePackRepository, SeriesRepository
 from .readiness import evaluate as evaluate_readiness
 from .schemas import (
-    ContentPackIn, ContentPackReviewIn, IdentityBenchmarkIn, IdentityBenchmarkResultIn, JobIn, LinkIn, PersonaIn, ReviewIn, ReferencePackReviewIn, ReferencePackCanonicalIn, ReferencePackAssetLinkIn,
+    ContentPackIn, ContentPackReviewIn, CreatorProfileIn, IdentityBenchmarkIn, IdentityBenchmarkResultIn, JobIn, LinkIn, PersonaIn, ReviewIn, ReferencePackReviewIn, ReferencePackCanonicalIn, ReferencePackAssetLinkIn,
     SeriesEpisodeIn, SeriesIn, SeriesQueueIn, VoiceIn, PhotoStudioPromptIn, PhotoStudioGenerateIn,
     OrchestratorCompilePersonaIn, OrchestratorCreatePersonaIn, OrchestratorRenderAnchorIn, OrchestratorLockAnchorIn,
     OrchestratorSynthesizeScenesIn, OrchestratorBatchGenerateIn
@@ -769,6 +769,49 @@ def link_reference_pack_asset(pid: str, pack_id: str, item_id: str, payload: Ref
         return ReferencePackRepository.link_asset(
             persona_id=pid, pack_id=pack_id, item_id=item_id, asset_id=payload.asset_id,
         )
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@app.get("/api/personas/{pid}/creator-profile")
+def get_creator_profile(pid: str, persona_version_id: str | None = None):
+    must_persona(pid)
+    version = PersonaRepository.version(pid, persona_version_id) if persona_version_id else PersonaRepository.current_version(pid)
+    if not version:
+        raise HTTPException(409, "Persona has no persisted identity version")
+    return {
+        "persona_id": pid,
+        "persona_version_id": version["id"],
+        "version_state": version["state"],
+        "profile": CreatorProfileRepository.get(pid, version["id"]),
+    }
+
+
+@app.put("/api/personas/{pid}/creator-profile")
+def upsert_creator_profile(pid: str, payload: CreatorProfileIn):
+    must_persona(pid)
+    try:
+        profile = CreatorProfileRepository.upsert(
+            persona_id=pid,
+            persona_version_id=payload.persona_version_id,
+            personality=payload.personality,
+            audience=payload.audience,
+            content_pillars=[pillar.model_dump() if hasattr(pillar, "model_dump") else pillar.dict() for pillar in payload.content_pillars],
+            brand=payload.brand,
+            voice=payload.voice,
+            disclosure=payload.disclosure,
+            metadata=payload.metadata,
+            updated_at=now(),
+        )
+        version = PersonaRepository.version(pid, profile["persona_version_id"])
+        return {
+            "persona_id": pid,
+            "persona_version_id": profile["persona_version_id"],
+            "version_state": version["state"] if version else "draft",
+            "profile": profile,
+        }
     except LookupError as exc:
         raise HTTPException(404, str(exc)) from exc
     except ValueError as exc:
