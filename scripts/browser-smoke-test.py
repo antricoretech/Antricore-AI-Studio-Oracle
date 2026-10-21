@@ -30,7 +30,8 @@ def main(argv=None) -> int:
             page.goto(args.url, wait_until="networkidle", timeout=30000)
             assert page.locator(".brand-title h1").is_visible(), "legacy brand is not visible"
             assert page.locator("#global-persona-select").is_visible(), "legacy persona selector is not visible"
-            assert page.locator("a[href='/workspace']").is_visible(), "canonical workspace bridge is not visible"
+            workspace_bridge = page.locator("a[data-canonical-workspace-link]")
+            assert workspace_bridge.count() == 1, "canonical workspace bridge is missing"
             canonical_targets = {
                 "personas": "/workspace#personas",
                 "production": "/workspace#production",
@@ -40,6 +41,7 @@ def main(argv=None) -> int:
             }
             active_persona_id = page.locator("#global-persona-select").input_value()
             assert active_persona_id, "legacy active persona selector did not resolve"
+            assert workspace_bridge.get_attribute("href") == f"/workspace?persona_id={active_persona_id}", "canonical workspace bridge lost Persona context"
             for target, href in canonical_targets.items():
                 bridge = page.locator(f"a[data-canonical-target='{target}']")
                 assert bridge.count() == 1, f"missing legacy-to-canonical bridge: {target}"

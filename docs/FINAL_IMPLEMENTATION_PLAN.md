@@ -340,6 +340,10 @@ resolves that query against the canonical Persona registry before loading the
 requested view. This keeps PersonaVersion context aligned across the bridge
 without creating a second client-side identity store.
 
+The root shell's direct “Open Canonical Workspace” entry follows the same
+rule, so users cannot lose the selected Persona simply by leaving a legacy tab
+through the global bridge.
+
 ### Cross-cutting frontend migration workstream
 
 The current static frontend is a legacy shell and is not considered aligned

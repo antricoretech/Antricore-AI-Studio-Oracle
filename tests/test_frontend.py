@@ -9,6 +9,7 @@ def test_frontend_is_module_split_and_static_modules_are_served():
         assert index.status_code == 200
         assert 'type="module"' in index.text
         assert 'href="/workspace"' in index.text
+        assert 'data-canonical-workspace-link' in index.text
         for target in ('personas', 'production', 'content-packs', 'assets', 'overview'):
             assert f'data-canonical-target="{target}"' in index.text
         app_js = client.get('/static/app.js')

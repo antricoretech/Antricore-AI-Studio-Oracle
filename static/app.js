@@ -1457,6 +1457,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function syncCanonicalSurfaceLinks(personaId = state.activePersonaId) {
     const targetPersonaId = String(personaId || '').trim();
+    document.querySelectorAll('[data-canonical-workspace-link]').forEach((link) => {
+      const query = targetPersonaId ? `?persona_id=${encodeURIComponent(targetPersonaId)}` : '';
+      link.setAttribute('href', `/workspace${query}`);
+    });
     document.querySelectorAll('[data-canonical-target]').forEach((link) => {
       const target = link.getAttribute('data-canonical-target');
       if (!target) return;
