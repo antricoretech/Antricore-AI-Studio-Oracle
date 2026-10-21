@@ -79,7 +79,8 @@ def generate_render(
     persona_name: str = "Creator",
     seed: Optional[int] = None,
     steps: int = 20,
-    guidance_scale: float = 5.0
+    guidance_scale: float = 5.0,
+    register_asset: bool = True,
 ) -> Dict[str, Any]:
     """
     Executes real neural diffusion inference on Apple MPS using Juggernaut XL v10 / CyberRealistic XL.
@@ -120,20 +121,24 @@ def generate_render(
     rel_url = f"/generated/renders/{filename}"
     print(f"[Diffusion Engine] Saved render in {elapsed}s to {rel_url}")
 
-    # Register into SQLite database assets table
-    try:
-        from . import database as db
-        aid = f"render-{timestamp}-{actual_seed}"
-        version = db.row(
-            "SELECT id FROM persona_versions WHERE persona_id=? ORDER BY version_no DESC LIMIT 1",
-            (persona_id,),
-        )
-        db.write(
-            "INSERT INTO assets (id, persona_id, persona_version_id, filename, kind, prompt, review, rights_confirmed, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (aid, persona_id, version["id"] if version else None, filename, "image", prompt, "pending", 1, time.strftime("%Y-%m-%d %H:%M:%S"))
-        )
-    except Exception as db_err:
-        print(f"[Diffusion Engine] Database write notice: {db_err}")
+    # The canonical API route registers bytes through studio.assets so it can
+    # attach Job lineage, hashes, quality metadata, and the configured output
+    # store. Keep the legacy registration path for vault compatibility until
+    # that background workflow is migrated separately.
+    if register_asset:
+        try:
+            from . import database as db
+            aid = f"render-{timestamp}-{actual_seed}"
+            version = db.row(
+                "SELECT id FROM persona_versions WHERE persona_id=? ORDER BY version_no DESC LIMIT 1",
+                (persona_id,),
+            )
+            db.write(
+                "INSERT INTO assets (id, persona_id, persona_version_id, filename, kind, prompt, review, rights_confirmed, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (aid, persona_id, version["id"] if version else None, filename, "image", prompt, "pending", 1, time.strftime("%Y-%m-%d %H:%M:%S"))
+            )
+        except Exception as db_err:
+            print(f"[Diffusion Engine] Database write notice: {db_err}")
 
     return {
         "status": "completed",

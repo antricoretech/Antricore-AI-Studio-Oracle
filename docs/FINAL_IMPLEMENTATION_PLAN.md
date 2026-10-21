@@ -428,6 +428,16 @@ request-bound until persistent worker, retry, cancellation, and restart
 recovery work in Phase 4; the unique database index also closes concurrent
 idempotency races.
 
+Phase 3 slice 3 is complete: the legacy `/api/v2/orchestrator/generate`
+photoshoot route now creates a canonical Job, supports bounded idempotency,
+registers successful diffusion output through the shared asset boundary, and
+stores compatibility fallback media through the same pending-review path.
+Its legacy response shape remains available, but the returned media URL now
+resolves through `/api/assets/{asset_id}/file` and carries Job/asset lineage.
+The diffusion engine can skip its legacy SQLite write when called by this
+route; the older Master Vault background generator remains a separate legacy
+workflow for a later migration.
+
 ### Cross-cutting frontend migration workstream
 
 The current static frontend is a legacy shell and is not considered aligned

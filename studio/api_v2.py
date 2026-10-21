@@ -23,16 +23,20 @@ import json
 import time
 
 import threading
+import sqlite3
+import re
+import uuid
 
 from pathlib import Path
 
 from typing import Dict, List, Optional, Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Header, HTTPException, Request
 
 from pydantic import BaseModel
 from . import database as db
-from .repositories import ContentPackRepository, PersonaRepository, ReferencePackRepository
+from .assets import register_media_asset
+from .repositories import ContentPackRepository, JobRepository, PersonaRepository, ReferencePackRepository
 from .schemas import ContentPackIn, ContentPackReviewIn, ReferencePackAssetLinkIn, ReferencePackCanonicalIn, ReferencePackReviewIn
 
 try:
@@ -48,6 +52,76 @@ except ImportError:
 router = APIRouter()
 
 ROOT = Path(__file__).resolve().parents[1]
+_IDEMPOTENCY_KEY_PATTERN = re.compile(r"[A-Za-z0-9._:-]{1,128}")
+
+
+def _v2_idempotency_key(value: str | None) -> str | None:
+    key = (value or "").strip()
+    if not key:
+        return None
+    if not _IDEMPOTENCY_KEY_PATTERN.fullmatch(key):
+        raise HTTPException(400, "Idempotency-Key must contain only letters, numbers, '.', '_', ':', or '-'")
+    return key
+
+
+def _v2_reusable_result(existing: dict) -> dict:
+    if existing["status"] == "completed":
+        try:
+            return json.loads(existing.get("result_json") or "{}")
+        except (TypeError, json.JSONDecodeError):
+            raise HTTPException(409, "Completed idempotent job has no reusable result") from None
+    raise HTTPException(409, f"Idempotency key is already associated with job {existing['id']} ({existing['status']})")
+
+
+def _v2_start_job(*, persona: dict, version: dict | None, payload: BaseModel, prompt: str, model: str, key: str | None):
+    normalized = _v2_idempotency_key(key)
+    if normalized:
+        existing = JobRepository.by_idempotency_key(normalized)
+        if existing:
+            return None, _v2_reusable_result(existing)
+    job_id = f"v2_render_{uuid.uuid4().hex}"
+    request_json = payload.model_dump_json() if hasattr(payload, "model_dump_json") else payload.json()
+    lineage = {
+        "execution_mode": "legacy_photoshoot",
+        "persona_id": persona["id"],
+        "persona_version_id": version["id"] if version else None,
+        "workflow_id": "legacy_photoshoot_render",
+        "model": model,
+    }
+    try:
+        JobRepository.create(
+            job_id=job_id,
+            persona_id=persona["id"],
+            workflow_id="legacy_photoshoot_render",
+            kind="image",
+            prompt=prompt,
+            request_json=request_json,
+            lineage_json=json.dumps(lineage, separators=(",", ":")),
+            created_at=_utc_now(),
+            idempotency_key=normalized,
+        )
+    except sqlite3.IntegrityError:
+        if not normalized:
+            raise
+        existing = JobRepository.by_idempotency_key(normalized)
+        if not existing:
+            raise
+        return None, _v2_reusable_result(existing)
+    return job_id, None
+
+
+def _v2_job_completed(job_id: str, result: dict) -> None:
+    db.write(
+        "UPDATE jobs SET status='completed', result_json=?, finished_at=?, updated_at=? WHERE id=?",
+        (json.dumps(result, ensure_ascii=False), _utc_now(), _utc_now(), job_id),
+    )
+
+
+def _v2_job_failed(job_id: str, error: Exception) -> None:
+    db.write(
+        "UPDATE jobs SET status='failed', error=?, finished_at=?, updated_at=? WHERE id=?",
+        (str(error)[:1500], _utc_now(), _utc_now(), job_id),
+    )
 
 
 
@@ -4326,7 +4400,7 @@ class PhotoshootRenderIn(BaseModel):
 
 @router.post("/orchestrator/generate")
 
-def generate_photoshoot_render(payload: PhotoshootRenderIn):
+def generate_photoshoot_render(payload: PhotoshootRenderIn, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
 
     """
 
@@ -4372,6 +4446,22 @@ def generate_photoshoot_render(payload: PhotoshootRenderIn):
 
     p_name = target_p["name"] if target_p else "Creator"
 
+    canonical_persona = PersonaRepository.get(target_pid)
+    if not canonical_persona:
+        raise HTTPException(404, "Persona is not available in the canonical store")
+    version = PersonaRepository.current_version(target_pid)
+    job_id, reused = _v2_start_job(
+        persona=canonical_persona,
+        version=version,
+        payload=payload,
+        prompt=payload.prompt,
+        model=payload.model or "juggernaut-xl-v10",
+        key=idempotency_key,
+    )
+    if reused is not None:
+        return reused
+    db.write("UPDATE jobs SET status='running', updated_at=? WHERE id=?", (_utc_now(), job_id))
+
 
 
     # Attempt real neural diffusion render on Apple Silicon MPS
@@ -4396,10 +4486,35 @@ def generate_photoshoot_render(payload: PhotoshootRenderIn):
 
             steps=20,
 
-            guidance_scale=5.0
+            guidance_scale=5.0,
+
+            register_asset=False
 
         )
-
+        source_path = diffusion_engine.RENDERS_DIR / result["filename"]
+        raw = source_path.read_bytes()
+        asset = register_media_asset(
+            persona_id=target_pid,
+            persona_version_id=version["id"] if version else None,
+            job_id=job_id,
+            kind="image",
+            prompt=payload.prompt,
+            raw=raw,
+            disclosure=canonical_persona.get("disclosure"),
+            rights_confirmed=True,
+            original_filename=result.get("filename"),
+            lineage={"job_id": job_id, "execution_mode": "legacy_photoshoot", "model": payload.model},
+        )
+        result = {
+            **result,
+            "status": "completed",
+            "id": asset["id"],
+            "asset_id": asset["id"],
+            "job_id": job_id,
+            "image_url": f"/api/assets/{asset['id']}/file",
+        }
+        _v2_job_completed(job_id, result)
+        source_path.unlink(missing_ok=True)
         return result
 
     except Exception as exc:
@@ -4438,44 +4553,44 @@ def generate_photoshoot_render(payload: PhotoshootRenderIn):
 
 
 
-        try:
+        fallback_path = None
+        if selected_img.startswith("/generated/"):
+            generated_root = (ROOT / "generated").resolve()
+            candidate = (generated_root / selected_img.removeprefix("/generated/")).resolve()
+            if generated_root in candidate.parents and candidate.is_file():
+                fallback_path = candidate
+        if not fallback_path:
+            _v2_job_failed(job_id, exc)
+            raise HTTPException(503, f"Photoshoot render unavailable: {str(exc)[:250]}") from exc
+        asset = register_media_asset(
+            persona_id=target_pid,
+            persona_version_id=version["id"] if version else None,
+            job_id=job_id,
+            kind="image",
+            prompt=payload.prompt,
+            raw=fallback_path.read_bytes(),
+            disclosure=canonical_persona.get("disclosure"),
+            rights_confirmed=True,
+            original_filename=fallback_path.name,
+            lineage={"job_id": job_id, "execution_mode": "legacy_photoshoot_fallback", "fallback_reason": str(exc)[:250]},
+        )
 
-            from . import database as db
-
-            aid = f"render-{int(time.time() * 1000)}"
-
-            db.write(
-
-                "INSERT INTO assets (id, persona_id, filename, kind, prompt, review, rights_confirmed, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-
-                (aid, target_pid, selected_img.split("/")[-1], "image", payload.prompt, "pending", 1, time.strftime("%Y-%m-%d %H:%M:%S"))
-
-            )
-
-        except Exception:
-
-            pass
 
 
-
-        return {
-
+        result = {
             "status": "completed",
-
-            "image_url": selected_img,
-
+            "id": asset["id"],
+            "asset_id": asset["id"],
+            "job_id": job_id,
+            "image_url": f"/api/assets/{asset['id']}/file",
             "aspect_ratio": payload.aspect_ratio,
-
             "seed": int(time.time()) % 100000,
-
             "elapsed_seconds": 2.1,
-
             "model": payload.model,
-
             "persona_id": target_pid,
-
             "persona_name": p_name,
-
+            "fallback": True,
             "notice": f"Rendered with persona anchor fallback: {str(exc)[:120]}"
-
         }
+        _v2_job_completed(job_id, result)
+        return result

@@ -385,6 +385,59 @@ def test_photo_studio_generation_starts_in_pending_review(client, monkeypatch):
     assert jobs[0]['result']['id'] == response.json()['id']
 
 
+def test_legacy_photoshoot_render_uses_canonical_job_and_asset(client, monkeypatch, tmp_path):
+    import studio.diffusion_engine as diffusion_engine
+
+    persona = client.post('/api/personas', json={
+        'name': 'Legacy Bridge', 'age': 30,
+        'appearance': 'dark hair and green eyes',
+        'description': 'fictional adult editorial creator'
+    }).json()
+    render_dir = tmp_path / 'renders'
+    render_dir.mkdir()
+    monkeypatch.setattr(diffusion_engine, 'RENDERS_DIR', render_dir)
+
+    def fake_generate_render(**kwargs):
+        assert kwargs['register_asset'] is False
+        filename = 'render_legacy_bridge.png'
+        Image.new('RGB', (24, 24), 'plum').save(render_dir / filename, format='PNG')
+        return {
+            'status': 'completed', 'image_url': f'/generated/renders/{filename}',
+            'aspect_ratio': kwargs['aspect_ratio'], 'width': 24, 'height': 24,
+            'seed': 42, 'elapsed_seconds': 0.01, 'model': kwargs['model_id'],
+            'persona_id': kwargs['persona_id'], 'persona_name': kwargs['persona_name'],
+            'filename': filename,
+        }
+
+    monkeypatch.setattr(diffusion_engine, 'generate_render', fake_generate_render)
+    request = {
+        'persona_id': persona['id'],
+        'prompt': 'Editorial portrait in a studio',
+        'negative_prompt': 'blurry',
+        'aspect_ratio': '1:1',
+        'model': 'juggernaut-xl-v10',
+    }
+    response = client.post('/api/v2/orchestrator/generate', json=request, headers={'Idempotency-Key': 'legacy-render-repeat-1'})
+    assert response.status_code == 200
+    result = response.json()
+    assert result['job_id']
+    assert result['asset_id'] == result['id']
+    assert result['image_url'].startswith('/api/assets/')
+    assert client.get(result['image_url']).status_code == 200
+
+    asset = next(item for item in client.get('/api/assets').json() if item['id'] == result['asset_id'])
+    assert asset['job_id'] == result['job_id']
+    assert asset['review'] == 'pending'
+    jobs = [job for job in client.get('/api/jobs').json() if job['id'] == result['job_id']]
+    assert jobs and jobs[0]['status'] == 'completed'
+    assert jobs[0]['result']['asset_id'] == result['asset_id']
+
+    repeated = client.post('/api/v2/orchestrator/generate', json=request, headers={'Idempotency-Key': 'legacy-render-repeat-1'})
+    assert repeated.status_code == 200
+    assert repeated.json()['asset_id'] == result['asset_id']
+    assert len([item for item in client.get('/api/assets').json() if item['id'] == result['asset_id']]) == 1
+
+
 def test_import_local_pipeline_output_requires_disclosure_and_starts_pending_review(client):
     persona = client.post('/api/personas', json={
         'name': 'Tala Reed', 'age': 31,
