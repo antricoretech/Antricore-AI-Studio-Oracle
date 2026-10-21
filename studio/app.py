@@ -14,6 +14,7 @@ import re
 import secrets
 import shutil
 import sys
+import tempfile
 import time
 import uuid
 import logging
@@ -37,10 +38,11 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from . import database as db
+from .assets import asset_file as resolve_asset_file, reference_path, register_media_asset, validate_import_suffix
 from .brief import PersonaBrief, PersonaCharacteristics, brief_dict, parse_brief_bytes, parse_persona_bytes
 from .comfy import ComfyClient, output_files, render_graph, validate_graph
 from .engines import get as get_engine, rows as engine_rows
-from .media import extension_for, read_limited, validate_image_bytes, validate_media_signature
+from .media import read_limited, validate_image_bytes, validate_media_signature
 from .model_registry import get as get_model, rows as model_rows, workflow_model
 from .policies import AI_DISCLOSURE
 from .preflight import workflow_preflight
@@ -696,38 +698,50 @@ async def add_reference(pid: str, file: UploadFile = File(...), label: str = For
         extension = validate_image_bytes(raw)
     except Exception as e:
         raise HTTPException(400, f"Invalid PNG, JPEG, or WEBP image: {e}") from e
-    rid = uid()
-    aid = uid()
-    filename = aid + extension
-    (db.UPLOADS / filename).write_bytes(raw)
-    (db.OUTPUTS / filename).write_bytes(raw)
     version = PersonaRepository.current_version(pid)
     normalized_label = label.strip()[:100]
     label_lower = normalized_label.lower()
     role = "identity_anchor" if any(term in label_lower for term in ("master", "anchor", "identity")) else "supporting"
     content_class = "adult_glamour" if any(term in label_lower for term in ("adult", "boudoir", "lingerie", "glamour", "intimate")) else "identity"
-    metadata = media_metadata(raw, "image", filename)
-    quality = quality_report(db.OUTPUTS / filename, "image", AI_DISCLOSURE)
+    asset = register_media_asset(
+        persona_id=pid,
+        persona_version_id=version["id"] if version else None,
+        job_id=None,
+        kind="image",
+        prompt=normalized_label,
+        raw=raw,
+        disclosure=AI_DISCLOSURE,
+        rights_confirmed=True,
+        original_filename=file.filename,
+        lineage={"source": "operator_upload"},
+    )
+    aid = asset["id"]
+    filename = asset["filename"]
+    rid = uid()
     created = now()
-    db.write_many([
-        (
-            "INSERT INTO assets (id, persona_id, persona_version_id, job_id, filename, kind, prompt, review, rights_confirmed, disclosure, created_at, sha256, metadata_json, quality_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (aid, pid, version["id"] if version else None, None, filename, "image", normalized_label, "pending", 1, AI_DISCLOSURE, created, sha256_bytes(raw), json.dumps(metadata), json.dumps(quality)),
-        ),
-        (
-            "INSERT INTO reference_images (id, persona_id, filename, label, created_at, asset_id, persona_version_id, role, content_class, review, rights_confirmed, metadata_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-            (rid, pid, filename, normalized_label, created, aid, version["id"] if version else None, role, content_class, "pending", 1, json.dumps({"source": "operator_upload"})),
-        ),
-    ])
+    db.write(
+        "INSERT INTO reference_images (id, persona_id, filename, label, created_at, asset_id, persona_version_id, role, content_class, review, rights_confirmed, metadata_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        (rid, pid, filename, normalized_label, created, aid, version["id"] if version else None, role, content_class, "pending", 1, json.dumps({"source": "operator_upload"})),
+    )
     return {"id": rid, "asset_id": aid, "label": normalized_label, "role": role, "content_class": content_class, "review": "pending", "persona_version_id": version["id"] if version else None, "url": f"/api/references/{rid}/file", "asset_url": f"/api/assets/{aid}/file"}
 
 
 @app.get("/api/references/{rid}/file")
 def reference_file(rid: str):
-    row = db.row("SELECT filename FROM reference_images WHERE id=?", (rid,))
+    row = db.row("SELECT filename, asset_id FROM reference_images WHERE id=?", (rid,))
     if not row:
         raise HTTPException(404)
-    return FileResponse(db.UPLOADS / row["filename"])
+    if row.get("asset_id"):
+        asset = db.row("SELECT * FROM assets WHERE id=?", (row["asset_id"],))
+        if asset:
+            try:
+                return FileResponse(resolve_asset_file(asset))
+            except FileNotFoundError:
+                raise HTTPException(404, "Reference media file is missing") from None
+    path = reference_path(row["filename"])
+    if not path.is_file():
+        raise HTTPException(404, "Reference media file is missing")
+    return FileResponse(path)
 
 
 @app.get("/api/workflows")
@@ -798,20 +812,26 @@ async def execute_job(job_id, payload: JobIn, person: dict):
                     ref = db.row("SELECT * FROM reference_images WHERE id=? AND persona_id=?", (payload.reference_id, payload.persona_id))
                     if not ref:
                         raise ValueError("Reference does not belong to this persona")
-                    content = (db.UPLOADS / ref["filename"]).read_bytes()
+                    if ref.get("asset_id"):
+                        ref_asset = db.row("SELECT * FROM assets WHERE id=?", (ref["asset_id"],))
+                        if not ref_asset:
+                            raise ValueError("Reference asset is missing")
+                        content = resolve_asset_file(ref_asset).read_bytes()
+                    else:
+                        content = reference_path(ref["filename"]).read_bytes()
                     filename = ref["filename"]
                 else:
                     source = db.row("SELECT * FROM assets WHERE id=? AND persona_id=?", (payload.source_asset_id, payload.persona_id))
                     if not source or source["kind"] != "image":
                         raise ValueError("Source asset not found or is not an image")
-                    content = (db.OUTPUTS / source["filename"]).read_bytes()
+                    content = resolve_asset_file(source).read_bytes()
                     filename = source["filename"]
                 values["REFERENCE_IMAGE"] = await client.upload_reference(content, filename)
             if payload.audio_asset_id:
                 audio = db.row("SELECT * FROM assets WHERE id=? AND persona_id=? AND kind='audio'", (payload.audio_asset_id, payload.persona_id))
                 if not audio:
                     raise ValueError("Selected audio asset does not belong to this persona")
-                values["AUDIO_FILENAME"] = await client.upload_audio((db.OUTPUTS / audio["filename"]).read_bytes(), audio["filename"])
+                values["AUDIO_FILENAME"] = await client.upload_audio(resolve_asset_file(audio).read_bytes(), audio["filename"])
             graph = render_graph(graph, values)
             prompt_id = await client.submit(graph)
             db.write("UPDATE jobs SET status='submitted', comfy_prompt_id=?, updated_at=? WHERE id=?", (prompt_id, now(), job_id))
@@ -826,15 +846,20 @@ async def execute_job(job_id, payload: JobIn, person: dict):
                 ext = Path(item["filename"]).suffix.lower()
                 if ext not in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm", ".wav", ".mp3", ".flac"}:
                     continue
-                aid = uid()
-                dest = aid + ext
-                (db.OUTPUTS / dest).write_bytes(content)
                 kind = "video" if ext in {".mp4", ".webm", ".gif"} else "audio" if ext in {".wav", ".mp3", ".flac"} else "image"
                 disclosure = person.get("disclosure") or AI_DISCLOSURE
-                metadata = media_metadata(content, kind, dest)
-                quality = quality_report(db.OUTPUTS / dest, kind, disclosure, lineage={"job_id": job_id})
-                db.write("INSERT INTO assets (id,persona_id,persona_version_id,job_id,filename,kind,prompt,rights_confirmed,disclosure,created_at,sha256,metadata_json,quality_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                         (aid, person["id"], persona_version["id"] if persona_version else None, job_id, dest, kind, payload.prompt, 1, disclosure, now(), sha256_bytes(content), json.dumps(metadata), json.dumps(quality)))
+                register_media_asset(
+                    persona_id=person["id"],
+                    persona_version_id=persona_version["id"] if persona_version else None,
+                    job_id=job_id,
+                    kind=kind,
+                    prompt=payload.prompt,
+                    raw=content,
+                    disclosure=disclosure,
+                    rights_confirmed=payload.rights_confirmed,
+                    original_filename=item["filename"],
+                    lineage={"job_id": job_id, "workflow_id": payload.workflow_id},
+                )
             db.write("UPDATE jobs SET status='completed', finished_at=?, updated_at=? WHERE id=?", (now(), now(), job_id))
             db.write("UPDATE series_episodes SET status='completed' WHERE job_id=?", (job_id,))
             logger.info("job_completed", extra=_log_data({"job_id": job_id, "outputs": len(files)}))
@@ -1034,7 +1059,7 @@ async def import_asset(
         raise HTTPException(400, "Include a clear AI-generated disclosure")
     try:
         raw = await read_limited(file, get_settings().asset_max_bytes)
-        suffix = extension_for(kind, file.filename or "")
+        validate_import_suffix(kind, file.filename or "")
         if kind == "image":
             # Images are always decoded so a renamed executable cannot enter the media vault.
             suffix = validate_image_bytes(raw)
@@ -1042,25 +1067,32 @@ async def import_asset(
             validate_media_signature(raw, kind, strict=get_settings().strict_media_validation)
     except ValueError as exc:
         raise HTTPException(413 if "exceeds" in str(exc) else 400, str(exc)) from exc
-    aid = uid()
-    destination = aid + suffix
-    db.OUTPUTS.mkdir(parents=True, exist_ok=True)
-    (db.OUTPUTS / destination).write_bytes(raw)
     disclosure = disclosure.strip()[:300]
-    metadata = media_metadata(raw, kind, destination)
-    quality = quality_report(db.OUTPUTS / destination, kind, disclosure)
     persona_version = PersonaRepository.current_version(person["id"])
-    db.write("INSERT INTO assets (id,persona_id,persona_version_id,job_id,filename,kind,prompt,rights_confirmed,disclosure,created_at,sha256,metadata_json,quality_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-             (aid, person["id"], persona_version["id"] if persona_version else None, None, destination, kind, prompt.strip()[:3000], 1, disclosure, now(), sha256_bytes(raw), json.dumps(metadata), json.dumps(quality)))
-    return {"id": aid, "kind": kind, "review": "pending", "url": f"/api/assets/{aid}/file"}
+    asset = register_media_asset(
+        persona_id=person["id"],
+        persona_version_id=persona_version["id"] if persona_version else None,
+        job_id=None,
+        kind=kind,
+        prompt=prompt.strip()[:3000],
+        raw=raw,
+        disclosure=disclosure,
+        rights_confirmed=True,
+        original_filename=file.filename,
+        lineage={"source": "local_import"},
+    )
+    return {"id": asset["id"], "kind": kind, "review": asset["review"], "url": f"/api/assets/{asset['id']}/file"}
 
 
 @app.get("/api/assets/{aid}/file")
 def asset_file(aid: str):
-    asset = db.row("SELECT filename FROM assets WHERE id=?", (aid,))
+    asset = db.row("SELECT * FROM assets WHERE id=?", (aid,))
     if not asset:
         raise HTTPException(404, "Asset not found")
-    return FileResponse(db.OUTPUTS / asset["filename"])
+    try:
+        return FileResponse(resolve_asset_file(asset))
+    except FileNotFoundError:
+        raise HTTPException(404, "Asset media file is missing") from None
 
 
 def _asset_bundle(aid: str):
@@ -1069,7 +1101,11 @@ def _asset_bundle(aid: str):
         raise HTTPException(404, "Asset not found")
     job = db.row("SELECT * FROM jobs WHERE id=?", (asset.get("job_id"),)) if asset.get("job_id") else None
     person = db.row("SELECT * FROM personas WHERE id=?", (asset["persona_id"],))
-    quality = quality_report(db.OUTPUTS / asset["filename"], asset["kind"], asset.get("disclosure") or AI_DISCLOSURE,
+    try:
+        path = resolve_asset_file(asset)
+    except FileNotFoundError:
+        raise HTTPException(404, "Asset media file is missing") from None
+    quality = quality_report(path, asset["kind"], asset.get("disclosure") or AI_DISCLOSURE,
                              lineage={"job_id": asset.get("job_id")} if asset.get("job_id") else None,
                              expected_sha256=asset.get("sha256"))
     return asset, job, person, quality
@@ -1097,7 +1133,7 @@ def asset_package(aid: str):
     payload = manifest(asset, job=job, persona=person, quality=quality)
     archive = BytesIO()
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
-        bundle.writestr(asset["filename"], (db.OUTPUTS / asset["filename"]).read_bytes())
+        bundle.writestr(asset["filename"], resolve_asset_file(asset).read_bytes())
         bundle.writestr("manifest.json", json.dumps(payload, indent=2, ensure_ascii=False))
         bundle.writestr("AI-DISCLOSURE.txt", asset.get("disclosure") or AI_DISCLOSURE)
     archive.seek(0)
@@ -1126,20 +1162,30 @@ def set_review(aid: str, payload: ReviewIn):
 async def create_voice(payload: VoiceIn):
     person = must_persona(payload.persona_id)
     aid = uid()
-    destination = db.OUTPUTS / (aid + ".wav")
     from .voice import synthesize
+    temp_path = Path(tempfile.gettempdir()) / f"studio_voice_{aid}.wav"
     try:
-        await asyncio.to_thread(synthesize, payload.text, payload.voice, destination)
+        await asyncio.to_thread(synthesize, payload.text, payload.voice, temp_path)
+        raw = temp_path.read_bytes()
     except Exception as e:
         raise HTTPException(503, f"Voice generation unavailable: {str(e)[:250]}") from e
-    raw = destination.read_bytes()
+    finally:
+        temp_path.unlink(missing_ok=True)
     disclosure = person.get("disclosure") or AI_DISCLOSURE
-    metadata = media_metadata(raw, "audio", aid + ".wav")
-    quality = quality_report(destination, "audio", disclosure)
     persona_version = PersonaRepository.current_version(person["id"])
-    db.write("INSERT INTO assets (id,persona_id,persona_version_id,job_id,filename,kind,prompt,rights_confirmed,disclosure,created_at,sha256,metadata_json,quality_json) VALUES (?,?,?,NULL,?,?,?,?,?,?,?,?,?)",
-             (aid, person["id"], persona_version["id"] if persona_version else None, aid + ".wav", "audio", payload.text, 1, disclosure, now(), sha256_bytes(raw), json.dumps(metadata), json.dumps(quality)))
-    return {"id": aid, "url": f"/api/assets/{aid}/file"}
+    asset = register_media_asset(
+        persona_id=person["id"],
+        persona_version_id=persona_version["id"] if persona_version else None,
+        job_id=None,
+        kind="audio",
+        prompt=payload.text,
+        raw=raw,
+        disclosure=disclosure,
+        rights_confirmed=True,
+        original_filename="voice.wav",
+        lineage={"source": "voice_generation"},
+    )
+    return {"id": asset["id"], "url": f"/api/assets/{asset['id']}/file"}
 
 
 @app.post("/api/links", status_code=201)
@@ -1274,9 +1320,8 @@ async def photo_studio_generate(payload: PhotoStudioGenerateIn):
     if not payload.rights_confirmed:
         raise HTTPException(400, "Rights confirmation required")
 
-    aid = uid()
-    filename = f"photo_studio_{aid}.png"
-    destination = db.OUTPUTS / filename
+    temp_id = uid()
+    destination = Path(tempfile.gettempdir()) / f"studio_photo_{temp_id}.png"
     seed = payload.seed if payload.seed is not None else secrets.randbelow(1_000_000_000)
 
     from types import SimpleNamespace
@@ -1307,18 +1352,23 @@ async def photo_studio_generate(payload: PhotoStudioGenerateIn):
         raise HTTPException(500, "Image generation produced no output file")
 
     raw = destination.read_bytes()
+    destination.unlink(missing_ok=True)
     disclosure = person.get("disclosure") or AI_DISCLOSURE
-    metadata = media_metadata(raw, "image", filename)
-    quality = quality_report(destination, "image", disclosure)
     version = PersonaRepository.current_version(person["id"])
-
-    db.write(
-        "INSERT INTO assets (id, persona_id, persona_version_id, job_id, filename, kind, prompt, review, rights_confirmed, disclosure, created_at, sha256, metadata_json, quality_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        (aid, person["id"], version["id"] if version else None, None, filename, "image", payload.prompt, "pending", 1, disclosure, now(), sha256_bytes(raw), json.dumps(metadata), json.dumps(quality)),
+    asset = register_media_asset(
+        persona_id=person["id"],
+        persona_version_id=version["id"] if version else None,
+        job_id=None,
+        kind="image",
+        prompt=payload.prompt,
+        raw=raw,
+        disclosure=disclosure,
+        rights_confirmed=payload.rights_confirmed,
+        original_filename="photo_studio.png",
+        lineage={"source": "photo_studio_generation", "seed": seed},
     )
-
-    ref_dest = db.UPLOADS / filename
-    shutil.copy2(destination, ref_dest)
+    aid = asset["id"]
+    filename = asset["filename"]
     rid = uid()
     label = f"Photo Studio: {payload.prompt[:35]}..."
     content_class = "adult_glamour" if any(term in payload.prompt.lower() for term in ("adult", "boudoir", "lingerie", "glamour", "intimate")) else "identity"
@@ -1465,22 +1515,26 @@ async def orchestrator_render_anchor(payload: OrchestratorRenderAnchorIn):
         raise HTTPException(500, f"Master Anchor generation failed: {str(exc)[:300]}") from exc
 
     raw = dest_path.read_bytes()
-    aid = uid()
-    filename = dest_path.name
+    dest_path.unlink(missing_ok=True)
     disclosure = person.get("disclosure") or AI_DISCLOSURE
-    metadata = media_metadata(raw, "image", filename)
-    quality = quality_report(dest_path, "image", disclosure)
     version = PersonaRepository.current_version(person["id"])
-
-    db.write(
-        "INSERT INTO assets (id, persona_id, persona_version_id, job_id, filename, kind, prompt, review, rights_confirmed, disclosure, created_at, sha256, metadata_json, quality_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        (aid, person["id"], version["id"] if version else None, None, filename, "image", payload.prompt, "pending", 1, disclosure, now(), sha256_bytes(raw), json.dumps(metadata), json.dumps(quality)),
+    asset = register_media_asset(
+        persona_id=person["id"],
+        persona_version_id=version["id"] if version else None,
+        job_id=None,
+        kind="image",
+        prompt=payload.prompt,
+        raw=raw,
+        disclosure=disclosure,
+        rights_confirmed=True,
+        original_filename=dest_path.name,
+        lineage={"source": "orchestrator_anchor_generation", "seed": seed},
     )
 
     return {
-        "asset_id": aid,
-        "filename": filename,
-        "url": f"/api/assets/{aid}/file",
+        "asset_id": asset["id"],
+        "filename": asset["filename"],
+        "url": f"/api/assets/{asset['id']}/file",
         "prompt": payload.prompt,
         "negative_prompt": payload.negative_prompt,
         "seed": seed,
@@ -1495,25 +1549,25 @@ async def orchestrator_render_anchor(payload: OrchestratorRenderAnchorIn):
 def orchestrator_lock_anchor(payload: OrchestratorLockAnchorIn):
     person = must_persona(payload.persona_id)
     with db.connection() as con:
-        asset_row = con.execute("SELECT filename, prompt, review, rights_confirmed FROM assets WHERE id = ? AND persona_id = ?", (payload.asset_id, person["id"])).fetchone()
+        asset_row = con.execute("SELECT * FROM assets WHERE id = ? AND persona_id = ?", (payload.asset_id, person["id"])).fetchone()
         if not asset_row:
             raise HTTPException(404, "Asset not found")
-        if asset_row[2] != "approved":
+        if asset_row["review"] != "approved":
             raise HTTPException(409, "Approve the asset before locking it as a master anchor")
-        if not asset_row[3]:
+        if not asset_row["rights_confirmed"]:
             raise HTTPException(409, "Master anchor asset is missing rights confirmation")
-        filename, prompt = asset_row[0], asset_row[1]
-
-    source_path = db.OUTPUTS / filename
-    ref_dest = db.UPLOADS / filename
-    if source_path.is_file():
-        shutil.copy2(source_path, ref_dest)
+        asset = dict(asset_row)
+        filename = asset["filename"]
+    try:
+        resolve_asset_file(asset)
+    except FileNotFoundError:
+        raise HTTPException(404, "Master anchor media file is missing") from None
 
     rid = uid()
     label = f"Master Persona Anchor: {person['name']}"
     db.write(
         "INSERT INTO reference_images (id, persona_id, filename, label, created_at, asset_id, persona_version_id, role, content_class, review, rights_confirmed, metadata_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-        (rid, person["id"], filename, label, now(), payload.asset_id, version["id"] if version else None, "identity_anchor", "identity", "approved", 1, json.dumps({"source": "approved_asset_lock", "asset_id": payload.asset_id})),
+        (rid, person["id"], filename, label, now(), payload.asset_id, asset["persona_version_id"], "identity_anchor", "identity", "approved", 1, json.dumps({"source": "approved_asset_lock", "asset_id": payload.asset_id})),
     )
     PersonaRepository.freeze(person["id"], now())
 
@@ -1591,21 +1645,25 @@ async def orchestrator_generate_batch(payload: OrchestratorBatchGenerateIn):
             raise HTTPException(500, f"Generation failed at scene {i+1}: {str(exc)[:300]}") from exc
 
         raw = dest_path.read_bytes()
-        aid = uid()
-        filename = dest_path.name
+        dest_path.unlink(missing_ok=True)
         disclosure = person.get("disclosure") or AI_DISCLOSURE
-        metadata = media_metadata(raw, "image", filename)
-        quality = quality_report(dest_path, "image", disclosure)
-
-        db.write(
-            "INSERT INTO assets (id, persona_id, persona_version_id, job_id, filename, kind, prompt, review, rights_confirmed, disclosure, created_at, sha256, metadata_json, quality_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (aid, person["id"], version["id"] if version else None, None, filename, "image", scene.prompt, "pending", 1, disclosure, now(), sha256_bytes(raw), json.dumps(metadata), json.dumps(quality)),
+        asset = register_media_asset(
+            persona_id=person["id"],
+            persona_version_id=version["id"] if version else None,
+            job_id=None,
+            kind="image",
+            prompt=scene.prompt,
+            raw=raw,
+            disclosure=disclosure,
+            rights_confirmed=payload.rights_confirmed,
+            original_filename=dest_path.name,
+            lineage={"source": "orchestrator_batch_generation", "seed": seed, "scene_index": i},
         )
 
         generated_assets.append({
-            "asset_id": aid,
-            "filename": filename,
-            "url": f"/api/assets/{aid}/file",
+            "asset_id": asset["id"],
+            "filename": asset["filename"],
+            "url": f"/api/assets/{asset['id']}/file",
             "title": scene.title,
             "location": scene.location,
             "costume": scene.costume,

@@ -410,6 +410,14 @@ lineage, disclosure, rights, hash, metadata, and quality results for every
 image, video, and audio output before the direct rendering routes are migrated
 to the shared job contract. Model installation remains deferred.
 
+Phase 3 slice 1 is complete: operator imports, canonical job outputs, Photo
+Studio images, voice outputs, and Orchestrator anchor/batch outputs now use the
+same registration boundary and canonical output resolver. Reference records
+reuse the linked asset file instead of creating a second media copy. Missing
+asset files fail closed through the API, while every newly registered output
+starts in pending review. Direct generation still runs outside the persistent
+Job service in some routes; that migration is the next Phase 3 slice.
+
 ### Cross-cutting frontend migration workstream
 
 The current static frontend is a legacy shell and is not considered aligned

@@ -374,6 +374,8 @@ def test_photo_studio_generation_starts_in_pending_review(client, monkeypatch):
     assert response.status_code == 201
     asset = next(item for item in client.get('/api/assets').json() if item['id'] == response.json()['id'])
     assert asset['review'] == 'pending'
+    assert asset['filename'].startswith('asset_')
+    assert (db.OUTPUTS / asset['filename']).is_file()
 
 
 def test_import_local_pipeline_output_requires_disclosure_and_starts_pending_review(client):
@@ -397,6 +399,10 @@ def test_import_local_pipeline_output_requires_disclosure_and_starts_pending_rev
     assert asset['review'] == 'pending'
     assert 'AI-generated' in asset['disclosure']
     assert client.get(imported.json()['url']).content == payload
+    assert asset['filename'].startswith('asset_')
+    assert (db.OUTPUTS / asset['filename']).is_file()
+    (db.OUTPUTS / asset['filename']).unlink()
+    assert client.get(imported.json()['url']).status_code == 404
 
 
 def test_monitor_reports_control_plane_runtime_models_and_storage(client):
