@@ -311,7 +311,10 @@ def initialize():
         """)
         con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_idempotency_key ON jobs(idempotency_key) WHERE idempotency_key IS NOT NULL")
         con.execute("INSERT INTO schema_meta(key,value) VALUES('schema_version','12') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
-        con.execute("UPDATE jobs SET status='interrupted', error='App restarted during job; retry from Studio', updated_at=?, worker_id=NULL, heartbeat_at=NULL, lease_expires_at=NULL WHERE status IN ('running','submitted','queued','cancelling')", (datetime_now(),))
+        # A durable queued row is safe to dispatch after restart. Only work
+        # that may already have reached ComfyUI is interrupted and requires
+        # prompt reconciliation or explicit operator retry.
+        con.execute("UPDATE jobs SET status='interrupted', error='App restarted during job; retry from Studio', updated_at=?, worker_id=NULL, heartbeat_at=NULL, lease_expires_at=NULL WHERE status IN ('running','submitted','cancelling')", (datetime_now(),))
 
 
 @contextmanager

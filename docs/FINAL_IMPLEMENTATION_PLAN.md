@@ -581,6 +581,21 @@ safety margin. Model-specific requirements remain a separate final
 installation/readiness gate; no generation models are installed by this
 slice.
 
+### Phase 4 slice 6 — restart-safe queued work retention
+
+Startup recovery now distinguishes durable queued work from active execution.
+`queued` rows keep their status and `next_retry_at` across process restart so
+the local dispatcher can resume them automatically. Jobs in `running`,
+`submitted`, or `cancelling` state become `interrupted`, clear worker lease
+metadata, and follow the prompt-reconciliation or explicit-retry path. This
+avoids silently replaying work that may already have reached ComfyUI while
+preventing safe queued requests from being stranded after restart.
+
+This closes the current Phase 4 queue lifecycle gap. Final operational work
+remains: failure-injection/shutdown validation, broader CLI/diffusion
+compatibility cleanup, and the later model-installation gate. Generation
+models remain deferred.
+
 ### Cross-cutting frontend migration workstream
 
 The current static frontend is a legacy shell and is not considered aligned

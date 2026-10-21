@@ -889,6 +889,30 @@ def test_phase4_durable_dispatcher_picks_up_persisted_queue_row(client, monkeypa
     assert client.get('/api/jobs').json()[0]['result']['dispatcher'] is True
 
 
+def test_phase4_restart_preserves_durable_queued_row(client):
+    import studio.app as backend
+    import studio.database as test_db
+
+    persona = client.post('/api/personas', json={
+        'name': 'Restart Queue Persona', 'age': 30,
+        'appearance': 'dark hair and hazel eyes',
+        'description': 'fictional adult editorial creator'
+    }).json()
+    job_id = backend.uid()
+    backend.JobRepository.create(
+        job_id=job_id, persona_id=persona['id'], workflow_id='restart_queue_test',
+        kind='image', prompt='A queued restart test', request_json='{}',
+        lineage_json='{}', created_at=backend.now(),
+    )
+    test_db.write("UPDATE jobs SET status='queued', next_retry_at=? WHERE id=?", ('2999-01-01T00:00:00+00:00', job_id))
+    test_db.initialize()
+    row = test_db.row("SELECT status,next_retry_at,worker_id,lease_expires_at FROM jobs WHERE id=?", (job_id,))
+    assert row['status'] == 'queued'
+    assert row['next_retry_at'] == '2999-01-01T00:00:00+00:00'
+    assert row['worker_id'] is None
+    assert row['lease_expires_at'] is None
+
+
 def test_phase4_job_lease_recovery_and_retry_backoff(client, monkeypatch):
     import datetime
     import studio.app as backend
