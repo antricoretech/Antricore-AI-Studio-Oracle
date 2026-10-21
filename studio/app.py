@@ -191,7 +191,9 @@ async def lifespan(app: FastAPI):
     app.state.job_tasks = set()
     app.state.job_task_map = {}
     app.state.job_semaphore = asyncio.Semaphore(get_settings().job_concurrency)
+    app.state.job_dispatch_event = asyncio.Event()
     interrupted = db.row("SELECT COUNT(*) AS count FROM jobs WHERE status='interrupted'")
+    app.state.job_dispatcher = asyncio.create_task(_job_dispatch_loop(), name="studio-job-dispatcher")
     logger.info("studio_started", extra={"data_dir": str(db.DATA)})
     logger.info("job_recovery_state", extra=_log_data({
         "interrupted_jobs": int((interrupted or {}).get("count") or 0),
@@ -201,6 +203,11 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        dispatcher = getattr(app.state, "job_dispatcher", None)
+        if dispatcher and not dispatcher.done():
+            dispatcher.cancel()
+        if dispatcher:
+            await asyncio.gather(dispatcher, return_exceptions=True)
         tasks = list(getattr(app.state, "job_tasks", set()))
         for task in tasks:
             if not task.done():
@@ -1107,7 +1114,7 @@ def preflight(workflow_id: str | None = None, model_id: str | None = None,
     return {"checked_at": now(), "overall": overall, "checks": checks}
 
 
-def _job_task(job_id: str, payload: JobIn, person: dict):
+def _start_managed_job(job_id: str, payload: JobIn, person: dict):
     async def run():
         semaphore = getattr(app.state, "job_semaphore", None)
         if semaphore is None:
@@ -1128,8 +1135,67 @@ def _job_task(job_id: str, payload: JobIn, person: dict):
             tasks.discard(done)
         if task_map is not None:
             task_map.pop(job_id, None)
+        event = getattr(app.state, "job_dispatch_event", None)
+        if event is not None:
+            event.set()
     task.add_done_callback(finished)
     return task
+
+
+async def _dispatch_queued_jobs():
+    """Claim durable queued jobs and hand them to bounded in-process tasks."""
+
+    task_map = getattr(app.state, "job_task_map", {})
+    capacity = max(0, get_settings().job_concurrency - len(task_map))
+    if capacity <= 0:
+        return
+    rows = db.all_rows(
+        "SELECT * FROM jobs WHERE status='queued' ORDER BY created_at ASC LIMIT ?",
+        (capacity,),
+    )
+    for row in rows:
+        job_id = row["id"]
+        if job_id in task_map:
+            continue
+        try:
+            raw = json.loads(row.get("request_json") or "{}")
+            payload = JobIn(**raw)
+            person = db.row("SELECT * FROM personas WHERE id=?", (payload.persona_id,))
+            if not person:
+                raise ValueError("Persona for queued job is no longer available")
+        except (json.JSONDecodeError, TypeError, ValueError) as exc:
+            db.write(
+                "UPDATE jobs SET status='failed', error=?, finished_at=?, updated_at=? WHERE id=? AND status='queued'",
+                (f"Queued job request is not recoverable: {str(exc)[:1400]}", now(), now(), job_id),
+            )
+            logger.error("job_dispatch_rejected", extra=_log_data({"job_id": job_id, "error": str(exc)[:300]}))
+            continue
+        _start_managed_job(job_id, payload, person)
+
+
+async def _job_dispatch_loop():
+    """Durable queue supervisor for local generation jobs."""
+
+    while True:
+        await _dispatch_queued_jobs()
+        event = getattr(app.state, "job_dispatch_event", None)
+        if event is None:
+            await asyncio.sleep(0.25)
+            continue
+        event.clear()
+        try:
+            await asyncio.wait_for(event.wait(), timeout=0.25)
+        except asyncio.TimeoutError:
+            pass
+
+
+def _job_task(job_id: str, payload: JobIn, person: dict):
+    """Wake the durable dispatcher after a Job row is committed."""
+
+    event = getattr(app.state, "job_dispatch_event", None)
+    if event is not None:
+        event.set()
+    return None
 
 
 @app.post("/api/jobs/{job_id}/cancel")

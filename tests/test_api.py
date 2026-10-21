@@ -803,6 +803,50 @@ def test_phase3_preflight_and_job_lineage(client):
     assert jobs[0]['attempt'] == 1
 
 
+def test_phase4_durable_dispatcher_picks_up_persisted_queue_row(client, monkeypatch):
+    import asyncio
+    import studio.app as backend
+    import studio.database as test_db
+
+    persona = client.post('/api/personas', json={
+        'name': 'Dispatcher Persona', 'age': 29,
+        'appearance': 'short dark hair and hazel eyes',
+        'description': 'fictional adult editorial creator'
+    }).json()
+    payload = backend.JobIn(
+        persona_id=persona['id'], workflow_id='dispatcher_test',
+        prompt='A queued dispatcher test', rights_confirmed=True
+    )
+    job_id = backend.uid()
+    backend.JobRepository.create(
+        job_id=job_id, persona_id=persona['id'], workflow_id=payload.workflow_id,
+        kind='image', prompt=payload.prompt, request_json=payload.model_dump_json(),
+        lineage_json=json.dumps({'workflow_id': payload.workflow_id}), created_at=backend.now()
+    )
+    calls = []
+
+    async def fake_execute(job_id_arg, payload_arg, person_arg):
+        calls.append((job_id_arg, payload_arg.workflow_id, person_arg['id']))
+        test_db.write(
+            "UPDATE jobs SET status='completed', result_json=?, finished_at=?, updated_at=? WHERE id=?",
+            (json.dumps({'job_id': job_id_arg, 'dispatcher': True}), backend.now(), backend.now(), job_id_arg),
+        )
+
+    monkeypatch.setattr(backend, 'execute_job', fake_execute)
+    backend._job_task(job_id, payload, persona)
+
+    async def wait_for_dispatch():
+        for _ in range(50):
+            if test_db.row("SELECT status FROM jobs WHERE id=?", (job_id,))['status'] == 'completed':
+                return
+            await asyncio.sleep(0.01)
+        raise AssertionError('durable dispatcher did not execute the persisted queue row')
+
+    asyncio.run(wait_for_dispatch())
+    assert calls == [(job_id, 'dispatcher_test', persona['id'])]
+    assert client.get('/api/jobs').json()[0]['result']['dispatcher'] is True
+
+
 def test_phase5_asset_manifest_and_approved_export_package(client):
     import io
     import zipfile

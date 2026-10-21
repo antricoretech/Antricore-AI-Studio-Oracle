@@ -467,6 +467,32 @@ resume no longer starts a second thread for the same active job. This remains a
 compatibility bridge; the durable dispatcher and retry/backoff reconciliation
 service remain Phase 4 work.
 
+### Pre-Phase 4 readiness audit — completed
+
+Phase 0 and Phase 2 passed their documented gates. Phase 1’s core canonical
+PersonaVersion, v2 compatibility, pack review/linkage, and migration-boundary
+implementation is complete; its ledger percentage and original backlog rows
+were stale and have been reconciled. The standalone free CLI still writes
+directly to caller-selected files, and the standalone diffusion engine retains
+an explicit legacy registration mode. These are compatibility carry-over paths,
+not new production Master Persona sources, and the user approved carrying them
+into Phase 4. Generation models remain deferred.
+
+### Phase 4 slice 1 — durable local queue dispatcher
+
+Phase 4 begins on `phase/04-local-job-runner`. Canonical Job creation and retry
+now wake a process-local dispatcher instead of starting an untracked execution
+task directly. The dispatcher reads persisted `queued` rows, reconstructs the
+validated `JobIn` request and Persona, rejects unrecoverable queue metadata as
+failed, and starts at most `STUDIO_JOB_CONCURRENCY` managed tasks. The default
+remains one heavy job for the 16 GB Mac. Completion wakes the dispatcher for the
+next row, while active jobs still become `interrupted` on restart and require
+explicit retry until ComfyUI prompt reconciliation is available.
+
+This is the first durable queue boundary, not the final Phase 4 exit: leases,
+heartbeats, retry backoff, child-task progress, prompt reconciliation, and
+memory/disk preflight remain outstanding.
+
 ### Cross-cutting frontend migration workstream
 
 The current static frontend is a legacy shell and is not considered aligned
