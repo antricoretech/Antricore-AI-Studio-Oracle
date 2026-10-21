@@ -1,4 +1,5 @@
 from io import BytesIO
+import json
 
 import pytest
 from fastapi.testclient import TestClient
@@ -436,6 +437,56 @@ def test_legacy_photoshoot_render_uses_canonical_job_and_asset(client, monkeypat
     assert repeated.status_code == 200
     assert repeated.json()['asset_id'] == result['asset_id']
     assert len([item for item in client.get('/api/assets').json() if item['id'] == result['asset_id']]) == 1
+
+
+def test_legacy_vault_worker_registers_each_pack_under_parent_job(client, monkeypatch, tmp_path):
+    import studio.api_v2 as api_v2
+    import studio.diffusion_engine as diffusion_engine
+
+    persona = client.post('/api/personas', json={
+        'name': 'Vault Bridge', 'age': 31,
+        'appearance': 'wavy dark hair and hazel eyes',
+        'description': 'fictional adult glamour creator'
+    }).json()
+    render_dir = tmp_path / 'renders'
+    render_dir.mkdir()
+    monkeypatch.setattr(api_v2, 'ROOT', tmp_path)
+    monkeypatch.setattr(api_v2, 'JOBS_CACHE_FILE', tmp_path / 'vault-jobs.json')
+    monkeypatch.setattr(diffusion_engine, 'RENDERS_DIR', render_dir)
+    calls = []
+
+    def fake_generate_render(**kwargs):
+        assert kwargs['register_asset'] is False
+        index = len(calls) + 1
+        calls.append(index)
+        filename = f'render_vault_{index}.png'
+        Image.new('RGB', (24, 24), 'beige').save(render_dir / filename, format='PNG')
+        return {'filename': filename}
+
+    monkeypatch.setattr(diffusion_engine, 'generate_render', fake_generate_render)
+    job_id = 'vault_test_parent_job'
+    specs = [{'filename': f'pack_{index:02d}.png', 'label': f'Pack {index}', 'prompt': f'Pack prompt {index}'} for index in range(1, 14)]
+    api_v2._vault_jobs[job_id] = {
+        'job_id': job_id, 'persona_id': persona['id'], 'persona_name': persona['name'],
+        'status': 'starting', 'current_index': 1, 'total_packs': 13,
+        'current_pack_name': 'Starting', 'completed_packs': [], 'percent': 0,
+        'start_time': 0, 'start_time_str': '00:00:00', 'elapsed_seconds': 0,
+        'elapsed_str': '0s', 'remaining_seconds': 0, 'remaining_str': '0s',
+        'asset_ids': [], 'error': None,
+    }
+    try:
+        api_v2._run_vault_generation_background(job_id, persona['id'], specs)
+    finally:
+        api_v2._vault_jobs.pop(job_id, None)
+
+    assets = [item for item in client.get('/api/assets').json() if item['job_id'] == job_id]
+    assert len(assets) == 13
+    assert all(item['review'] == 'pending' for item in assets)
+    assert all(json.loads(item['metadata_json'])['lineage']['execution_mode'] == 'legacy_master_vault' for item in assets)
+    job = next(item for item in client.get('/api/jobs').json() if item['id'] == job_id)
+    assert job['status'] == 'completed'
+    assert len(job['result']['asset_ids']) == 13
+    assert len(calls) == 13
 
 
 def test_import_local_pipeline_output_requires_disclosure_and_starts_pending_review(client):

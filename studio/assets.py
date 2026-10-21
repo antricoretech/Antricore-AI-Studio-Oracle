@@ -81,6 +81,8 @@ def register_media_asset(
     destination.write_bytes(raw)
     disclosure_text = (disclosure or AI_DISCLOSURE).strip()[:300]
     metadata = media_metadata(raw, kind, filename)
+    if lineage:
+        metadata["lineage"] = lineage
     quality = quality_report(destination, kind, disclosure_text, lineage=lineage)
     asset_id = uuid.uuid4().hex
     created_at = datetime.now(timezone.utc).isoformat(timespec="seconds")

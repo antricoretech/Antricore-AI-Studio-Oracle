@@ -438,6 +438,15 @@ The diffusion engine can skip its legacy SQLite write when called by this
 route; the older Master Vault background generator remains a separate legacy
 workflow for a later migration.
 
+Phase 3 slice 4 is complete: the legacy 13-pack Master Vault background
+generator now creates or resumes a canonical parent Job, registers each pack
+once with PersonaVersion and pack-index lineage, persists partial progress and
+asset IDs in `jobs.result_json`, and marks the parent Job completed or failed.
+The legacy `generated/master_persona_*` copies remain as compatibility previews
+for the preserved shell, while canonical `data/outputs` media is now the
+reviewable source of truth. Resumed packs reuse an existing canonical asset or
+register an existing preview without invoking the renderer again.
+
 ### Cross-cutting frontend migration workstream
 
 The current static frontend is a legacy shell and is not considered aligned

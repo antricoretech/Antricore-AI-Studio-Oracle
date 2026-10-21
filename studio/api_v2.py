@@ -35,7 +35,7 @@ from fastapi import APIRouter, Header, HTTPException, Request
 
 from pydantic import BaseModel
 from . import database as db
-from .assets import register_media_asset
+from .assets import asset_file, register_media_asset
 from .repositories import ContentPackRepository, JobRepository, PersonaRepository, ReferencePackRepository
 from .schemas import ContentPackIn, ContentPackReviewIn, ReferencePackAssetLinkIn, ReferencePackCanonicalIn, ReferencePackReviewIn
 
@@ -122,6 +122,67 @@ def _v2_job_failed(job_id: str, error: Exception) -> None:
         "UPDATE jobs SET status='failed', error=?, finished_at=?, updated_at=? WHERE id=?",
         (str(error)[:1500], _utc_now(), _utc_now(), job_id),
     )
+
+
+def _ensure_vault_job_record(job_id: str, persona_id: str, pack_specs: list[dict]) -> None:
+    if db.row("SELECT id FROM jobs WHERE id=?", (job_id,)):
+        return
+    persona = PersonaRepository.get(persona_id)
+    if not persona:
+        raise ValueError(f"Persona {persona_id} is not available in the canonical store")
+    version = PersonaRepository.current_version(persona_id)
+    lineage = {
+        "execution_mode": "legacy_master_vault",
+        "persona_id": persona_id,
+        "persona_version_id": version["id"] if version else None,
+        "workflow_id": "legacy_master_vault_generation",
+        "pack_count": len(pack_specs),
+    }
+    JobRepository.create(
+        job_id=job_id,
+        persona_id=persona_id,
+        workflow_id="legacy_master_vault_generation",
+        kind="image_batch",
+        prompt=f"Generate {len(pack_specs)} legacy Master Vault identity packs for {persona['name']}",
+        request_json=json.dumps({"persona_id": persona_id, "pack_count": len(pack_specs)}),
+        lineage_json=json.dumps(lineage, separators=(",", ":")),
+        created_at=_utc_now(),
+    )
+
+
+def _vault_asset_for_pack(job_id: str, pack_index: int) -> dict | None:
+    for asset in db.all_rows("SELECT * FROM assets WHERE job_id=? ORDER BY created_at", (job_id,)):
+        try:
+            metadata = json.loads(asset.get("metadata_json") or "{}")
+        except (TypeError, json.JSONDecodeError):
+            metadata = {}
+        lineage = metadata.get("lineage") or {}
+        if lineage.get("vault_index") == pack_index:
+            return asset
+    return None
+
+
+def _update_vault_job_result(job_id: str, *, status: str | None = None, error: str | None = None) -> None:
+    job = _vault_jobs.get(job_id, {})
+    result = {
+        "job_id": job_id,
+        "asset_ids": list(job.get("asset_ids") or []),
+        "completed_packs": list(job.get("completed_packs") or []),
+        "total_packs": job.get("total_packs", 13),
+        "percent": job.get("percent", 0),
+    }
+    if error:
+        result["error"] = error[:1500]
+    assignments = ["result_json=?", "updated_at=?"]
+    args: list[Any] = [json.dumps(result, ensure_ascii=False), _utc_now()]
+    if status:
+        assignments.append("status=?")
+        args.append(status)
+    if error:
+        assignments.append("error=?")
+        args.append(error[:1500])
+    args.append(job_id)
+    db.write(f"UPDATE jobs SET {', '.join(assignments)} WHERE id=?", tuple(args))
 
 
 
@@ -1913,6 +1974,8 @@ def _resume_pending_vault_jobs():
 
                         print(f"[Vault Generator] Resuming cached background generation for job {job_id} ({persona_id})...")
 
+                        _ensure_vault_job_record(job_id, persona_id, target_p["vault_specs"])
+
                         thread_to_start = (job_id, persona_id, target_p["vault_specs"])
 
                         break
@@ -1935,7 +1998,7 @@ def _resume_pending_vault_jobs():
 
                         pid = p["id"]
 
-                        folder = Path(__file__).resolve().parent.parent / "generated" / f"master_persona_{pid}"
+                        folder = ROOT / "generated" / f"master_persona_{pid}"
 
                         existing_files = [f for f in folder.glob("*.png") if f.stat().st_size > 10000] if folder.exists() else []
 
@@ -1987,11 +2050,15 @@ def _resume_pending_vault_jobs():
 
                                 "remaining_str": f"{(13 - len(existing_files)) * 35 // 60}m {(13 - len(existing_files)) * 35 % 60}s",
 
+                                "asset_ids": [],
+
                                 "error": None
 
                             }
 
                             print(f"[Vault Generator] Resuming incomplete vault for {p.get('name')} ({len(existing_files)}/13 packs rendered)...")
+
+                            _ensure_vault_job_record(job_id, pid, p["vault_specs"])
 
                             thread_to_start = (job_id, pid, p["vault_specs"])
 
@@ -2031,15 +2098,17 @@ def _run_vault_generation_background(job_id: str, persona_id: str, pack_specs: L
 
     try:
 
-        from .diffusion_engine import generate_render
-
-        import sqlite3
+        from . import diffusion_engine
 
         import shutil
 
+        _ensure_vault_job_record(job_id, persona_id, pack_specs)
+        persona = PersonaRepository.get(persona_id)
+        version = PersonaRepository.current_version(persona_id)
 
 
-        persona_folder = Path(__file__).resolve().parent.parent / "generated" / f"master_persona_{persona_id}"
+
+        persona_folder = ROOT / "generated" / f"master_persona_{persona_id}"
 
         persona_folder.mkdir(parents=True, exist_ok=True)
 
@@ -2078,48 +2147,66 @@ def _run_vault_generation_background(job_id: str, persona_id: str, pack_specs: L
                 _vault_jobs[job_id]["active_prompt"] = pack["prompt"]
 
             _save_vault_jobs_cache()
+            _update_vault_job_result(job_id, status="running")
 
 
 
-            # If pack already rendered and valid, skip re-inference and reuse anchor
-
-            if target_path.exists() and target_path.stat().st_size > 10000:
-
-                print(f"[Vault Generator] Pack {idx} ({pack['filename']}) already rendered on disk ({target_path.stat().st_size} bytes). Reusing verified anchor.")
-
+            asset = _vault_asset_for_pack(job_id, idx)
+            if asset:
+                if not target_path.exists():
+                    shutil.copyfile(asset_file(asset), target_path)
+                print(f"[Vault Generator] Pack {idx} ({pack['filename']}) already registered as {asset['id']}; reusing canonical asset.")
             else:
-
-                # Run neural diffusion inference
-
-                render_res = generate_render(
-
-                    prompt=pack["prompt"],
-
-                    negative_prompt=pack.get("negative_prompt"),
-
-                    aspect_ratio=pack.get("aspect_ratio", "2:3"),
-
+                # Reuse an existing legacy preview when resuming, otherwise
+                # render to the legacy staging directory and register its bytes
+                # exactly once in the canonical output store.
+                if target_path.exists() and target_path.stat().st_size > 10000:
+                    raw = target_path.read_bytes()
+                    source_name = target_path.name
+                    print(f"[Vault Generator] Pack {idx} ({pack['filename']}) already rendered on disk; registering the existing preview.")
+                else:
+                    render_res = diffusion_engine.generate_render(
+                        prompt=pack["prompt"],
+                        negative_prompt=pack.get("negative_prompt"),
+                        aspect_ratio=pack.get("aspect_ratio", "2:3"),
+                        persona_id=persona_id,
+                        persona_name=persona_id.replace("_", " ").title(),
+                        seed=pack.get("seed", 1000 + idx),
+                        steps=20,
+                        guidance_scale=5.0,
+                        register_asset=False,
+                    )
+                    if not render_res or "filename" not in render_res:
+                        raise RuntimeError(f"Vault pack {idx} produced no render output")
+                    src_path = diffusion_engine.RENDERS_DIR / render_res["filename"]
+                    if not src_path.is_file():
+                        raise FileNotFoundError(f"Vault pack output is missing: {src_path}")
+                    shutil.copyfile(src_path, target_path)
+                    raw = src_path.read_bytes()
+                    source_name = src_path.name
+                    src_path.unlink(missing_ok=True)
+                asset = register_media_asset(
                     persona_id=persona_id,
-
-                    persona_name=persona_id.replace("_", " ").title(),
-
-                    seed=pack.get("seed", 1000 + idx),
-
-                    steps=20,
-
-                    guidance_scale=5.0
-
+                    persona_version_id=version["id"] if version else None,
+                    job_id=job_id,
+                    kind="image",
+                    prompt=pack["prompt"],
+                    raw=raw,
+                    disclosure=persona.get("disclosure") if persona else None,
+                    rights_confirmed=True,
+                    original_filename=pack.get("filename") or source_name,
+                    lineage={
+                        "job_id": job_id,
+                        "execution_mode": "legacy_master_vault",
+                        "vault_index": idx,
+                        "pack_label": pack.get("label"),
+                        "source_filename": source_name,
+                    },
                 )
-
-
-
-                if render_res and "filename" in render_res:
-
-                    src_path = Path(__file__).resolve().parent.parent / "generated" / "renders" / render_res["filename"]
-
-                    if src_path.exists():
-
-                        shutil.copyfile(src_path, target_path)
+            with _vault_jobs_lock:
+                asset_ids = _vault_jobs[job_id].setdefault("asset_ids", [])
+                if asset["id"] not in asset_ids:
+                    asset_ids.append(asset["id"])
 
 
 
@@ -2154,6 +2241,7 @@ def _run_vault_generation_background(job_id: str, persona_id: str, pack_specs: L
                     _vault_jobs[job_id]["remaining_str"] = "0s"
 
             _save_vault_jobs_cache()
+            _update_vault_job_result(job_id, status="running")
 
 
 
@@ -2166,6 +2254,7 @@ def _run_vault_generation_background(job_id: str, persona_id: str, pack_specs: L
             _vault_jobs[job_id]["current_pack_name"] = "All 13 Vault Packs Completed & Verified!"
 
         _save_vault_jobs_cache()
+        _update_vault_job_result(job_id, status="completed")
 
 
 
@@ -2182,6 +2271,7 @@ def _run_vault_generation_background(job_id: str, persona_id: str, pack_specs: L
             _vault_jobs[job_id]["error"] = str(e)
 
         _save_vault_jobs_cache()
+        _update_vault_job_result(job_id, status="failed", error=str(e))
 
 
 
@@ -2269,7 +2359,7 @@ def create_persona(payload: CreatePersonaIn):
 
 
 
-    persona_folder = Path(__file__).resolve().parent.parent / "generated" / f"master_persona_{persona_id}"
+    persona_folder = ROOT / "generated" / f"master_persona_{persona_id}"
 
     persona_folder.mkdir(parents=True, exist_ok=True)
 
@@ -2410,11 +2500,15 @@ def create_persona(payload: CreatePersonaIn):
 
             "remaining_str": "6m 30s",
 
+            "asset_ids": [],
+
             "error": None
 
         }
 
 
+
+    _ensure_vault_job_record(job_id, persona_id, pack_specs)
 
     # Start generation thread
 
