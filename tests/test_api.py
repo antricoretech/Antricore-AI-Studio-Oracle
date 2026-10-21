@@ -489,6 +489,48 @@ def test_legacy_vault_worker_registers_each_pack_under_parent_job(client, monkey
     assert len(calls) == 13
 
 
+def test_legacy_vault_worker_honors_canonical_cancel_state(client, monkeypatch, tmp_path):
+    import studio.api_v2 as api_v2
+    import studio.database as test_db
+    import studio.diffusion_engine as diffusion_engine
+
+    persona = client.post('/api/personas', json={
+        'name': 'Cancelled Vault', 'age': 31,
+        'appearance': 'wavy dark hair and hazel eyes',
+        'description': 'fictional adult glamour creator'
+    }).json()
+    monkeypatch.setattr(api_v2, 'ROOT', tmp_path)
+    monkeypatch.setattr(api_v2, 'JOBS_CACHE_FILE', tmp_path / 'vault-jobs.json')
+    calls = []
+
+    def should_not_render(**kwargs):
+        calls.append(kwargs)
+        raise AssertionError('cancelled Vault job must not start another render')
+
+    monkeypatch.setattr(diffusion_engine, 'generate_render', should_not_render)
+    job_id = 'vault_cancelled_parent_job'
+    specs = [{'filename': 'pack_01.png', 'label': 'Pack 1', 'prompt': 'Pack prompt 1'}]
+    api_v2._vault_jobs[job_id] = {
+        'job_id': job_id, 'persona_id': persona['id'], 'persona_name': persona['name'],
+        'status': 'starting', 'current_index': 1, 'total_packs': 1,
+        'current_pack_name': 'Starting', 'completed_packs': [], 'percent': 0,
+        'start_time': 0, 'start_time_str': '00:00:00', 'elapsed_seconds': 0,
+        'elapsed_str': '0s', 'remaining_seconds': 0, 'remaining_str': '0s',
+        'asset_ids': [], 'error': None,
+    }
+    api_v2._ensure_vault_job_record(job_id, persona['id'], specs)
+    test_db.write("UPDATE jobs SET status='cancelled', cancel_requested=1 WHERE id=?", (job_id,))
+    try:
+        api_v2._run_vault_generation_background(job_id, persona['id'], specs)
+    finally:
+        api_v2._vault_jobs.pop(job_id, None)
+
+    job = next(item for item in client.get('/api/jobs').json() if item['id'] == job_id)
+    assert job['status'] == 'cancelled'
+    assert job['result']['error'] == 'Cancelled by operator'
+    assert calls == []
+
+
 def test_import_local_pipeline_output_requires_disclosure_and_starts_pending_review(client):
     persona = client.post('/api/personas', json={
         'name': 'Tala Reed', 'age': 31,

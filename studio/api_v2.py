@@ -144,10 +144,24 @@ def _ensure_vault_job_record(job_id: str, persona_id: str, pack_specs: list[dict
         workflow_id="legacy_master_vault_generation",
         kind="image_batch",
         prompt=f"Generate {len(pack_specs)} legacy Master Vault identity packs for {persona['name']}",
-        request_json=json.dumps({"persona_id": persona_id, "pack_count": len(pack_specs)}),
+        request_json=json.dumps({"persona_id": persona_id, "pack_count": len(pack_specs), "pack_specs": pack_specs}, ensure_ascii=False),
         lineage_json=json.dumps(lineage, separators=(",", ":")),
         created_at=_utc_now(),
     )
+
+
+def _vault_job_cancelled(job_id: str) -> bool:
+    row = db.row("SELECT status, cancel_requested FROM jobs WHERE id=?", (job_id,))
+    return bool(row and (row.get("cancel_requested") or row.get("status") == "cancelled"))
+
+
+def _mark_vault_job_cancelled(job_id: str) -> None:
+    with _vault_jobs_lock:
+        if job_id in _vault_jobs:
+            _vault_jobs[job_id]["status"] = "cancelled"
+            _vault_jobs[job_id]["error"] = "Cancelled by operator"
+    _save_vault_jobs_cache()
+    _update_vault_job_result(job_id, status="cancelled", error="Cancelled by operator")
 
 
 def _vault_asset_for_pack(job_id: str, pack_index: int) -> dict | None:
@@ -2118,6 +2132,10 @@ def _run_vault_generation_background(job_id: str, persona_id: str, pack_specs: L
 
             target_path = persona_folder / pack["filename"]
 
+            if _vault_job_cancelled(job_id):
+                _mark_vault_job_cancelled(job_id)
+                return
+
 
 
             with _vault_jobs_lock:
@@ -2185,6 +2203,9 @@ def _run_vault_generation_background(job_id: str, persona_id: str, pack_specs: L
                     raw = src_path.read_bytes()
                     source_name = src_path.name
                     src_path.unlink(missing_ok=True)
+                if _vault_job_cancelled(job_id):
+                    _mark_vault_job_cancelled(job_id)
+                    return
                 asset = register_media_asset(
                     persona_id=persona_id,
                     persona_version_id=version["id"] if version else None,
@@ -2245,6 +2266,10 @@ def _run_vault_generation_background(job_id: str, persona_id: str, pack_specs: L
 
 
 
+        if _vault_job_cancelled(job_id):
+            _mark_vault_job_cancelled(job_id)
+            return
+
         with _vault_jobs_lock:
 
             _vault_jobs[job_id]["status"] = "completed"
@@ -2264,6 +2289,10 @@ def _run_vault_generation_background(job_id: str, persona_id: str, pack_specs: L
 
         traceback.print_exc()
 
+        if _vault_job_cancelled(job_id):
+            _mark_vault_job_cancelled(job_id)
+            return
+
         with _vault_jobs_lock:
 
             _vault_jobs[job_id]["status"] = "error"
@@ -2272,6 +2301,9 @@ def _run_vault_generation_background(job_id: str, persona_id: str, pack_specs: L
 
         _save_vault_jobs_cache()
         _update_vault_job_result(job_id, status="failed", error=str(e))
+
+    finally:
+        _active_generation_threads.pop(job_id, None)
 
 
 
@@ -2522,6 +2554,7 @@ def create_persona(payload: CreatePersonaIn):
 
     )
 
+    _active_generation_threads[job_id] = thread
     thread.start()
 
 

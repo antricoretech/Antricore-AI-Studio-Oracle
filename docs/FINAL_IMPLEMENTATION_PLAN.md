@@ -457,6 +457,16 @@ This is a safe bridge toward Phase 4: active jobs are never silently replayed
 after restart, and the persisted retry endpoint remains the operator-controlled
 recovery path until prompt reconciliation and backoff are implemented.
 
+Phase 3 slice 6 hardens the preserved legacy Master Vault compatibility path.
+Its parent Job now stores the pack specifications needed for later recovery,
+the background thread is registered and removed from the active-thread map,
+and the worker checks the canonical `cancel_requested`/`cancelled` state before
+each pack, before asset registration, and before completion. A cancelled Vault
+cannot be overwritten by a later successful completion update, and status-poll
+resume no longer starts a second thread for the same active job. This remains a
+compatibility bridge; the durable dispatcher and retry/backoff reconciliation
+service remain Phase 4 work.
+
 ### Cross-cutting frontend migration workstream
 
 The current static frontend is a legacy shell and is not considered aligned
