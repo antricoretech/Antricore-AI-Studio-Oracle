@@ -294,7 +294,7 @@ document.addEventListener('DOMContentLoaded', () => {
         state.personas.forEach(p => {
           const opt = document.createElement('option');
           opt.value = p.id;
-          opt.textContent = `${p.name} (${p.age} · ${p.origin.split(',')[0]})`;
+          opt.textContent = `${p.name} (${p.age} · ${personaOrigin(p)})`;
           if (p.id === targetId) opt.selected = true;
           els.delModalPersonaSelect.appendChild(opt);
         });
@@ -312,7 +312,7 @@ document.addEventListener('DOMContentLoaded', () => {
         els.delModalAvatar.src = avatarSrc;
       }
       if (els.delModalName) els.delModalName.textContent = p.name;
-      if (els.delModalMeta) els.delModalMeta.textContent = `${p.age} YRS · ${p.origin}`;
+      if (els.delModalMeta) els.delModalMeta.textContent = `${p.age} YRS · ${personaOrigin(p)}`;
     }
 
     function closeDeletePersonaModal() {
@@ -653,7 +653,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (els.synthStatusDot) els.synthStatusDot.style.background = '#10B981';
       if (els.synthLiveStatusText) {
-        els.synthLiveStatusText.innerHTML = `<span style="color:#10B981;">✓ Live DNA Synthesized for <strong>${data.name}</strong> (${data.age} · ${data.origin})</span>`;
+        els.synthLiveStatusText.innerHTML = `<span style="color:#10B981;">✓ Live DNA Synthesized for <strong>${data.name}</strong> (${data.age} · ${data.origin || 'Origin not recorded'})</span>`;
       }
       appendLog(`[Synthesizer] Successfully synthesized DNA for '${data.name}' (${data.biometrics.figure}, ${data.biometrics.bust}).`);
     } catch (err) {
@@ -668,7 +668,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function renderSynthesizedDNA(data) {
     state.synthesizedDNA = data;
     if (els.synthBioHeader) {
-      els.synthBioHeader.textContent = `${data.name.toUpperCase()} | ${data.age} YRS | ${data.biometrics.height} | ${data.origin.split(',')[0]}`;
+      els.synthBioHeader.textContent = `${data.name.toUpperCase()} | ${data.age} YRS | ${data.biometrics.height} | ${String(data.origin || 'Unknown').split(',')[0]}`;
     }
     if (els.synthValFigure) els.synthValFigure.textContent = data.biometrics.figure;
     if (els.synthValBust) els.synthValBust.textContent = data.biometrics.bust;
@@ -1455,13 +1455,23 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function syncCanonicalSurfaceLinks(personaId = state.activePersonaId) {
+    const targetPersonaId = String(personaId || '').trim();
+    document.querySelectorAll('[data-canonical-target]').forEach((link) => {
+      const target = link.getAttribute('data-canonical-target');
+      if (!target) return;
+      const query = targetPersonaId ? `?persona_id=${encodeURIComponent(targetPersonaId)}` : '';
+      link.setAttribute('href', `/workspace${query}#${encodeURIComponent(target)}`);
+    });
+  }
+
   function renderPersonaSelect() {
     if (!els.globalPersonaSelect) return;
     els.globalPersonaSelect.innerHTML = '';
     state.personas.forEach(p => {
       const opt = document.createElement('option');
       opt.value = p.id;
-      opt.textContent = `${p.name} (${p.age} · ${p.origin.split(',')[0]})`;
+      opt.textContent = `${p.name} (${p.age} · ${personaOrigin(p)})`;
       if (p.id === state.activePersonaId) opt.selected = true;
       els.globalPersonaSelect.appendChild(opt);
     });
@@ -1477,15 +1487,17 @@ document.addEventListener('DOMContentLoaded', () => {
       state.personas.forEach(p => {
         const gOpt = document.createElement('option');
         gOpt.value = p.id;
-        gOpt.textContent = `${p.name} (${p.origin.split(',')[0]})`;
+        gOpt.textContent = `${p.name} (${personaOrigin(p)})`;
         els.galleryFilterPersona.appendChild(gOpt);
       });
     }
+    syncCanonicalSurfaceLinks();
   }
 
   function switchActivePersona(personaId) {
     state.activePersonaId = personaId;
     if (els.globalPersonaSelect) els.globalPersonaSelect.value = personaId;
+    syncCanonicalSurfaceLinks(personaId);
     renderActivePersona();
     loadCalendarForPersona(personaId);
     generateStoryHooks();
@@ -1495,6 +1507,10 @@ document.addEventListener('DOMContentLoaded', () => {
     return state.personas.find(p => p.id === state.activePersonaId) || state.personas[0];
   }
 
+  function personaOrigin(persona) {
+    return String(persona?.origin || persona?.location || persona?.world?.location || 'Origin not recorded').split(',')[0].trim();
+  }
+
   function renderActivePersona() {
     const p = getCurrentPersona();
     if (!p) return;
@@ -1502,7 +1518,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (els.headerPersonaAvatar) els.headerPersonaAvatar.src = p.avatar;
     if (els.vaultActiveAnchorLbl) els.vaultActiveAnchorLbl.textContent = p.name;
     if (els.vaultPersonaName) els.vaultPersonaName.textContent = p.name.toUpperCase();
-    if (els.vaultPersonaDesc) els.vaultPersonaDesc.textContent = `${p.age}-year-old · ${p.origin}`;
+    if (els.vaultPersonaDesc) els.vaultPersonaDesc.textContent = `${p.age}-year-old · ${personaOrigin(p)}`;
     if (els.storyActivePersonaLbl) els.storyActivePersonaLbl.textContent = p.name;
     if (els.stageOverlayPersona) els.stageOverlayPersona.textContent = p.name;
     if (els.feedPersonaName) els.feedPersonaName.textContent = p.name.toUpperCase();
@@ -1518,10 +1534,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Biometrics Card
     if (els.bioHeaderLine) {
-      els.bioHeaderLine.textContent = `${p.name.toUpperCase()} | ${p.age} YRS | ${p.biometrics.height} | ${p.origin.split(',')[0]}`;
+      els.bioHeaderLine.textContent = `${p.name.toUpperCase()} | ${p.age} YRS | ${p.biometrics.height} | ${personaOrigin(p)}`;
     }
     if (els.bioValHeight) els.bioValHeight.textContent = p.biometrics.height;
-    if (els.bioValEthnicity) els.bioValEthnicity.textContent = p.ethnicity || p.origin.split(',')[0];
+    if (els.bioValEthnicity) els.bioValEthnicity.textContent = p.ethnicity || personaOrigin(p);
     if (els.bioValFigure) els.bioValFigure.textContent = p.biometrics.figure;
     if (els.bioValSkin) els.bioValSkin.textContent = p.biometrics.complexion;
     if (els.bioValWeight) els.bioValWeight.textContent = p.biometrics.weight;

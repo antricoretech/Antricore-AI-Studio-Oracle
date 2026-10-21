@@ -334,6 +334,12 @@ silently changing the legacy behavior. Full feature-equivalent replacement and
 legacy retirement still require surface-by-surface migration and regression
 evidence.
 
+Legacy handoffs also preserve the active identity. The legacy persona selector
+now updates each canonical destination with `persona_id`, and `/workspace`
+resolves that query against the canonical Persona registry before loading the
+requested view. This keeps PersonaVersion context aligned across the bridge
+without creating a second client-side identity store.
+
 ### Cross-cutting frontend migration workstream
 
 The current static frontend is a legacy shell and is not considered aligned

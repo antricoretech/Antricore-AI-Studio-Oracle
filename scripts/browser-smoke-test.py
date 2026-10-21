@@ -38,10 +38,13 @@ def main(argv=None) -> int:
                 "assets": "/workspace#assets",
                 "overview": "/workspace#overview",
             }
+            active_persona_id = page.locator("#global-persona-select").input_value()
+            assert active_persona_id, "legacy active persona selector did not resolve"
             for target, href in canonical_targets.items():
                 bridge = page.locator(f"a[data-canonical-target='{target}']")
                 assert bridge.count() == 1, f"missing legacy-to-canonical bridge: {target}"
-                assert bridge.get_attribute("href") == href, f"incorrect canonical bridge target: {target}"
+                expected_href = href.replace('/workspace', f'/workspace?persona_id={active_persona_id}')
+                assert bridge.get_attribute("href") == expected_href, f"incorrect canonical bridge target: {target}"
             tab_targets = {
                 "#nav-btn-vault": "#tab-vault",
                 "#nav-btn-orchestrator": "#tab-orchestrator",
