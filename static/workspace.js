@@ -26,6 +26,8 @@ const viewMeta = {
   publishing: ['Publishing Readiness', 'Prepare approved, disclosed, policy-checked content for account delivery.'],
 };
 
+const CANONICAL_PERSONA_DRAFT_KEY = 'persona-studio.canonical-persona-draft.v1';
+
 const state = {
   view: 'overview',
   personas: [],
@@ -46,6 +48,7 @@ const state = {
   submittingJob: false,
   generationDraft: { workflow_id: '', prompt: '', width: 768, height: 1152, content_pack_id: '', rights_confirmed: false },
   submittingPersona: false,
+  personaDraft: null,
   freezingPersona: false,
   controller: null,
   requestToken: 0,
@@ -57,6 +60,19 @@ function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>'"]/g, (character) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;',
   }[character]));
+}
+
+function readCanonicalPersonaDraft() {
+  try {
+    const raw = sessionStorage.getItem(CANONICAL_PERSONA_DRAFT_KEY);
+    if (!raw) return null;
+    sessionStorage.removeItem(CANONICAL_PERSONA_DRAFT_KEY);
+    const draft = JSON.parse(raw);
+    return draft && typeof draft === 'object' && !Array.isArray(draft) ? draft : null;
+  } catch (error) {
+    console.warn('Canonical Persona draft could not be loaded:', error);
+    return null;
+  }
 }
 
 function badge(value) {
@@ -156,19 +172,25 @@ function renderPersonasCanonical() {
   const persona = activePersona();
   const currentVersion = persona?.current_version;
   const canFreeze = persona && currentVersion?.state === 'draft' && !state.freezingPersona;
+  const draft = state.personaDraft || {};
+  const draftCharacteristics = draft.characteristics || defaultCharacteristics;
+  const draftCharacteristicsText = typeof draftCharacteristics === 'string'
+    ? draftCharacteristics
+    : JSON.stringify(draftCharacteristics, null, 2);
   return `<div class="panel-grid">
     <section class="panel" aria-labelledby="persona-create-heading">
       <div class="section-heading"><div><p class="eyebrow">Canonical identity</p><h2 id="persona-create-heading">Create Master Persona</h2></div>${badge('new structure')}</div>
       <p class="helper">This creates a new Persona and its initial draft PersonaVersion. Existing legacy personas are not reused.</p>
+      ${state.personaDraft ? '<div class="callout"><p><strong>Draft imported from legacy Vault synthesis.</strong></p><p class="helper">Review and edit the identity anchors before creating the canonical Persona. No record or media job has been created yet.</p></div>' : ''}
       <form id="persona-create-form" class="persona-form">
         <div class="form-grid">
-          <div class="field"><label for="persona-create-name">Name</label><input id="persona-create-name" name="name" minlength="2" maxlength="80" required placeholder="e.g. Mira Vale"></div>
-          <div class="field"><label for="persona-create-age">Age</label><input id="persona-create-age" name="age" type="number" min="18" max="110" required value="25"></div>
+          <div class="field"><label for="persona-create-name">Name</label><input id="persona-create-name" name="name" minlength="2" maxlength="80" required placeholder="e.g. Mira Vale" value="${escapeHtml(draft.name || '')}"></div>
+          <div class="field"><label for="persona-create-age">Age</label><input id="persona-create-age" name="age" type="number" min="18" max="110" required value="${escapeHtml(draft.age || 25)}"></div>
         </div>
-        <div class="field"><label for="persona-create-description">Creator description</label><textarea id="persona-create-description" name="description" minlength="8" maxlength="1500" required placeholder="Who this fictional adult creator is and what she makes."></textarea></div>
-        <div class="field"><label for="persona-create-appearance">Appearance</label><textarea id="persona-create-appearance" name="appearance" minlength="8" maxlength="1500" required placeholder="Stable facial identity, hair, eyes, body, and visual traits."></textarea></div>
-        <div class="field"><label for="persona-create-disclosure">Disclosure</label><input id="persona-create-disclosure" name="disclosure" minlength="10" maxlength="250" required value="Fictional AI-generated adult persona"></div>
-        <div class="field"><label for="persona-create-characteristics">Identity characteristics JSON <span class="field-hint">optional structured anchors</span></label><textarea id="persona-create-characteristics" name="characteristics" class="code-field" spellcheck="false">${escapeHtml(defaultCharacteristics)}</textarea></div>
+        <div class="field"><label for="persona-create-description">Creator description</label><textarea id="persona-create-description" name="description" minlength="8" maxlength="1500" required placeholder="Who this fictional adult creator is and what she makes.">${escapeHtml(draft.description || '')}</textarea></div>
+        <div class="field"><label for="persona-create-appearance">Appearance</label><textarea id="persona-create-appearance" name="appearance" minlength="8" maxlength="1500" required placeholder="Stable facial identity, hair, eyes, body, and visual traits.">${escapeHtml(draft.appearance || '')}</textarea></div>
+        <div class="field"><label for="persona-create-disclosure">Disclosure</label><input id="persona-create-disclosure" name="disclosure" minlength="10" maxlength="250" required value="${escapeHtml(draft.disclosure || 'Fictional AI-generated adult persona')}"></div>
+        <div class="field"><label for="persona-create-characteristics">Identity characteristics JSON <span class="field-hint">optional structured anchors</span></label><textarea id="persona-create-characteristics" name="characteristics" class="code-field" spellcheck="false">${escapeHtml(draftCharacteristicsText)}</textarea></div>
         <div class="form-actions"><button class="button primary" type="submit" ${state.submittingPersona ? 'disabled' : ''}>${state.submittingPersona ? 'Creating…' : 'Create Persona'}</button></div>
         <p id="persona-form-error" class="form-error" role="alert" hidden></p>
       </form>
@@ -461,6 +483,7 @@ async function loadViewData() {
 }
 
 async function loadBase() {
+  if (state.personaDraft === null) state.personaDraft = readCanonicalPersonaDraft();
   $('#workspace-view').setAttribute('aria-busy', 'true');
   setStatus('Loading Master Personas…');
   try {
@@ -519,6 +542,7 @@ async function createPersona(event) {
       characteristics,
     });
     state.activePersonaId = created.id;
+    state.personaDraft = null;
     setStatus(`Created ${created.name} with draft PersonaVersion ${created.current_version?.version_no || 1}.`, 'success');
     state.submittingPersona = false;
     await loadBase();

@@ -9,6 +9,8 @@
  */
 
 document.addEventListener('DOMContentLoaded', () => {
+  const CANONICAL_PERSONA_DRAFT_KEY = 'persona-studio.canonical-persona-draft.v1';
+
   // Global Application State
   const state = {
     personas: [],
@@ -434,6 +436,90 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let narrativeDebounceTimer = null;
 
+  function handoffSynthesizedPersonaToCanonicalFlow() {
+    const dna = state.synthesizedDNA;
+    if (!dna) throw new Error('No synthesized persona DNA is available.');
+
+    const biometrics = dna.biometrics || {};
+    const ringfence = dna.diversity_ringfence || {};
+    const age = Number(dna.age);
+    const safeAge = Number.isInteger(age) && age >= 18 && age <= 110 ? age : 25;
+    const name = String(dna.name || 'Untitled Persona').trim();
+    const origin = String(dna.origin || 'International').trim();
+    const tagline = String(dna.tagline || '').trim();
+    const masterPrompt = String(dna.master_prompt || '').trim();
+    const universalNegative = String(dna.universal_negative || '').trim();
+    const wardrobe = String(ringfence.wardrobe_signature || '').trim();
+    const worldSetting = String(ringfence.world_setting || '').trim();
+
+    const draft = {
+      name,
+      age: safeAge,
+      description: [tagline, `${name} is a fictional adult creator based in ${origin}.`]
+        .filter(Boolean).join(' '),
+      appearance: [
+        biometrics.complexion,
+        biometrics.eyes,
+        biometrics.hair,
+        biometrics.facial_structure,
+        biometrics.skin_texture,
+        biometrics.silhouette,
+      ].filter(Boolean).join('; ') || 'Stable facial identity and consistent adult visual characteristics.',
+      disclosure: 'Fictional AI-generated adult persona',
+      characteristics: {
+        consistency_anchor: {
+          source: 'legacy-vault-synthesis',
+          master_prompt: masterPrompt,
+          universal_negative: universalNegative,
+          ringfence,
+          biometrics,
+        },
+        face: {
+          face_shape: biometrics.facial_structure || '',
+          skin_tone: biometrics.complexion || '',
+          eyes: biometrics.eyes || '',
+          hair: biometrics.hair || '',
+          distinguishing_features: [biometrics.distinctive_feature, biometrics.lips, biometrics.skin_texture]
+            .filter(Boolean).join('; '),
+        },
+        physique: {
+          height_and_build: [biometrics.height, biometrics.weight, biometrics.figure]
+            .filter(Boolean).join('; '),
+          posture_and_movement: biometrics.silhouette || '',
+          age_cues: `${safeAge}-year-old adult creator`,
+        },
+        style: {
+          wardrobe,
+          materials_and_palette: worldSetting,
+          accessories_and_grooming: '',
+          glamour_direction: 'Use the approved identity anchors and content-pack style direction.',
+        },
+        personality: {},
+        world: {
+          cultural_context: origin,
+          home_base: origin,
+          recurring_locations: worldSetting,
+          content_pillars: '',
+        },
+        camera: {
+          framing: 'Consistent editorial portrait framing',
+          lens_and_depth: 'Natural photographic depth of field',
+          lighting: 'Controlled editorial lighting',
+          color_grade: 'Natural, realistic color grade',
+        },
+      },
+      source: 'legacy-vault-synthesis',
+    };
+
+    try {
+      sessionStorage.setItem(CANONICAL_PERSONA_DRAFT_KEY, JSON.stringify(draft));
+    } catch (error) {
+      throw new Error(`Unable to preserve the synthesized draft locally: ${error.message}`);
+    }
+
+    window.location.assign('/workspace#personas');
+  }
+
   function setupGeneratorControls() {
     // Real-time live synthesis on typing in narrative textarea
     if (els.vaultNarrativeInput) {
@@ -503,6 +589,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
+          appendLog(`[Master Vault] Prepared '${state.synthesizedDNA.name}' for canonical Persona creation review.`);
+          if (els.freezeLiveStatus) {
+            els.freezeLiveStatus.innerHTML = `âœ¦ Opening canonical Persona creation for <strong>${state.synthesizedDNA.name}</strong> review...`;
+          }
+          handoffSynthesizedPersonaToCanonicalFlow();
+          return;
+
+          // Kept below as a legacy compatibility reference until the old Vault UI is retired.
           appendLog(`[Master Vault] Registering 13-Image Vault for '${state.synthesizedDNA.name}'...`);
           const res = await fetch('/api/v2/personas/create', {
             method: 'POST',
@@ -635,7 +729,11 @@ document.addEventListener('DOMContentLoaded', () => {
   async function triggerNarrativeSynthesis() {
     if (!els.vaultNarrativeInput) return;
     const text = els.vaultNarrativeInput.value.trim();
-    if (!text) return;
+    if (!text) {
+      state.synthesizedDNA = null;
+      return;
+    }
+    state.synthesizedDNA = null;
     try {
       if (els.synthStatusDot) els.synthStatusDot.style.background = '#38BDF8';
       if (els.synthLiveStatusText) {

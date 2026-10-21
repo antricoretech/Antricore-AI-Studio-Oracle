@@ -353,6 +353,16 @@ The preserved legacy Gallery now exposes an item-level handoff to canonical
 Asset Review. The handoff uses the asset's owning Persona ID rather than the
 currently selected global Persona, preventing cross-persona review mistakes.
 
+The legacy Master Vault's freeze action now follows the new-persona boundary as
+well. It synthesizes the narrative locally, stores an editable draft in
+browser session storage, and opens canonical `/workspace#personas`; the user
+must review and submit the draft through `POST /api/personas`. The old
+`/api/v2/personas/create` path is no longer the production creation path, so a
+new Master Persona cannot accidentally bypass PersonaVersion lineage. The
+handoff preserves biometrics, master/negative identity prompts, wardrobe and
+world ringfences, and structured style/identity characteristics without
+creating a record or starting a media job before review.
+
 ### Cross-cutting frontend migration workstream
 
 The current static frontend is a legacy shell and is not considered aligned
@@ -366,7 +376,8 @@ The migration sequence is:
 - establish one API client with normalized errors, request cancellation, and
   stale-response protection;
 - replace legacy/v2 fixture-driven persona and vault screens with canonical
-  PersonaVersion-aware screens;
+  PersonaVersion-aware screens; the legacy Vault freeze action must remain a
+  draft handoff only until the Vault surface itself reaches full parity;
 - add the complete Master Persona journey: creation, version state, reference
   review, canonical selection, ContentPack authoring, identity/style review,
   generation, asset approval, export, and publishing readiness;
