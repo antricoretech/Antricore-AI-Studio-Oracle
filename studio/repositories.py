@@ -76,7 +76,7 @@ class CreatorProfileRepository:
                 identity_authority = "identity_and_style"
             key = str(raw.get("key") or "").strip().lower()
             if not key:
-                key = "".join(character if character.isalnum() else "_" for character in name).strip("_")[:80]
+                key = "".join(character if character.isalnum() else "_" for character in name).strip("_").lower()[:80]
             normalized.append({
                 "key": key or f"pillar_{index + 1}",
                 "name": name,
@@ -609,6 +609,190 @@ class ContentPackRepository:
             "style": pack["style"],
             "anchors": anchors,
             "reference_pack_id": source["id"],
+        }
+
+
+class ContentBriefRepository:
+    JSON_FIELDS = ("metadata_json",)
+    STATUSES = frozenset({"draft", "approved", "archived"})
+
+    @staticmethod
+    def _decode(brief: dict | None):
+        if not brief:
+            return None
+        result = dict(brief)
+        raw = result.pop("metadata_json", "{}")
+        try:
+            result["metadata"] = json.loads(raw or "{}")
+        except (TypeError, json.JSONDecodeError):
+            result["metadata"] = {}
+        return result
+
+    @staticmethod
+    def list(persona_id: str):
+        return [
+            ContentBriefRepository._decode(row)
+            for row in db.all_rows(
+                "SELECT * FROM content_briefs WHERE persona_id=? ORDER BY updated_at DESC, created_at DESC",
+                (persona_id,),
+            )
+        ]
+
+    @staticmethod
+    def get(persona_id: str, brief_id: str):
+        return ContentBriefRepository._decode(db.row(
+            "SELECT * FROM content_briefs WHERE id=? AND persona_id=?",
+            (brief_id, persona_id),
+        ))
+
+    @staticmethod
+    def _bindings(*, persona_id: str, persona_version_id: str, creator_profile_id: str | None,
+                  content_pack_id: str | None, content_class: str, pillar_key: str,
+                  require_approved_pack: bool = False):
+        version = PersonaRepository.version(persona_id, persona_version_id)
+        if not version:
+            raise LookupError("PersonaVersion not found")
+        profile = CreatorProfileRepository.get(persona_id, persona_version_id)
+        if not profile:
+            raise ValueError("Create the Creator System for this PersonaVersion before authoring a ContentBrief")
+        if creator_profile_id and profile["id"] != creator_profile_id:
+            raise ValueError("ContentBrief Creator Profile must match its PersonaVersion")
+        pillars = profile.get("content_pillars") or []
+        pillar = next((item for item in pillars if item.get("key") == pillar_key), None) if pillar_key else None
+        if pillar_key and not pillar:
+            raise ValueError("ContentBrief pillar_key must reference a Creator System content pillar")
+        if is_adult_glamour_content_class(content_class):
+            if not pillar or not any(is_adult_glamour_content_class(value) for value in pillar.get("content_classes", [])):
+                raise ValueError("Adult/glamour ContentBriefs must use the adult/glamour Creator System pillar")
+            if not pillar.get("identity_core") or pillar.get("identity_authority") != "identity_and_style":
+                raise ValueError("Adult/glamour pillar must remain an Identity Core and style authority")
+        content_pack = None
+        if content_pack_id:
+            content_pack = ContentPackRepository.get(persona_id, content_pack_id)
+            if not content_pack:
+                raise LookupError("ContentPack not found")
+            if content_pack["persona_version_id"] != persona_version_id:
+                raise ValueError("ContentBrief and ContentPack must share the same PersonaVersion")
+            if require_approved_pack and content_pack["review"] != "approved":
+                raise ValueError("Approve the selected ContentPack before approving this ContentBrief")
+            if is_adult_glamour_content_class(content_class) and not is_adult_glamour_content_class(content_pack["content_class"]):
+                raise ValueError("Adult/glamour ContentBriefs must use an adult/glamour ContentPack")
+        return version, profile, pillar, content_pack
+
+    @staticmethod
+    def _normalized_fields(*, title: str, format: str, content_class: str, pillar_key: str,
+                           audience_goal: str, emotional_objective: str, story_direction: str,
+                           visual_direction: str, motion_direction: str, caption_direction: str,
+                           script_direction: str, disclosure: str, metadata: dict):
+        return {
+            "title": title.strip(),
+            "format": format.strip().lower(),
+            "content_class": content_class.strip().lower(),
+            "pillar_key": pillar_key.strip().lower(),
+            "audience_goal": audience_goal.strip(),
+            "emotional_objective": emotional_objective.strip(),
+            "story_direction": story_direction.strip(),
+            "visual_direction": visual_direction.strip(),
+            "motion_direction": motion_direction.strip(),
+            "caption_direction": caption_direction.strip(),
+            "script_direction": script_direction.strip(),
+            "disclosure": disclosure.strip(),
+            "metadata": dict(metadata or {}),
+        }
+
+    @staticmethod
+    def create(*, persona_id: str, persona_version_id: str, creator_profile_id: str | None,
+               content_pack_id: str | None, title: str, format: str, content_class: str,
+               pillar_key: str, audience_goal: str, emotional_objective: str, story_direction: str,
+               visual_direction: str, motion_direction: str, caption_direction: str,
+               script_direction: str, disclosure: str, metadata: dict, created_at: str):
+        fields = ContentBriefRepository._normalized_fields(
+            title=title, format=format, content_class=content_class, pillar_key=pillar_key,
+            audience_goal=audience_goal, emotional_objective=emotional_objective,
+            story_direction=story_direction, visual_direction=visual_direction,
+            motion_direction=motion_direction, caption_direction=caption_direction,
+            script_direction=script_direction, disclosure=disclosure, metadata=metadata,
+        )
+        if len(fields["disclosure"]) < 20:
+            raise ValueError("ContentBrief disclosure must be at least 20 characters")
+        _version, profile, _pillar, _pack = ContentBriefRepository._bindings(
+            persona_id=persona_id, persona_version_id=persona_version_id,
+            creator_profile_id=creator_profile_id, content_pack_id=content_pack_id,
+            content_class=fields["content_class"], pillar_key=fields["pillar_key"],
+        )
+        brief_id = uuid.uuid4().hex
+        db.write(
+            "INSERT INTO content_briefs (id,persona_id,persona_version_id,creator_profile_id,content_pack_id,title,status,format,content_class,pillar_key,audience_goal,emotional_objective,story_direction,visual_direction,motion_direction,caption_direction,script_direction,disclosure,metadata_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                brief_id, persona_id, persona_version_id, profile["id"], content_pack_id,
+                fields["title"], "draft", fields["format"], fields["content_class"],
+                fields["pillar_key"], fields["audience_goal"], fields["emotional_objective"],
+                fields["story_direction"], fields["visual_direction"], fields["motion_direction"],
+                fields["caption_direction"], fields["script_direction"], fields["disclosure"],
+                json.dumps(fields["metadata"], ensure_ascii=False, sort_keys=True), created_at, created_at,
+            ),
+        )
+        return ContentBriefRepository.get(persona_id, brief_id)
+
+    @staticmethod
+    def approve(*, persona_id: str, brief_id: str, reviewed_at: str):
+        brief = ContentBriefRepository.get(persona_id, brief_id)
+        if not brief:
+            raise LookupError("ContentBrief not found")
+        if brief["status"] == "archived":
+            raise ValueError("Archived ContentBriefs cannot be approved")
+        version, _profile, _pillar, _pack = ContentBriefRepository._bindings(
+            persona_id=persona_id, persona_version_id=brief["persona_version_id"],
+            creator_profile_id=brief["creator_profile_id"], content_pack_id=brief["content_pack_id"],
+            content_class=brief["content_class"], pillar_key=brief["pillar_key"],
+            require_approved_pack=True,
+        )
+        if version["state"] != "frozen":
+            raise ValueError("Freeze the PersonaVersion before approving a ContentBrief")
+        if not brief["story_direction"] and not brief["visual_direction"]:
+            raise ValueError("ContentBrief needs story or visual direction before approval")
+        db.write(
+            "UPDATE content_briefs SET status='approved', updated_at=? WHERE id=? AND persona_id=?",
+            (reviewed_at, brief_id, persona_id),
+        )
+        return ContentBriefRepository.get(persona_id, brief_id)
+
+    @staticmethod
+    def resolve(persona_id: str, brief_id: str):
+        brief = ContentBriefRepository.get(persona_id, brief_id)
+        if not brief:
+            raise LookupError("ContentBrief not found")
+        if brief["status"] != "approved":
+            raise ValueError("Approve the ContentBrief before handing it to production")
+        version, profile, pillar, content_pack = ContentBriefRepository._bindings(
+            persona_id=persona_id, persona_version_id=brief["persona_version_id"],
+            creator_profile_id=brief["creator_profile_id"], content_pack_id=brief["content_pack_id"],
+            content_class=brief["content_class"], pillar_key=brief["pillar_key"],
+            require_approved_pack=True,
+        )
+        if version["state"] != "frozen":
+            raise ValueError("ContentBrief production handoff requires a frozen PersonaVersion")
+        return {
+            "id": brief["id"],
+            "persona_id": persona_id,
+            "persona_version_id": version["id"],
+            "status": brief["status"],
+            "brief": brief,
+            "creator_profile": profile,
+            "content_pillar": pillar,
+            "content_pack": ContentPackRepository.resolve(persona_id, content_pack["id"]) if content_pack else None,
+            "production_handoff": {
+                "format": brief["format"],
+                "content_class": brief["content_class"],
+                "audience_goal": brief["audience_goal"],
+                "emotional_objective": brief["emotional_objective"],
+                "story_direction": brief["story_direction"],
+                "visual_direction": brief["visual_direction"],
+                "motion_direction": brief["motion_direction"],
+                "caption_direction": brief["caption_direction"],
+                "script_direction": brief["script_direction"],
+                "disclosure": brief["disclosure"],
+            },
         }
 
 

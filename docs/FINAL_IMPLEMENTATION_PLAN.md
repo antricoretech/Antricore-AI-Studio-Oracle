@@ -811,9 +811,19 @@ The canonical workspace exposes this at `/workspace#creator`. The editor starts
 with the content-pillar system used by the reference analysis - lifestyle,
 fashion, travel, storytelling, product reviews, tutorials, brand content, and
 adult/glamour editorial - while allowing each Master Persona to refine the
-descriptions, formats, audience goal, and authority. Later Phase 6 slices will
-turn approved pillars into reusable ContentBriefs, captions, scripts, and
-production-ready creative objectives.
+descriptions, formats, audience goal, and authority.
+
+The next model-independent slice adds reusable ContentBrief records at
+`/workspace#content-briefs`. A brief is bound to the Creator Profile and
+PersonaVersion and stores format, content class, pillar, audience goal,
+emotional objective, story, visual and motion direction, caption direction,
+script direction, optional ContentPack linkage, and disclosure. Drafts can be
+authored before identity freeze, but approval and production resolution require
+a frozen PersonaVersion. Adult/glamour, lingerie, and boudoir briefs must use
+the adult/glamour pillar, which is normalized as Identity Core plus
+`identity_and_style`; a linked ContentPack must also be approved and from the
+same PersonaVersion. Resolution returns a server-validated production handoff
+without executing a model or queueing a job.
 
 Use this brief formula:
 
@@ -821,7 +831,9 @@ Use this brief formula:
 Identity + Story + Visual + Emotion + Format + Audience Goal + Disclosure
 ~~~
 
-Exit: a brief can be created without manually repeating persona behavior, visual identity, or disclosure instructions.
+Exit: a reusable brief can be approved and resolved into a production handoff
+without manually repeating persona behavior, visual identity, or disclosure
+instructions.
 
 ### Phase 7 — Quality, review, and export
 

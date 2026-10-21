@@ -438,6 +438,56 @@ def test_creator_profile_binds_persona_version_and_keeps_adult_pillar_in_identit
     assert frozen.status_code == 409
 
 
+def test_content_brief_requires_creator_system_and_frozen_version_for_production_handoff(client):
+    persona = client.post('/api/personas', json={
+        'name': 'Brief Test', 'age': 30,
+        'description': 'A fictional adult creator for reusable content planning.',
+        'appearance': 'Dark hair, warm skin, consistent editorial identity.',
+    }).json()
+    pid = persona['id']
+    payload = {
+        'title': 'Adult glamour evening editorial',
+        'format': 'reel',
+        'content_class': 'adult_glamour',
+        'pillar_key': 'adult_glamour',
+        'audience_goal': 'Inspire confident adult self-expression.',
+        'emotional_objective': 'Make the audience feel confident and seen.',
+        'visual_direction': 'Editorial evening light with canonical identity anchors and tasteful styling.',
+        'motion_direction': 'Slow controlled movement and natural adult gestures.',
+        'caption_direction': 'Confident hook, reflective close, and visible AI disclosure.',
+        'disclosure': 'Fictional adult creator. AI-generated synthetic media.',
+    }
+    missing_profile = client.post(f'/api/personas/{pid}/content-briefs', json=payload)
+    assert missing_profile.status_code == 409
+    profile = client.put(f'/api/personas/{pid}/creator-profile', json={
+        'disclosure': 'Fictional adult creator. AI-generated synthetic media.',
+        'content_pillars': [{
+            'name': 'Adult Glamour', 'content_classes': ['adult_glamour'],
+            'identity_authority': 'style',
+        }],
+    })
+    assert profile.status_code == 200
+    created = client.post(f'/api/personas/{pid}/content-briefs', json=payload)
+    assert created.status_code == 201
+    brief = created.json()
+    assert brief['status'] == 'draft'
+    assert brief['content_class'] == 'adult_glamour'
+    blocked = client.patch(f"/api/personas/{pid}/content-briefs/{brief['id']}/approve")
+    assert blocked.status_code == 409
+    assert client.post(f'/api/personas/{pid}/freeze').status_code == 200
+    approved = client.patch(f"/api/personas/{pid}/content-briefs/{brief['id']}/approve")
+    assert approved.status_code == 200
+    assert approved.json()['status'] == 'approved'
+    resolved = client.get(f"/api/personas/{pid}/content-briefs/{brief['id']}/resolve")
+    assert resolved.status_code == 200
+    handoff = resolved.json()
+    assert handoff['production_handoff']['format'] == 'reel'
+    assert handoff['content_pillar']['identity_core'] is True
+    assert handoff['content_pillar']['identity_authority'] == 'identity_and_style'
+    assert handoff['creator_profile']['id'] == profile.json()['profile']['id']
+    assert client.get(f'/api/personas/{pid}/content-briefs').json()[0]['id'] == brief['id']
+
+
 def test_link_redirect_and_review_validation(client):
     assert client.post('/api/links', json={"label": "Test", "destination": "http://example.com/"}).status_code == 400
     r = client.post('/api/links', json={"label": "Landing", "destination": "https://example.com/landing"})

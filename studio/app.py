@@ -49,10 +49,10 @@ from .policies import AI_DISCLOSURE
 from .preflight import resource_preflight, workflow_preflight
 from .provenance import manifest, media_metadata, quality_report, sha256_bytes
 from .identity_conditioning import method_catalog, scenario_catalog
-from .repositories import ContentPackRepository, CreatorProfileRepository, IdentityBenchmarkRepository, JobRepository, PersonaRepository, ReferencePackRepository, SeriesRepository
+from .repositories import ContentBriefRepository, ContentPackRepository, CreatorProfileRepository, IdentityBenchmarkRepository, JobRepository, PersonaRepository, ReferencePackRepository, SeriesRepository
 from .readiness import evaluate as evaluate_readiness
 from .schemas import (
-    ContentPackIn, ContentPackReviewIn, CreatorProfileIn, IdentityBenchmarkIn, IdentityBenchmarkResultIn, JobIn, LinkIn, PersonaIn, ReviewIn, ReferencePackReviewIn, ReferencePackCanonicalIn, ReferencePackAssetLinkIn,
+    ContentBriefIn, ContentPackIn, ContentPackReviewIn, CreatorProfileIn, IdentityBenchmarkIn, IdentityBenchmarkResultIn, JobIn, LinkIn, PersonaIn, ReviewIn, ReferencePackReviewIn, ReferencePackCanonicalIn, ReferencePackAssetLinkIn,
     SeriesEpisodeIn, SeriesIn, SeriesQueueIn, VoiceIn, PhotoStudioPromptIn, PhotoStudioGenerateIn,
     OrchestratorCompilePersonaIn, OrchestratorCreatePersonaIn, OrchestratorRenderAnchorIn, OrchestratorLockAnchorIn,
     OrchestratorSynthesizeScenesIn, OrchestratorBatchGenerateIn
@@ -876,6 +876,76 @@ def resolve_content_pack(pid: str, pack_id: str):
     must_persona(pid)
     try:
         return ContentPackRepository.resolve(pid, pack_id)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@app.get("/api/personas/{pid}/content-briefs")
+def list_content_briefs(pid: str):
+    must_persona(pid)
+    return ContentBriefRepository.list(pid)
+
+
+@app.post("/api/personas/{pid}/content-briefs", status_code=201)
+def create_content_brief(pid: str, payload: ContentBriefIn):
+    must_persona(pid)
+    version = PersonaRepository.version(pid, payload.persona_version_id) if payload.persona_version_id else PersonaRepository.current_version(pid)
+    if not version:
+        raise HTTPException(409, "Persona has no persisted identity version")
+    try:
+        return ContentBriefRepository.create(
+            persona_id=pid,
+            persona_version_id=version["id"],
+            creator_profile_id=payload.creator_profile_id,
+            content_pack_id=payload.content_pack_id,
+            title=payload.title,
+            format=payload.format,
+            content_class=payload.content_class,
+            pillar_key=payload.pillar_key,
+            audience_goal=payload.audience_goal,
+            emotional_objective=payload.emotional_objective,
+            story_direction=payload.story_direction,
+            visual_direction=payload.visual_direction,
+            motion_direction=payload.motion_direction,
+            caption_direction=payload.caption_direction,
+            script_direction=payload.script_direction,
+            disclosure=payload.disclosure,
+            metadata=payload.metadata,
+            created_at=now(),
+        )
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@app.get("/api/personas/{pid}/content-briefs/{brief_id}")
+def get_content_brief(pid: str, brief_id: str):
+    must_persona(pid)
+    brief = ContentBriefRepository.get(pid, brief_id)
+    if not brief:
+        raise HTTPException(404, "ContentBrief not found")
+    return brief
+
+
+@app.patch("/api/personas/{pid}/content-briefs/{brief_id}/approve")
+def approve_content_brief(pid: str, brief_id: str):
+    must_persona(pid)
+    try:
+        return ContentBriefRepository.approve(persona_id=pid, brief_id=brief_id, reviewed_at=now())
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@app.get("/api/personas/{pid}/content-briefs/{brief_id}/resolve")
+def resolve_content_brief(pid: str, brief_id: str):
+    must_persona(pid)
+    try:
+        return ContentBriefRepository.resolve(pid, brief_id)
     except LookupError as exc:
         raise HTTPException(404, str(exc)) from exc
     except ValueError as exc:

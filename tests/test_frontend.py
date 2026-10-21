@@ -36,6 +36,10 @@ def test_frontend_is_module_split_and_static_modules_are_served():
         assert "['creator', 'Creator System'" in workspace_js.text
         assert 'creator-profile-form' in workspace_js.text
         assert 'Adult/glamour remains a content pillar inside the same Identity Core' in workspace_js.text
+        assert "['content-briefs', 'Content Briefs'" in workspace_js.text
+        assert 'content-brief-form' in workspace_js.text
+        assert '/content-briefs' in workspace_js.text
+        assert 'Hand off to Production' in workspace_js.text
         for module in ('core.js', 'api.js', 'navigation.js', 'photostudio.js'):
             response = client.get('/static/modules/' + module)
             assert response.status_code == 200

@@ -95,6 +95,25 @@ class CreatorProfileIn(BaseModel):
     metadata: dict = Field(default_factory=dict)
 
 
+class ContentBriefIn(BaseModel):
+    persona_version_id: str | None = None
+    creator_profile_id: str | None = None
+    content_pack_id: str | None = None
+    title: str = Field(min_length=2, max_length=160)
+    format: str = Field(min_length=2, max_length=40)
+    content_class: str = Field(default="identity", min_length=2, max_length=80)
+    pillar_key: str = Field(default="", max_length=80)
+    audience_goal: str = Field(default="", max_length=500)
+    emotional_objective: str = Field(default="", max_length=500)
+    story_direction: str = Field(default="", max_length=2000)
+    visual_direction: str = Field(default="", max_length=2000)
+    motion_direction: str = Field(default="", max_length=2000)
+    caption_direction: str = Field(default="", max_length=1200)
+    script_direction: str = Field(default="", max_length=2000)
+    disclosure: str = Field(default=AI_DISCLOSURE, min_length=20, max_length=300)
+    metadata: dict = Field(default_factory=dict)
+
+
 class IdentityBenchmarkIn(BaseModel):
     persona_version_id: str | None = None
     base_model_id: str | None = Field(default=None, max_length=160)
