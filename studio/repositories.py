@@ -537,7 +537,11 @@ class IdentityBenchmarkRepository:
         result["cases"] = [
             IdentityBenchmarkRepository._decode_case(case)
             for case in db.all_rows(
-                "SELECT * FROM identity_benchmark_cases WHERE benchmark_id=? ORDER BY created_at, id",
+                # Case IDs are UUIDs, so ordering by id makes the visible
+                # benchmark sequence random when several cases share a
+                # timestamp. SQLite's rowid preserves the insert order and
+                # keeps the planned method/scenario matrix deterministic.
+                "SELECT * FROM identity_benchmark_cases WHERE benchmark_id=? ORDER BY created_at, rowid",
                 (result["id"],),
             )
         ]

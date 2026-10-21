@@ -777,6 +777,20 @@ style score, latency, peak memory, and selection eligibility. The summary is a
 decision aid only: it never promotes a method automatically, and incomplete
 or blocked cases cannot qualify.
 
+The canonical workspace now exposes this plan at `/workspace#benchmarks`. It
+shows the deferred model/runtime boundary, prevents creation until the selected
+PersonaVersion is frozen and has an approved canonical anchor, allows operators
+to choose the fixed methods and scenarios, and provides a manual result-entry
+surface for final-gate measurements. The rendered comparison remains a review
+aid rather than an automatic production switch. Adult/glamour scenarios are
+shown in the same benchmark and Identity Core workflow, preserving their role
+as canonical identity/style anchors rather than treating them as a separate
+content system.
+
+Benchmark case presentation preserves the planned method/scenario insertion
+order instead of relying on random UUID ordering. This keeps manual review,
+summary interpretation, and later measured comparisons reproducible.
+
 Measure face similarity, body consistency, prompt adherence, pose diversity, adult/glamour identity consistency, video drift, latency, memory use, and human approval rate.
 
 Exit: one production identity method is selected from measured results on project personas and target hardware.

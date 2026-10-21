@@ -29,6 +29,10 @@ def test_frontend_is_module_split_and_static_modules_are_served():
         assert 'readCanonicalGenerationDraft' in workspace_js.text
         assert 'Draft imported from legacy Orchestrator.' in workspace_js.text
         assert 'Draft imported from legacy Vault synthesis.' in workspace_js.text
+        assert "['benchmarks', 'Identity Benchmarks'" in workspace_js.text
+        assert 'identity-benchmark-create-form' in workspace_js.text
+        assert 'recordIdentityBenchmarkResult' in workspace_js.text
+        assert '/api/identity-conditioning/catalog' in workspace_js.text
         for module in ('core.js', 'api.js', 'navigation.js', 'photostudio.js'):
             response = client.get('/static/modules/' + module)
             assert response.status_code == 200

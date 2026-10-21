@@ -6,6 +6,7 @@ const navGroups = [
     ['personas', 'Master Personas', '◎'],
     ['references', 'Reference Packs', '◇'],
     ['content-packs', 'ContentPacks', '◆'],
+    ['benchmarks', 'Identity Benchmarks', '◉'],
   ] },
   { label: 'Production', items: [
     ['production', 'Production Queue', '▶'],
@@ -21,6 +22,7 @@ const viewMeta = {
   personas: ['Master Personas', 'Create and inspect PersonaVersion-bound identities.'],
   references: ['Reference Packs', 'Review identity sources, rights, assets, and canonical selection.'],
   'content-packs': ['ContentPacks', 'Bind creator style and adult/glamour identity anchors to one version.'],
+  benchmarks: ['Identity Benchmarks', 'Compare identity-conditioning methods against one frozen PersonaVersion.'],
   production: ['Production Queue', 'Track jobs and their PersonaVersion lineage.'],
   assets: ['Asset Review', 'Review generated and imported media before it becomes publishable.'],
   publishing: ['Publishing Readiness', 'Prepare approved, disclosed, policy-checked content for account delivery.'],
@@ -40,6 +42,9 @@ const state = {
   assetReferenceLinks: [],
   selectedReferencePackId: '',
   contentPacks: [],
+  benchmarkCatalog: { execution_status: 'deferred_final_gate', methods: [], scenarios: [] },
+  benchmarks: [],
+  creatingBenchmark: false,
   jobs: [],
   assets: [],
   workflows: [],
@@ -456,13 +461,37 @@ function renderAssetsCanonical() {
   </section>`;
 }
 
+function benchmarkValue(value, suffix = '') {
+  if (value === null || value === undefined || value === '') return '—';
+  return `${escapeHtml(value)}${suffix}`;
+}
+
+function renderBenchmarkSummary(summary) {
+  if (!summary?.length) return emptyState('No benchmark results have been recorded yet. Complete cases after the approved local runtime is available.');
+  return `<div class="table-wrap benchmark-summary"><table><caption>Identity-conditioning method comparison</caption><thead><tr><th scope="col">Method</th><th scope="col">Coverage</th><th scope="col">Score</th><th scope="col">Identity</th><th scope="col">Latency</th><th scope="col">Selection</th></tr></thead><tbody>${summary.map((item) => `<tr><th scope="row">${escapeHtml(item.label || item.method)}</th><td class="tabular-nums">${escapeHtml(item.completed_cases)}/${escapeHtml(item.total_cases)} (${escapeHtml(Math.round((item.coverage || 0) * 100))}%)</td><td class="tabular-nums">${benchmarkValue(item.mean_score)}</td><td class="tabular-nums">${benchmarkValue(item.mean_identity_score)}</td><td class="tabular-nums">${benchmarkValue(item.mean_latency_ms, ' ms')}</td><td>${badge(item.selection_status)}</td></tr>`).join('')}</tbody></table></div>`;
+}
+
+function renderBenchmarkCase(benchmark, item) {
+  const terminal = ['completed', 'blocked', 'failed'].includes(item.status);
+  return `<article class="benchmark-case"><div class="section-heading"><div><p class="eyebrow">${escapeHtml(item.method)}</p><h3>${escapeHtml(item.scenario_label)}</h3><p class="helper">${escapeHtml(item.content_class)} · ${escapeHtml(item.scenario_id)}</p></div>${badge(item.status)}</div><p class="benchmark-prompt">${escapeHtml(item.prompt)}</p>${item.error ? `<p class="job-error">${escapeHtml(item.error)}</p>` : ''}${terminal ? `<div class="entity-meta">${item.output_asset_id ? badge(`asset ${item.output_asset_id}`) : badge('no output asset')}${item.metrics?.identity_score !== undefined ? badge(`identity ${item.metrics.identity_score}`) : ''}</div>` : `<form class="benchmark-result-form" data-identity-benchmark-result="${escapeHtml(item.id)}" data-benchmark-id="${escapeHtml(benchmark.id)}"><div class="benchmark-result-grid"><div class="field"><label>Status<select name="status"><option value="completed">Completed</option><option value="blocked">Blocked</option><option value="failed">Failed</option></select></label></div><div class="field"><label>Output Asset ID <span class="field-hint">optional</span><input name="output_asset_id" placeholder="asset id"></label></div></div><div class="benchmark-metrics"><div class="field"><label>Identity score<input name="identity_score" type="number" min="0" max="1" step="0.01" placeholder="0–1"></label></div><div class="field"><label>Prompt adherence<input name="prompt_adherence" type="number" min="0" max="1" step="0.01" placeholder="0–1"></label></div><div class="field"><label>Anatomy score<input name="anatomy_score" type="number" min="0" max="1" step="0.01" placeholder="0–1"></label></div><div class="field"><label>Style consistency<input name="style_consistency" type="number" min="0" max="1" step="0.01" placeholder="0–1"></label></div><div class="field"><label>Latency (ms)<input name="latency_ms" type="number" min="0" step="1" placeholder="optional"></label></div><div class="field"><label>Peak memory (MB)<input name="peak_memory_mb" type="number" min="0" step="1" placeholder="optional"></label></div></div><label class="field"><span>Notes or failure detail</span><textarea name="notes" rows="2" placeholder="Record measurement context or why this case was blocked."></textarea></label><div class="form-actions"><button class="button secondary" type="submit">Record case result</button></div></form>`}</article>`;
+}
+
+function renderIdentityBenchmarks() {
+  if (!state.activePersonaId) return emptyState('Select or create a Master Persona before planning identity benchmarks.', 'personas');
+  const persona = activePersona();
+  const frozen = persona?.current_version?.state === 'frozen';
+  const methods = state.benchmarkCatalog.methods || [];
+  const scenarios = state.benchmarkCatalog.scenarios || [];
+  return `<section class="panel" aria-labelledby="benchmark-heading"><div class="section-heading"><div><p class="eyebrow">Phase 5 · model-deferred</p><h2 id="benchmark-heading">Identity-conditioning benchmarks</h2></div>${badge(state.benchmarkCatalog.execution_status || 'deferred_final_gate')}</div><p class="helper">Create a reproducible comparison plan against the active frozen PersonaVersion. Adult/glamour remains part of the same Identity Core anchor system. Model installation and execution are intentionally deferred.</p><div class="readiness-grid benchmark-readiness"><div class="readiness-item"><div><strong>PersonaVersion</strong><span>${escapeHtml(persona?.current_version?.id || 'not available')}</span></div>${frozen ? badge('ready') : badge('freeze required')}</div><div class="readiness-item"><div><strong>Canonical anchor</strong><span>Resolved by the server from approved, rights-confirmed media</span></div>${badge('server gated')}</div><div class="readiness-item"><div><strong>Runtime/model gate</strong><span>Results can be recorded later on the target Mac</span></div>${badge('deferred')}</div></div>${!frozen ? `<div class="callout readiness-callout"><p><strong>Freeze this PersonaVersion before creating a benchmark.</strong></p><p class="helper">Review canonical ReferencePack anchors first, then return here.</p><div class="entity-actions"><button class="button secondary" type="button" data-view="personas">Open Master Persona</button><button class="button secondary" type="button" data-view="references">Review anchors</button></div></div>` : ''}<form id="identity-benchmark-create-form" class="benchmark-plan-form" aria-labelledby="benchmark-plan-heading"><div class="section-heading"><div><p class="eyebrow">Benchmark plan</p><h3 id="benchmark-plan-heading">Select methods and scenarios</h3></div>${badge(`${methods.length} methods`)}</div><div class="field"><label>Base model identifier <span class="field-hint">optional until final gate</span><input name="base_model_id" maxlength="160" placeholder="pending-final-gate"></label></div><fieldset class="benchmark-options"><legend>Identity methods</legend><div class="benchmark-option-grid">${methods.map((method) => `<label class="benchmark-option"><input type="checkbox" name="methods" value="${escapeHtml(method.id)}" checked><span><strong>${escapeHtml(method.label)}</strong><small>${escapeHtml(method.category)} · ${escapeHtml(method.execution_status)}</small></span></label>`).join('')}</div></fieldset><fieldset class="benchmark-options"><legend>Scenarios</legend><div class="benchmark-option-grid">${scenarios.map((scenario) => `<label class="benchmark-option"><input type="checkbox" name="scenario_ids" value="${escapeHtml(scenario.id)}" checked><span><strong>${escapeHtml(scenario.label)}</strong><small>${escapeHtml(scenario.content_class)}</small></span></label>`).join('')}</div></fieldset><p id="identity-benchmark-form-error" class="form-error" role="alert" hidden></p><div class="form-actions"><button class="button primary" type="submit" ${frozen && !state.creatingBenchmark ? '' : 'disabled'}>${state.creatingBenchmark ? 'Creating plan…' : 'Create benchmark plan'}</button></div></form>${state.benchmarks.length ? `<div class="benchmark-list">${state.benchmarks.map((benchmark) => `<article class="benchmark-card"><div class="section-heading"><div><p class="eyebrow">Benchmark plan</p><h3>${escapeHtml(benchmark.id)}</h3><p class="helper">PersonaVersion ${escapeHtml(benchmark.persona_version_id)} · ${escapeHtml(benchmark.anchor_content_class)} anchor · ${escapeHtml(benchmark.base_model_id || 'model not selected')}</p></div>${badge(benchmark.status)}</div><div class="entity-meta">${badge(`${benchmark.cases.length} cases`)}${badge(`anchor ${benchmark.anchor_asset_id}`)}${benchmark.status === 'completed' ? badge('review summary ready') : badge('no automatic selection')}</div>${renderBenchmarkSummary(benchmark.summary)}<div class="benchmark-cases"><div class="section-heading"><div><p class="eyebrow">Case results</p><h3>Record measured outcomes</h3></div></div>${benchmark.cases.map((item) => renderBenchmarkCase(benchmark, item)).join('')}</div></article>`).join('')}</div>` : emptyState('No identity benchmark plans exist for this PersonaVersion yet. Create one after the canonical anchor is ready.')}</section>`;
+}
+
 function renderPublishing() {
   const persona = activePersona();
   return `<section class="panel" aria-labelledby="publishing-heading"><div class="section-heading"><div><p class="eyebrow">Outbound control</p><h2 id="publishing-heading">Publishing readiness</h2></div>${badge('planned')}</div><div class="callout"><p><strong>Account-aware publishing is not connected yet.</strong></p><p class="helper">The future Instagram integration will require a persona-owned account, approved media, disclosure metadata, destination-policy checks, and an explicit publish action.</p></div><div class="card-list" style="margin-top: 16px"><div class="entity-card"><div><h3>Identity lineage</h3><p>${persona ? 'Active PersonaVersion is available for downstream checks.' : 'Select a Master Persona first.'}</p></div>${persona ? badge('ready') : badge('pending')}</div><div class="entity-card"><div><h3>Media approval</h3><p>Only approved assets may advance to publishing.</p></div>${badge('required')}</div><div class="entity-card"><div><h3>Platform account mapping</h3><p>Instagram account ownership and token storage remain a future implementation phase.</p></div>${badge('planned')}</div></div></section>`;
 }
 
 function renderView() {
-  const renderer = { overview: renderOverview, personas: renderPersonasCanonical, references: renderReferencesCanonical, 'content-packs': renderContentPacks, production: renderProductionCanonical, assets: renderAssetsCanonical, publishing: renderPublishing }[state.view] || renderOverview;
+  const renderer = { overview: renderOverview, personas: renderPersonasCanonical, references: renderReferencesCanonical, 'content-packs': renderContentPacks, benchmarks: renderIdentityBenchmarks, production: renderProductionCanonical, assets: renderAssetsCanonical, publishing: renderPublishing }[state.view] || renderOverview;
   $('#workspace-view').innerHTML = `${renderCrossViewLineageNotice()}${renderAssetLineagePanel()}${renderer()}`;
 }
 
@@ -478,7 +507,7 @@ async function loadViewData() {
   renderView();
   setStatus('Loading canonical workspace data…');
   try {
-    const requests = { overview: [], personas: state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/versions`] : [], references: state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/reference-packs`, '/api/assets'] : [], 'content-packs': state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/content-packs`] : [], production: state.activePersonaId ? ['/api/jobs', '/api/workflows', `/api/personas/${encodeURIComponent(state.activePersonaId)}/content-packs`] : ['/api/jobs', '/api/workflows'], assets: state.activePersonaId ? ['/api/assets', `/api/personas/${encodeURIComponent(state.activePersonaId)}/reference-packs`] : ['/api/assets'], publishing: [] }[state.view] || [];
+    const requests = { overview: [], personas: state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/versions`] : [], references: state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/reference-packs`, '/api/assets'] : [], 'content-packs': state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/content-packs`] : [], benchmarks: state.activePersonaId ? ['/api/identity-conditioning/catalog', `/api/personas/${encodeURIComponent(state.activePersonaId)}/identity-benchmarks`] : ['/api/identity-conditioning/catalog'], production: state.activePersonaId ? ['/api/jobs', '/api/workflows', `/api/personas/${encodeURIComponent(state.activePersonaId)}/content-packs`] : ['/api/jobs', '/api/workflows'], assets: state.activePersonaId ? ['/api/assets', `/api/personas/${encodeURIComponent(state.activePersonaId)}/reference-packs`] : ['/api/assets'], publishing: [] }[state.view] || [];
     const results = await Promise.all(requests.map((url) => get(url, { signal })));
     if (signal.aborted || token !== state.requestToken) return;
     if (state.view === 'references') {
@@ -487,6 +516,10 @@ async function loadViewData() {
       if (!state.references.some((pack) => pack.id === state.selectedReferencePackId)) state.selectedReferencePackId = state.references[0]?.id || '';
     }
     if (state.view === 'content-packs') state.contentPacks = Array.isArray(results[0]) ? results[0] : results[0]?.content_packs || [];
+    if (state.view === 'benchmarks') {
+      state.benchmarkCatalog = results[0] || { execution_status: 'deferred_final_gate', methods: [], scenarios: [] };
+      state.benchmarks = state.activePersonaId ? (Array.isArray(results[1]) ? results[1] : []) : [];
+    }
     if (state.view === 'production') {
       state.jobs = results[0] || [];
       state.workflows = Array.isArray(results[1]) ? results[1] : [];
@@ -699,6 +732,63 @@ async function reviewAsset(event) {
   }
 }
 
+function showBenchmarkFormError(message) {
+  const target = $('#identity-benchmark-form-error');
+  if (!target) return;
+  target.textContent = message;
+  target.hidden = !message;
+}
+
+async function createIdentityBenchmark(event) {
+  event.preventDefault();
+  const form = event.target;
+  showBenchmarkFormError('');
+  const methods = [...form.querySelectorAll('input[name="methods"]:checked')].map((input) => input.value);
+  const scenarioIds = [...form.querySelectorAll('input[name="scenario_ids"]:checked')].map((input) => input.value);
+  if (!methods.length || !scenarioIds.length) {
+    showBenchmarkFormError('Select at least one identity method and one benchmark scenario.');
+    return;
+  }
+  state.creatingBenchmark = true;
+  renderView();
+  try {
+    await post(`/api/personas/${encodeURIComponent(state.activePersonaId)}/identity-benchmarks`, {
+      base_model_id: form.elements.base_model_id.value.trim() || null,
+      methods,
+      scenario_ids: scenarioIds,
+    });
+    state.creatingBenchmark = false;
+    setStatus('Identity benchmark plan created. Model execution remains deferred.', 'success');
+    await loadViewData();
+  } catch (error) {
+    state.creatingBenchmark = false;
+    renderView();
+    showBenchmarkFormError(error.message);
+    setStatus(error.message, 'error');
+  }
+}
+
+async function recordIdentityBenchmarkResult(event) {
+  event.preventDefault();
+  const form = event.target;
+  const metrics = {};
+  ['identity_score', 'prompt_adherence', 'anatomy_score', 'style_consistency', 'latency_ms', 'peak_memory_mb'].forEach((name) => {
+    if (form.elements[name].value !== '') metrics[name] = Number(form.elements[name].value);
+  });
+  try {
+    await post(`/api/personas/${encodeURIComponent(state.activePersonaId)}/identity-benchmarks/${encodeURIComponent(form.dataset.benchmarkId)}/cases/${encodeURIComponent(form.dataset.identityBenchmarkResult)}/result`, {
+      status: form.elements.status.value,
+      metrics,
+      notes: form.elements.notes.value.trim(),
+      output_asset_id: form.elements.output_asset_id.value.trim() || null,
+    });
+    setStatus('Identity benchmark case recorded.', 'success');
+    await loadViewData();
+  } catch (error) {
+    setStatus(error.message, 'error');
+  }
+}
+
 async function actOnJob(jobId, action) {
   try {
     await post(`/api/jobs/${encodeURIComponent(jobId)}/${action}`, {});
@@ -859,6 +949,14 @@ $('#workspace-view').addEventListener('submit', (event) => {
   }
   if (event.target.id === 'generation-form') {
     createGenerationJob(event);
+    return;
+  }
+  if (event.target.id === 'identity-benchmark-create-form') {
+    createIdentityBenchmark(event);
+    return;
+  }
+  if (event.target.matches('[data-identity-benchmark-result]')) {
+    recordIdentityBenchmarkResult(event);
     return;
   }
   if (event.target.matches('[data-reference-pack-review]')) {
