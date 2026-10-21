@@ -596,6 +596,20 @@ remains: failure-injection/shutdown validation, broader CLI/diffusion
 compatibility cleanup, and the later model-installation gate. Generation
 models remain deferred.
 
+### Phase 4 slice 7 — graceful shutdown and failure-injection reconciliation
+
+The local runner now snapshots managed Job IDs before cancelling dispatcher
+tasks during application shutdown. After task cancellation, only jobs in
+`running`, `submitted`, or `cancelling` state are reconciled to `interrupted`
+with an explicit retry message. Durable `queued` rows are intentionally left
+queued, including rows whose task was cancelled before it acquired the local
+execution semaphore, so the next process can dispatch them safely.
+
+This closes the shutdown transition gap and adds regression coverage for the
+active-versus-queued boundary. Broader standalone CLI/diffusion compatibility
+cleanup and the final model-installation/readiness gate remain outside this
+slice. Generation models remain deferred.
+
 ### Cross-cutting frontend migration workstream
 
 The current static frontend is a legacy shell and is not considered aligned

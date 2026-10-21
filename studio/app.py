@@ -185,6 +185,24 @@ def _mark_job_interrupted(job_id: str, reason: str = "Job execution was interrup
     )
 
 
+def _mark_shutdown_jobs_interrupted(job_ids: list[str]) -> int:
+    """Reconcile managed jobs after task cancellation during application stop.
+
+    A task can be cancelled while waiting for the semaphore, before
+    ``execute_job`` claims it and records the normal interruption transition.
+    Only rows that represent active execution are changed here. Durable
+    ``queued`` rows remain queued so a later process can dispatch them.
+    """
+
+    interrupted = 0
+    for job_id in job_ids:
+        row = db.row("SELECT status FROM jobs WHERE id=?", (job_id,))
+        if row and row["status"] in {"running", "submitted", "cancelling"}:
+            _mark_job_interrupted(job_id, "Studio stopped while job was executing; retry from Studio")
+            interrupted += 1
+    return interrupted
+
+
 def _normalized_idempotency_key(value: str | None) -> str | None:
     key = (value or "").strip()
     if not key:
@@ -296,12 +314,14 @@ async def lifespan(app: FastAPI):
         if dispatcher:
             await asyncio.gather(dispatcher, return_exceptions=True)
         tasks = list(getattr(app.state, "job_tasks", set()))
+        managed_job_ids = list(getattr(app.state, "job_task_map", {}).keys())
         for task in tasks:
             if not task.done():
                 task.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
-        logger.info("studio_stopped", extra={"cancelled_tasks": len(tasks)})
+        interrupted = _mark_shutdown_jobs_interrupted(managed_job_ids)
+        logger.info("studio_stopped", extra={"cancelled_tasks": len(tasks), "interrupted_jobs": interrupted})
 
 app = FastAPI(title="AI Influencer Studio", version="0.1.0", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")

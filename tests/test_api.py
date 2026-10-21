@@ -913,6 +913,34 @@ def test_phase4_restart_preserves_durable_queued_row(client):
     assert row['lease_expires_at'] is None
 
 
+def test_phase4_shutdown_reconciles_only_active_managed_jobs(client):
+    import studio.app as backend
+    import studio.database as test_db
+
+    persona = client.post('/api/personas', json={
+        'name': 'Shutdown Persona', 'age': 30,
+        'appearance': 'dark hair and hazel eyes',
+        'description': 'fictional adult editorial creator'
+    }).json()
+    active_job_id = backend.uid()
+    queued_job_id = backend.uid()
+    for job_id, status in ((active_job_id, 'running'), (queued_job_id, 'queued')):
+        backend.JobRepository.create(
+            job_id=job_id, persona_id=persona['id'], workflow_id='shutdown_test',
+            kind='image', prompt='A shutdown recovery test', request_json='{}',
+            lineage_json='{}', created_at=backend.now(),
+        )
+        test_db.write("UPDATE jobs SET status=? WHERE id=?", (status, job_id))
+
+    assert backend._mark_shutdown_jobs_interrupted([active_job_id, queued_job_id]) == 1
+    active = test_db.row("SELECT status,error FROM jobs WHERE id=?", (active_job_id,))
+    queued = test_db.row("SELECT status,error FROM jobs WHERE id=?", (queued_job_id,))
+    assert active['status'] == 'interrupted'
+    assert 'Studio stopped' in active['error']
+    assert queued['status'] == 'queued'
+    assert queued['error'] is None
+
+
 def test_phase4_job_lease_recovery_and_retry_backoff(client, monkeypatch):
     import datetime
     import studio.app as backend
