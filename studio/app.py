@@ -110,7 +110,8 @@ def _claim_job(job_id: str):
     timestamp = now()
     db.write(
         "UPDATE jobs SET status='running', worker_id=?, started_at=COALESCE(started_at,?), "
-        "heartbeat_at=?, lease_expires_at=?, updated_at=? "
+        "heartbeat_at=?, lease_expires_at=?, updated_at=?, progress_stage='starting', "
+        "progress_percent=0, progress_detail='Worker claimed job' "
         "WHERE id=? AND status NOT IN ('completed','failed','cancelled')",
         (_worker_id(), timestamp, timestamp, _lease_expiry(), timestamp, job_id),
     )
@@ -127,6 +128,19 @@ def _heartbeat_job(job_id: str, status: str | None = None):
     db.write(
         f"UPDATE jobs SET {', '.join(assignments)} WHERE id=? AND status IN ('running','submitted')",
         tuple(values),
+    )
+
+
+def _update_job_progress(job_id: str, stage: str, percent: int, detail: str = "", children: list[dict] | None = None):
+    """Persist bounded stage and child-task progress alongside the lease."""
+
+    timestamp = now()
+    bounded_percent = max(0, min(100, int(percent)))
+    progress = {"children": children or []}
+    db.write(
+        "UPDATE jobs SET progress_stage=?, progress_percent=?, progress_detail=?, progress_json=?, "
+        "heartbeat_at=?, lease_expires_at=?, updated_at=? WHERE id=? AND status IN ('running','submitted')",
+        (stage[:80], bounded_percent, detail[:500], json.dumps(progress, ensure_ascii=False), timestamp, _lease_expiry(), timestamp, job_id),
     )
 
 
@@ -149,7 +163,8 @@ def _recover_expired_jobs():
         updated = now()
         db.write(
             "UPDATE jobs SET status='interrupted', error=?, finished_at=?, updated_at=?, "
-            "worker_id=NULL, heartbeat_at=NULL, lease_expires_at=NULL "
+            "worker_id=NULL, heartbeat_at=NULL, lease_expires_at=NULL, progress_stage='interrupted', "
+            "progress_detail='Execution lease expired; retry from Studio' "
             "WHERE id=? AND status IN ('running','submitted')",
             ("Execution lease expired; retry from Studio", updated, updated, job_id),
         )
@@ -163,9 +178,10 @@ def _mark_job_interrupted(job_id: str, reason: str = "Job execution was interrup
     timestamp = now()
     db.write(
         "UPDATE jobs SET status='interrupted', error=?, finished_at=?, updated_at=?, "
-        "worker_id=NULL, heartbeat_at=NULL, lease_expires_at=NULL "
+        "worker_id=NULL, heartbeat_at=NULL, lease_expires_at=NULL, progress_stage='interrupted', "
+        "progress_detail=? "
         "WHERE id=? AND status NOT IN ('completed','failed','cancelled')",
-        (reason[:1500], timestamp, timestamp, job_id),
+        (reason[:1500], timestamp, timestamp, reason[:500], job_id),
     )
 
 
@@ -233,18 +249,16 @@ def _start_direct_job(*, person: dict, workflow_id: str, kind: str, prompt: str,
 
 async def _finish_direct_job(job_id: str, handler):
     db.write("UPDATE jobs SET status='running', updated_at=? WHERE id=?", (now(), job_id))
+    _update_job_progress(job_id, "running", 5, "Direct job is executing")
     try:
         result = await handler()
-        db.write(
-            "UPDATE jobs SET status='completed', result_json=?, finished_at=?, updated_at=? WHERE id=?",
-            (json.dumps(result, ensure_ascii=False), now(), now(), job_id),
-        )
+        _mark_job_completed(job_id, result)
         return result
     except HTTPException as exc:
-        db.write("UPDATE jobs SET status='failed', error=?, finished_at=?, updated_at=? WHERE id=?", (str(exc.detail)[:1500], now(), now(), job_id))
+        _mark_job_failed(job_id, str(exc.detail))
         raise
     except Exception as exc:
-        db.write("UPDATE jobs SET status='failed', error=?, finished_at=?, updated_at=? WHERE id=?", (str(exc)[:1500], now(), now(), job_id))
+        _mark_job_failed(job_id, str(exc))
         raise HTTPException(500, str(exc)[:300]) from exc
 
 
@@ -982,21 +996,32 @@ async def _finalize_comfy_outputs(job_id: str, payload: JobIn, person: dict, per
     if not files:
         raise RuntimeError("Workflow completed but no SaveImage / SaveVideo or compatible output was detected")
     asset_ids = []
-    for item in files[:20]:
-        _heartbeat_job(job_id)
+    children = [
+        {"id": f"output-{index + 1}", "label": item.get("filename", f"output-{index + 1}"), "state": "queued", "percent": 0}
+        for index, item in enumerate(files[:20])
+    ]
+    _update_job_progress(job_id, "downloading_outputs", 45, f"Preparing {len(children)} output(s)", children)
+    for index, item in enumerate(files[:20]):
+        children[index]["state"] = "running"
+        _update_job_progress(job_id, "downloading_outputs", 45 + int((index / max(1, len(children))) * 30), f"Downloading output {index + 1} of {len(children)}", children)
         content = await client.download(item)
-        _heartbeat_job(job_id)
+        children[index]["percent"] = 70
         if len(content) > get_settings().output_max_bytes:
             raise ValueError("Generated output exceeds 200MB safety limit")
         ext = Path(item["filename"]).suffix.lower()
         if ext not in {".png", ".jpg", ".jpeg", ".webp", ".mp4", ".webm", ".gif", ".wav", ".mp3", ".flac"}:
+            children[index]["state"] = "skipped"
+            children[index]["percent"] = 100
             continue
         kind = "video" if ext in {".mp4", ".webm", ".gif"} else "audio" if ext in {".wav", ".mp3", ".flac"} else "image"
         digest = sha256_bytes(content)
         existing = db.row("SELECT id FROM assets WHERE job_id=? AND sha256=? ORDER BY created_at LIMIT 1", (job_id, digest))
         if existing:
             asset_ids.append(existing["id"])
+            children[index]["state"] = "completed"
+            children[index]["percent"] = 100
             continue
+        _update_job_progress(job_id, "registering_assets", 80 + int((index / max(1, len(children))) * 15), f"Registering output {index + 1} of {len(children)}", children)
         disclosure = person.get("disclosure") or AI_DISCLOSURE
         asset = register_media_asset(
             persona_id=person["id"],
@@ -1011,17 +1036,21 @@ async def _finalize_comfy_outputs(job_id: str, payload: JobIn, person: dict, per
             lineage={"job_id": job_id, "workflow_id": payload.workflow_id, "comfy_prompt_id": db.row("SELECT comfy_prompt_id FROM jobs WHERE id=?", (job_id,)).get("comfy_prompt_id")},
         )
         asset_ids.append(asset["id"])
+        children[index]["state"] = "completed"
+        children[index]["percent"] = 100
     if not asset_ids:
         raise RuntimeError("Workflow completed but no supported media outputs were available")
-    return {"job_id": job_id, "asset_ids": asset_ids, "output_count": len(asset_ids), "reconciled": False}
+    _update_job_progress(job_id, "finalizing", 95, f"Finalizing {len(asset_ids)} asset(s)", children)
+    return {"job_id": job_id, "asset_ids": asset_ids, "output_count": len(asset_ids), "reconciled": False, "children": children}
 
 
 def _mark_job_completed(job_id: str, result: dict):
     timestamp = now()
     db.write(
         "UPDATE jobs SET status='completed', result_json=?, finished_at=?, updated_at=?, "
-        "worker_id=NULL, heartbeat_at=NULL, lease_expires_at=NULL, next_retry_at=NULL WHERE id=?",
-        (json.dumps(result), timestamp, timestamp, job_id),
+        "worker_id=NULL, heartbeat_at=NULL, lease_expires_at=NULL, next_retry_at=NULL, "
+        "progress_stage='completed', progress_percent=100, progress_detail='Completed successfully', progress_json=? WHERE id=?",
+        (json.dumps(result, ensure_ascii=False), timestamp, timestamp, json.dumps({"children": result.get("children", [])}, ensure_ascii=False), job_id),
     )
     db.write("UPDATE series_episodes SET status='completed' WHERE job_id=?", (job_id,))
 
@@ -1030,8 +1059,9 @@ def _mark_job_failed(job_id: str, error: str):
     timestamp = now()
     db.write(
         "UPDATE jobs SET status='failed', error=?, finished_at=?, updated_at=?, "
-        "worker_id=NULL, heartbeat_at=NULL, lease_expires_at=NULL, next_retry_at=NULL WHERE id=?",
-        (error[:1500], timestamp, timestamp, job_id),
+        "worker_id=NULL, heartbeat_at=NULL, lease_expires_at=NULL, next_retry_at=NULL, "
+        "progress_stage='failed', progress_percent=100, progress_detail=? WHERE id=?",
+        (error[:1500], timestamp, timestamp, error[:500], job_id),
     )
     db.write("UPDATE series_episodes SET status='failed' WHERE job_id=?", (job_id,))
 
@@ -1066,6 +1096,7 @@ async def _reconcile_interrupted_prompts():
                         raise ValueError("Persona for recovered job is no longer available")
                     persona_version = PersonaRepository.current_version(person["id"])
                     _claim_job(job_id)
+                    _update_job_progress(job_id, "reconciling_prompt", 30, "Recovered completed ComfyUI prompt")
                     result = await _finalize_comfy_outputs(job_id, payload, person, persona_version, entry.get("outputs", {}), client)
                     result["reconciled"] = True
                     _mark_job_completed(job_id, result)
@@ -1089,6 +1120,7 @@ async def execute_job(job_id, payload: JobIn, person: dict):
         if not claimed or claimed["status"] == "cancelled":
             return
         logger.info("job_started", extra=_log_data({"job_id": job_id, "persona_id": person.get("id"), "workflow_id": payload.workflow_id}))
+        _update_job_progress(job_id, "preparing_inputs", 10, "Loading workflow and identity inputs")
         graph = json.loads(workflow_path(payload.workflow_id).read_text(encoding="utf8"))
         creative_prompt = payload.video_prompt if (payload.video_prompt and ("video" in payload.workflow_id.lower() or "wan" in payload.workflow_id.lower())) else payload.prompt
         profile_text = persona_characteristics_text(person)
@@ -1124,11 +1156,13 @@ async def execute_job(job_id, payload: JobIn, person: dict):
                     raise ValueError("Selected audio asset does not belong to this persona")
                 values["AUDIO_FILENAME"] = await client.upload_audio(resolve_asset_file(audio).read_bytes(), audio["filename"])
             graph = render_graph(graph, values)
+            _update_job_progress(job_id, "submitting_prompt", 25, "Submitting validated workflow to ComfyUI")
             if _job_cancel_requested(job_id):
                 return
             prompt_id = await client.submit(graph)
             db.write("UPDATE jobs SET status='submitted', comfy_prompt_id=?, updated_at=? WHERE id=?", (prompt_id, now(), job_id))
             _heartbeat_job(job_id, status="submitted")
+            _update_job_progress(job_id, "waiting_for_comfy", 35, f"Waiting for ComfyUI prompt {prompt_id}")
             try:
                 outputs = await asyncio.wait_for(
                     client.wait(
@@ -1146,6 +1180,7 @@ async def execute_job(job_id, payload: JobIn, person: dict):
                 raise
             if _job_cancel_requested(job_id):
                 return
+            _update_job_progress(job_id, "processing_outputs", 42, "ComfyUI completed; validating outputs")
             result = await _finalize_comfy_outputs(job_id, payload, person, persona_version, outputs, client)
             if _job_cancel_requested(job_id):
                 return
@@ -1322,10 +1357,7 @@ async def _dispatch_queued_jobs():
             if not person:
                 raise ValueError("Persona for queued job is no longer available")
         except (json.JSONDecodeError, TypeError, ValueError) as exc:
-            db.write(
-                "UPDATE jobs SET status='failed', error=?, finished_at=?, updated_at=? WHERE id=? AND status='queued'",
-                (f"Queued job request is not recoverable: {str(exc)[:1400]}", now(), now(), job_id),
-            )
+            _mark_job_failed(job_id, f"Queued job request is not recoverable: {str(exc)[:1400]}")
             logger.error("job_dispatch_rejected", extra=_log_data({"job_id": job_id, "error": str(exc)[:300]}))
             continue
         _start_managed_job(job_id, payload, person)
@@ -1367,7 +1399,8 @@ async def cancel_job(job_id: str):
     timestamp = now()
     db.write(
         "UPDATE jobs SET status='cancelled', cancel_requested=1, finished_at=?, updated_at=?, error=?, "
-        "worker_id=NULL, heartbeat_at=NULL, lease_expires_at=NULL WHERE id=?",
+        "worker_id=NULL, heartbeat_at=NULL, lease_expires_at=NULL, progress_stage='cancelled', "
+        "progress_percent=100, progress_detail='Cancelled by operator' WHERE id=?",
         (timestamp, timestamp, "Cancelled by operator", job_id),
     )
     task = getattr(app.state, "job_task_map", {}).get(job_id)
@@ -1399,8 +1432,9 @@ async def retry_job(job_id: str):
     timestamp = now()
     db.write(
         "UPDATE jobs SET status='queued', attempt=?, cancel_requested=0, error=NULL, finished_at=NULL, "
-        "updated_at=?, next_retry_at=?, worker_id=NULL, heartbeat_at=NULL, lease_expires_at=NULL WHERE id=?",
-        (attempt, timestamp, next_retry_at, job_id),
+        "updated_at=?, next_retry_at=?, worker_id=NULL, heartbeat_at=NULL, lease_expires_at=NULL, "
+        "progress_stage='queued', progress_percent=0, progress_detail=?, progress_json='{}' WHERE id=?",
+        (attempt, timestamp, next_retry_at, f"Retry scheduled in {delay} second(s)", job_id),
     )
     _job_task(job_id, payload, person)
     logger.info("job_retried", extra=_log_data({"job_id": job_id, "attempt": attempt, "retry_after_seconds": delay}))
@@ -1419,6 +1453,10 @@ def get_jobs():
             item["result"] = json.loads(item.pop("result_json") or "{}")
         except (TypeError, json.JSONDecodeError):
             item["result"] = {}
+        try:
+            item["progress"] = json.loads(item.pop("progress_json") or "{}")
+        except (TypeError, json.JSONDecodeError):
+            item["progress"] = {}
     return rows
 
 

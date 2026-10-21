@@ -390,6 +390,13 @@ function renderGenerationForm() {
   </section>`;
 }
 
+function renderJobProgress(job) {
+  const percent = Math.max(0, Math.min(100, Number(job.progress_percent || 0)));
+  const progress = job.progress || {};
+  const children = Array.isArray(progress.children) ? progress.children : [];
+  return `<div class="job-progress" aria-label="Job progress"><div class="job-progress-heading"><strong>${escapeHtml(job.progress_stage || job.status || 'queued')}</strong><span>${percent}%</span></div><div class="job-progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}" aria-label="${escapeHtml(job.progress_stage || 'Job')} progress"><span style="width:${percent}%"></span></div>${job.progress_detail ? `<p class="helper">${escapeHtml(job.progress_detail)}</p>` : ''}${children.length ? `<ul class="job-child-progress">${children.map((child) => `<li><span>${escapeHtml(child.label || child.id || 'Output')}</span>${badge(child.state || 'queued')}<span>${escapeHtml(child.percent || 0)}%</span></li>`).join('')}</ul>` : ''}</div>`;
+}
+
 function renderProductionCanonical() {
   const persona = activePersona();
   const version = persona?.current_version;
@@ -416,6 +423,7 @@ function renderProductionCanonical() {
     ${state.jobs.length ? `<div class="job-list">${state.jobs.map((job) => `<article class="job-card">
       <div class="job-heading"><div><h3>${escapeHtml(job.workflow_id || job.id)}</h3><p class="helper">${escapeHtml(job.id)} · ${escapeHtml(job.persona_name || job.persona_id)} · attempt ${escapeHtml(job.attempt || 1)}</p></div><div class="entity-meta">${badge(job.status)}${badge(job.type || 'job')}</div></div>
       <p class="job-prompt">${escapeHtml(job.prompt || 'No prompt recorded.')}</p>
+      ${renderJobProgress(job)}
       <div class="entity-meta">${badge(`PersonaVersion ${job.lineage?.persona_version_id || 'not recorded'}`)}${job.lineage?.content_pack_id ? badge(`ContentPack ${job.lineage.content_pack_id}`) : ''}${job.lineage?.source_asset_id ? badge(`source ${job.lineage.source_asset_id}`) : ''}</div>
       ${job.error ? `<p class="job-error">${escapeHtml(job.error)}</p>` : ''}
       <div class="job-actions">${['queued', 'running', 'submitted', 'cancelling'].includes(job.status) ? `<button class="button secondary" type="button" data-job-action="cancel" data-job-id="${escapeHtml(job.id)}">Cancel job</button>` : ''}${['failed', 'interrupted', 'cancelled'].includes(job.status) ? `<button class="button secondary" type="button" data-job-action="retry" data-job-id="${escapeHtml(job.id)}">Retry job</button>` : ''}</div>

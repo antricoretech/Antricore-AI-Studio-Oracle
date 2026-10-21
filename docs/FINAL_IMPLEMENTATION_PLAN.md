@@ -537,6 +537,25 @@ This slice does not yet resume a prompt that is still pending in ComfyUI, and
 it does not yet expose child-task progress or memory/disk preflight. Those
 remain the next Phase 4 slices. Generation models remain deferred.
 
+### Phase 4 slice 4 — durable stage and child-task progress
+
+Jobs now persist `progress_stage`, `progress_percent`, `progress_detail`, and
+structured child progress in SQLite. Normal execution reports input
+preparation, prompt submission, ComfyUI waiting, output processing, asset
+registration, and finalization. Prompt reconciliation uses the same progress
+contract. Each supported output is tracked as a child task with queued,
+running, completed, or skipped state and a bounded percentage.
+
+Terminal transitions preserve an operator-readable snapshot: completed jobs
+show 100% completion, failed/interrupted/cancelled jobs retain their last
+stage and detail, and retries reset progress while recording the scheduled
+backoff. The `/api/jobs` response exposes parsed progress, and the canonical
+Production Queue renders the stage, progress bar, detail, and child output
+states with accessible progressbar semantics.
+
+The 16 GB Mac default remains one heavy job at a time. Memory/disk preflight
+is the next Phase 4 slice; generation models remain deferred.
+
 ### Cross-cutting frontend migration workstream
 
 The current static frontend is a legacy shell and is not considered aligned

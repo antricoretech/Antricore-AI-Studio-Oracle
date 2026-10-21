@@ -234,6 +234,25 @@ def initialize():
             con.execute("ALTER TABLE jobs ADD COLUMN lease_expires_at TEXT")
         if "next_retry_at" not in job_columns:
             con.execute("ALTER TABLE jobs ADD COLUMN next_retry_at TEXT")
+        if "progress_stage" not in job_columns:
+            con.execute("ALTER TABLE jobs ADD COLUMN progress_stage TEXT NOT NULL DEFAULT 'queued'")
+        if "progress_percent" not in job_columns:
+            con.execute("ALTER TABLE jobs ADD COLUMN progress_percent INTEGER NOT NULL DEFAULT 0")
+        if "progress_detail" not in job_columns:
+            con.execute("ALTER TABLE jobs ADD COLUMN progress_detail TEXT")
+        if "progress_json" not in job_columns:
+            con.execute("ALTER TABLE jobs ADD COLUMN progress_json TEXT NOT NULL DEFAULT '{}'")
+        # Give pre-progress jobs a truthful terminal snapshot instead of the
+        # migration default of queued/0.
+        con.execute(
+            "UPDATE jobs SET progress_stage=CASE status "
+            "WHEN 'completed' THEN 'completed' WHEN 'failed' THEN 'failed' "
+            "WHEN 'cancelled' THEN 'cancelled' WHEN 'interrupted' THEN 'interrupted' "
+            "WHEN 'running' THEN 'running' WHEN 'submitted' THEN 'submitted' ELSE 'queued' END, "
+            "progress_percent=CASE status WHEN 'completed' THEN 100 WHEN 'failed' THEN 100 "
+            "WHEN 'cancelled' THEN 100 WHEN 'interrupted' THEN 0 ELSE progress_percent END "
+            "WHERE progress_stage='queued' AND status<>'queued'"
+        )
         # Backfill one deterministic version for legacy personas before the
         # repository starts creating new canonical PersonaVersion records.
         legacy_personas = con.execute(
@@ -291,7 +310,7 @@ def initialize():
         CREATE INDEX IF NOT EXISTS idx_series_episodes_job ON series_episodes(job_id);
         """)
         con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_idempotency_key ON jobs(idempotency_key) WHERE idempotency_key IS NOT NULL")
-        con.execute("INSERT INTO schema_meta(key,value) VALUES('schema_version','11') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+        con.execute("INSERT INTO schema_meta(key,value) VALUES('schema_version','12') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
         con.execute("UPDATE jobs SET status='interrupted', error='App restarted during job; retry from Studio', updated_at=?, worker_id=NULL, heartbeat_at=NULL, lease_expires_at=NULL WHERE status IN ('running','submitted','queued','cancelling')", (datetime_now(),))
 
 

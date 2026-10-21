@@ -770,6 +770,9 @@ def test_complete_generation_lifecycle_with_mocked_comfy(client, monkeypatch):
     asyncio.run(backend.execute_job(jid,job_payload,p))
     job = client.get('/api/jobs').json()[0]
     assert job['status'] == 'completed'
+    assert job['progress_stage'] == 'completed'
+    assert job['progress_percent'] == 100
+    assert job['progress']['children'][0]['state'] == 'completed'
     assets = client.get('/api/assets').json()
     assert len(assets) == 1
     assert 'AI-generated' in assets[0]['disclosure']
