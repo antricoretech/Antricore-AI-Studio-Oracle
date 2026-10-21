@@ -626,6 +626,21 @@ still writes caller-selected image/video/audio files and remains an explicit
 compatibility path until it receives a PersonaVersion-aware import/registration
 contract. Generation models remain deferred.
 
+### Phase 4 slice 9 — explicit free-CLI registration bridge
+
+The free CLI now exposes `python -m studio.free_cli register` for existing
+image, video, and audio outputs. Registration validates the extension and
+image/container signature, enforces the configured asset-size limit, requires
+a canonical Persona, binds the latest PersonaVersion, and delegates to the
+canonical Asset store. Review remains `pending` by default; rights can only be
+marked confirmed through the explicit `--rights-confirmed` flag. The output
+response includes the canonical Asset ID and `/api/assets/{id}/file` URL.
+
+Generation commands continue to write to caller-selected paths and do not
+silently create or approve assets. This keeps the compatibility boundary
+explicit while enabling every CLI media type to enter the same review,
+lineage, and export workflow. Generation models remain deferred.
+
 ### Cross-cutting frontend migration workstream
 
 The current static frontend is a legacy shell and is not considered aligned

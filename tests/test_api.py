@@ -970,6 +970,33 @@ def test_phase4_standalone_diffusion_registration_uses_canonical_asset_store(cli
     assert backend.app.url_path_for('asset_file', aid=asset['id']) == f"/api/assets/{asset['id']}/file"
 
 
+def test_phase4_free_cli_registers_output_with_persona_version(client, tmp_path, capsys):
+    from types import SimpleNamespace
+    import studio.free_cli as free_cli
+    import studio.database as test_db
+    from PIL import Image
+
+    persona = client.post('/api/personas', json={
+        'name': 'CLI Boundary Persona', 'age': 32,
+        'appearance': 'dark hair and brown eyes',
+        'description': 'fictional adult editorial creator'
+    }).json()
+    output = tmp_path / 'cli-output.png'
+    Image.new('RGB', (24, 24), '#789abc').save(output, format='PNG')
+
+    asset = free_cli.register_output(SimpleNamespace(
+        persona_id=persona['id'], file=str(output), kind='image',
+        prompt='A free CLI registration test', disclosure='Fictional adult character. AI-generated synthetic media.',
+        rights_confirmed=False,
+    ))
+    assert asset['persona_version_id'] == persona['current_version']['id']
+    assert asset['review'] == 'pending'
+    assert asset['rights_confirmed'] is False
+    assert test_db.OUTPUTS.joinpath(test_db.row('SELECT filename FROM assets WHERE id=?', (asset['id'],))['filename']).is_file()
+    assert asset['url'] == f"/api/assets/{asset['id']}/file"
+    assert asset['id'] in capsys.readouterr().out
+
+
 def test_phase4_job_lease_recovery_and_retry_backoff(client, monkeypatch):
     import datetime
     import studio.app as backend

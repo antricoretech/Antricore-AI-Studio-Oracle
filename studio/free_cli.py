@@ -99,6 +99,63 @@ def local_model(key: str) -> Path:
     return MODEL_ROOT / key
 
 
+def register_output(args):
+    """Import an existing CLI output into the canonical Asset boundary."""
+
+    from . import database as db
+    from .assets import register_media_asset
+    from .media import extension_for, validate_image_bytes, validate_media_signature
+    from .settings import get_settings
+
+    db.initialize()
+    source = Path(args.file).expanduser().resolve()
+    if not source.is_file():
+        raise FileNotFoundError(f'Output file not found: {source}')
+    extension_for(args.kind, source.name)
+    if source.stat().st_size > get_settings().asset_max_bytes:
+        raise ValueError(f'Output exceeds the {get_settings().asset_max_bytes // (1024 * 1024)} MB asset limit')
+    raw = source.read_bytes()
+    if args.kind == 'image':
+        validate_image_bytes(raw)
+    else:
+        validate_media_signature(raw, args.kind, strict=get_settings().strict_media_validation)
+
+    persona = db.row('SELECT id FROM personas WHERE id=?', (args.persona_id,))
+    if not persona:
+        raise ValueError('CLI registration requires a canonical Persona')
+    version = db.row(
+        'SELECT id FROM persona_versions WHERE persona_id=? ORDER BY version_no DESC LIMIT 1',
+        (args.persona_id,),
+    )
+    asset = register_media_asset(
+        persona_id=args.persona_id,
+        persona_version_id=version['id'] if version else None,
+        job_id=None,
+        kind=args.kind,
+        prompt=args.prompt,
+        raw=raw,
+        disclosure=args.disclosure,
+        rights_confirmed=args.rights_confirmed,
+        original_filename=source.name,
+        lineage={
+            'execution_mode': 'free_cli_register',
+            'source_filename': source.name,
+            'source_kind': args.kind,
+        },
+    )
+    result = {
+        'id': asset['id'],
+        'persona_id': asset['persona_id'],
+        'persona_version_id': asset['persona_version_id'],
+        'kind': asset['kind'],
+        'review': asset['review'],
+        'rights_confirmed': bool(asset['rights_confirmed']),
+        'url': f"/api/assets/{asset['id']}/file",
+    }
+    print(json.dumps(result, indent=2))
+    return result
+
+
 def verify_image(path: str) -> Path:
     file = Path(path).expanduser().resolve()
     if not file.is_file() or file.suffix.lower() not in {'.png','.jpg','.jpeg','.webp'}:
@@ -653,6 +710,13 @@ def cli(argv=None):
     vc=sub.add_parser('voice');vc.add_argument('--text',required=True);vc.add_argument('--voice',default='af_heart')
     vc.add_argument('--lang',default='a');vc.add_argument('--output',default=str(OUTPUT_ROOT/'voice.wav'))
     mx=sub.add_parser('mux');mx.add_argument('--video',required=True);mx.add_argument('--audio',required=True);mx.add_argument('--output',default=str(OUTPUT_ROOT/'narrated_reel.mp4'))
+    rg=sub.add_parser('register', help='Register an existing local output in the canonical Asset store')
+    rg.add_argument('--persona-id', required=True, help='Canonical Persona ID; legacy persona IDs are not accepted')
+    rg.add_argument('--file', required=True, help='Existing local image, video, or audio output')
+    rg.add_argument('--kind', choices=['image', 'video', 'audio'], required=True)
+    rg.add_argument('--prompt', required=True, help='Prompt or creative direction used for the output')
+    rg.add_argument('--disclosure', default=AI_DISCLOSURE)
+    rg.add_argument('--rights-confirmed', action='store_true', help='Explicitly confirm rights for this imported output')
     pp=sub.add_parser('pipeline', help='Run local image, video, optional voice and mux stages')
     pp.add_argument('--prompt', required=True, help='Master-image prompt for the fictional adult character')
     pp.add_argument('--negative-prompt', default=DEFAULT_NEGATIVE_PROMPT)
@@ -688,7 +752,7 @@ def cli(argv=None):
     try:
         return {'doctor':doctor,'download':lambda:download_model(args),'image':lambda:make_image(args),
                 'video':lambda:video(args),'voice':lambda:voice(args),'mux':lambda:mux(args),
-                'pipeline':lambda:pipeline(args),'brief':lambda:run_brief(args)}[args.cmd]()
+                'register':lambda:register_output(args),'pipeline':lambda:pipeline(args),'brief':lambda:run_brief(args)}[args.cmd]()
     except (RuntimeError,ValueError,FileNotFoundError) as e:
         parser.exit(2,f'Error: {e}\n')
 
