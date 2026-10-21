@@ -111,6 +111,12 @@ class ComfyClient:
         response = await self.client.post("/interrupt")
         response.raise_for_status()
 
+    async def history(self, prompt_id: str):
+        """Return one prompt history entry, or ``None`` when it is unknown."""
+        response = await self.client.get(f"/history/{prompt_id}")
+        response.raise_for_status()
+        return response.json().get(prompt_id)
+
     async def wait(self, prompt_id: str, cancel_check=None, heartbeat=None):
         elapsed = 0
         while elapsed < TIMEOUT:
@@ -118,9 +124,7 @@ class ComfyClient:
                 heartbeat()
             if cancel_check and cancel_check():
                 raise asyncio.CancelledError()
-            response = await self.client.get(f"/history/{prompt_id}")
-            response.raise_for_status()
-            entry = response.json().get(prompt_id)
+            entry = await self.history(prompt_id)
             if entry:
                 status = entry.get("status", {})
                 if status.get("status_str") == "error" or status.get("completed") is False and status.get("status_str") == "error":

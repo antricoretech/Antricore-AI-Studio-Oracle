@@ -899,6 +899,61 @@ def test_phase4_job_lease_recovery_and_retry_backoff(client, monkeypatch):
     assert queued['lease_expires_at'] is None
 
 
+def test_phase4_reconciles_completed_comfy_prompt_without_duplicate_assets(client, monkeypatch):
+    import asyncio
+    import httpx
+    import studio.app as backend
+    import studio.database as test_db
+    from studio.comfy import ComfyClient
+
+    persona = client.post('/api/personas', json={
+        'name': 'Recovery Persona', 'age': 28,
+        'appearance': 'short dark hair and hazel eyes',
+        'description': 'fictional adult editorial creator'
+    }).json()
+    payload = backend.JobIn(
+        persona_id=persona['id'], workflow_id='recovery_test',
+        prompt='A recovered editorial portrait', rights_confirmed=True
+    )
+    job_id = backend.uid()
+    backend.JobRepository.create(
+        job_id=job_id, persona_id=persona['id'], workflow_id=payload.workflow_id,
+        kind='image', prompt=payload.prompt, request_json=payload.model_dump_json(),
+        lineage_json='{}', created_at=backend.now(),
+    )
+    test_db.write(
+        "UPDATE jobs SET status='interrupted', comfy_prompt_id=?, error=? WHERE id=?",
+        ('reconcile123', 'App restarted during job; retry from Studio', job_id),
+    )
+    image = Image.new('RGB', (24, 24), '#345678')
+    bio = BytesIO()
+    image.save(bio, format='PNG')
+    png = bio.getvalue()
+
+    def route(request):
+        if request.url.path == '/history/reconcile123':
+            return httpx.Response(200, json={'reconcile123': {
+                'status': {'completed': True, 'status_str': 'success'},
+                'outputs': {'7': {'images': [{'filename': 'recovered.png', 'type': 'output', 'subfolder': ''}]}}
+            }})
+        if request.url.path == '/view':
+            return httpx.Response(200, content=png)
+        return httpx.Response(404, json={})
+
+    monkeypatch.setattr(backend, 'ComfyClient', lambda: ComfyClient(transport=httpx.MockTransport(route)))
+    asyncio.run(backend._reconcile_interrupted_prompts())
+    completed = test_db.row("SELECT status,result_json,error FROM jobs WHERE id=?", (job_id,))
+    result = json.loads(completed['result_json'])
+    assert completed['status'] == 'completed'
+    assert result['reconciled'] is True
+    assert len(result['asset_ids']) == 1
+    assert test_db.row("SELECT COUNT(*) AS count FROM assets WHERE job_id=?", (job_id,))['count'] == 1
+
+    # A second reconciliation pass is a no-op because the canonical Job is complete.
+    asyncio.run(backend._reconcile_interrupted_prompts())
+    assert test_db.row("SELECT COUNT(*) AS count FROM assets WHERE job_id=?", (job_id,))['count'] == 1
+
+
 def test_phase5_asset_manifest_and_approved_export_package(client):
     import io
     import zipfile

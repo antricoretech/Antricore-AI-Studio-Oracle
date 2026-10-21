@@ -516,6 +516,27 @@ storms, but it does not yet reconcile an orphaned ComfyUI prompt after a
 process restart. Prompt reconciliation, child-task progress, and memory/disk
 preflight remain the next Phase 4 slices. Generation models remain deferred.
 
+### Phase 4 slice 3 — completed-prompt reconciliation
+
+The runner now persists the ComfyUI `prompt_id` and performs a bounded
+startup reconciliation pass for interrupted Jobs that have not been cancelled.
+If ComfyUI history reports a completed prompt, the runner reuses the canonical
+output finalization path, downloads supported media, registers PersonaVersion
+and Job lineage, and marks the Job completed only after output validation.
+Remote execution errors become failed Jobs with an operator-visible error;
+unknown or still-pending prompts remain interrupted for explicit retry rather
+than being silently replayed.
+
+Recovered output registration is SHA-256 idempotent per Job. If the process
+stopped after downloading or registering an output but before committing the
+Job result, a later reconciliation pass reuses the existing Asset instead of
+creating a duplicate. Normal foreground execution uses the same finalization
+helper, keeping recovery and ordinary generation behavior aligned.
+
+This slice does not yet resume a prompt that is still pending in ComfyUI, and
+it does not yet expose child-task progress or memory/disk preflight. Those
+remain the next Phase 4 slices. Generation models remain deferred.
+
 ### Cross-cutting frontend migration workstream
 
 The current static frontend is a legacy shell and is not considered aligned

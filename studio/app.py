@@ -257,6 +257,7 @@ async def lifespan(app: FastAPI):
     app.state.job_semaphore = asyncio.Semaphore(get_settings().job_concurrency)
     app.state.job_dispatch_event = asyncio.Event()
     interrupted = db.row("SELECT COUNT(*) AS count FROM jobs WHERE status='interrupted'")
+    app.state.job_reconciler = asyncio.create_task(_reconcile_interrupted_prompts(), name="studio-job-reconciler")
     app.state.job_dispatcher = asyncio.create_task(_job_dispatch_loop(), name="studio-job-dispatcher")
     logger.info("studio_started", extra={"data_dir": str(db.DATA)})
     logger.info("job_recovery_state", extra=_log_data({
@@ -270,9 +271,14 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        reconciler = getattr(app.state, "job_reconciler", None)
+        if reconciler and not reconciler.done():
+            reconciler.cancel()
         dispatcher = getattr(app.state, "job_dispatcher", None)
         if dispatcher and not dispatcher.done():
             dispatcher.cancel()
+        if reconciler:
+            await asyncio.gather(reconciler, return_exceptions=True)
         if dispatcher:
             await asyncio.gather(dispatcher, return_exceptions=True)
         tasks = list(getattr(app.state, "job_tasks", set()))
@@ -969,6 +975,110 @@ def persona_characteristics_text(person):
     return text[:6000]
 
 
+async def _finalize_comfy_outputs(job_id: str, payload: JobIn, person: dict, persona_version: dict | None, outputs: dict, client: ComfyClient):
+    """Download and register ComfyUI outputs exactly once for a canonical Job."""
+
+    files = output_files(outputs)
+    if not files:
+        raise RuntimeError("Workflow completed but no SaveImage / SaveVideo or compatible output was detected")
+    asset_ids = []
+    for item in files[:20]:
+        _heartbeat_job(job_id)
+        content = await client.download(item)
+        _heartbeat_job(job_id)
+        if len(content) > get_settings().output_max_bytes:
+            raise ValueError("Generated output exceeds 200MB safety limit")
+        ext = Path(item["filename"]).suffix.lower()
+        if ext not in {".png", ".jpg", ".jpeg", ".webp", ".mp4", ".webm", ".gif", ".wav", ".mp3", ".flac"}:
+            continue
+        kind = "video" if ext in {".mp4", ".webm", ".gif"} else "audio" if ext in {".wav", ".mp3", ".flac"} else "image"
+        digest = sha256_bytes(content)
+        existing = db.row("SELECT id FROM assets WHERE job_id=? AND sha256=? ORDER BY created_at LIMIT 1", (job_id, digest))
+        if existing:
+            asset_ids.append(existing["id"])
+            continue
+        disclosure = person.get("disclosure") or AI_DISCLOSURE
+        asset = register_media_asset(
+            persona_id=person["id"],
+            persona_version_id=persona_version["id"] if persona_version else None,
+            job_id=job_id,
+            kind=kind,
+            prompt=payload.prompt,
+            raw=content,
+            disclosure=disclosure,
+            rights_confirmed=payload.rights_confirmed,
+            original_filename=item["filename"],
+            lineage={"job_id": job_id, "workflow_id": payload.workflow_id, "comfy_prompt_id": db.row("SELECT comfy_prompt_id FROM jobs WHERE id=?", (job_id,)).get("comfy_prompt_id")},
+        )
+        asset_ids.append(asset["id"])
+    if not asset_ids:
+        raise RuntimeError("Workflow completed but no supported media outputs were available")
+    return {"job_id": job_id, "asset_ids": asset_ids, "output_count": len(asset_ids), "reconciled": False}
+
+
+def _mark_job_completed(job_id: str, result: dict):
+    timestamp = now()
+    db.write(
+        "UPDATE jobs SET status='completed', result_json=?, finished_at=?, updated_at=?, "
+        "worker_id=NULL, heartbeat_at=NULL, lease_expires_at=NULL, next_retry_at=NULL WHERE id=?",
+        (json.dumps(result), timestamp, timestamp, job_id),
+    )
+    db.write("UPDATE series_episodes SET status='completed' WHERE job_id=?", (job_id,))
+
+
+def _mark_job_failed(job_id: str, error: str):
+    timestamp = now()
+    db.write(
+        "UPDATE jobs SET status='failed', error=?, finished_at=?, updated_at=?, "
+        "worker_id=NULL, heartbeat_at=NULL, lease_expires_at=NULL, next_retry_at=NULL WHERE id=?",
+        (error[:1500], timestamp, timestamp, job_id),
+    )
+    db.write("UPDATE series_episodes SET status='failed' WHERE job_id=?", (job_id,))
+
+
+async def _reconcile_interrupted_prompts():
+    """Attach completed ComfyUI history to interrupted canonical Jobs once."""
+
+    rows = db.all_rows(
+        "SELECT * FROM jobs WHERE status='interrupted' AND cancel_requested=0 "
+        "AND comfy_prompt_id IS NOT NULL ORDER BY updated_at, created_at"
+    )
+    if not rows:
+        return
+    try:
+        async with ComfyClient() as client:
+            for row in rows:
+                job_id = row["id"]
+                try:
+                    entry = await client.history(row["comfy_prompt_id"])
+                    if not entry:
+                        continue
+                    status = entry.get("status", {}) if isinstance(entry, dict) else {}
+                    if status.get("status_str") == "error":
+                        _mark_job_failed(job_id, f"ComfyUI execution failed during recovery: {str(status.get('messages', []))[-1000:]}")
+                        continue
+                    if not (status.get("completed") is True or entry.get("outputs")):
+                        continue
+                    raw = json.loads(row.get("request_json") or "{}")
+                    payload = JobIn(**raw)
+                    person = db.row("SELECT * FROM personas WHERE id=?", (payload.persona_id,))
+                    if not person:
+                        raise ValueError("Persona for recovered job is no longer available")
+                    persona_version = PersonaRepository.current_version(person["id"])
+                    _claim_job(job_id)
+                    result = await _finalize_comfy_outputs(job_id, payload, person, persona_version, entry.get("outputs", {}), client)
+                    result["reconciled"] = True
+                    _mark_job_completed(job_id, result)
+                    logger.info("job_reconciled", extra=_log_data({"job_id": job_id, "prompt_id": row["comfy_prompt_id"], "outputs": result["output_count"]}))
+                except (json.JSONDecodeError, TypeError, ValueError, RuntimeError, OSError) as exc:
+                    _mark_job_failed(job_id, f"Prompt reconciliation failed: {str(exc)[:1400]}")
+                    logger.exception("job_reconciliation_failed", extra=_log_data({"job_id": job_id}))
+    except Exception as exc:
+        # ComfyUI may not be running while the Studio starts. Leave rows
+        # interrupted so the operator can retry after the local backend is up.
+        logger.warning("job_reconciliation_unavailable", extra=_log_data({"error": str(exc)[:300]}), exc_info=True)
+
+
 async def execute_job(job_id, payload: JobIn, person: dict):
     try:
         if _job_cancel_requested(job_id):
@@ -1036,45 +1146,11 @@ async def execute_job(job_id, payload: JobIn, person: dict):
                 raise
             if _job_cancel_requested(job_id):
                 return
-            files = output_files(outputs)
-            if not files:
-                raise RuntimeError("Workflow completed but no SaveImage / SaveVideo or compatible output was detected")
-            asset_ids = []
-            for item in files[:20]:
-                _heartbeat_job(job_id)
-                content = await client.download(item)
-                _heartbeat_job(job_id)
-                if len(content) > get_settings().output_max_bytes:
-                    raise ValueError("Generated output exceeds 200MB safety limit")
-                ext = Path(item["filename"]).suffix.lower()
-                if ext not in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm", ".wav", ".mp3", ".flac"}:
-                    continue
-                kind = "video" if ext in {".mp4", ".webm", ".gif"} else "audio" if ext in {".wav", ".mp3", ".flac"} else "image"
-                disclosure = person.get("disclosure") or AI_DISCLOSURE
-                asset = register_media_asset(
-                    persona_id=person["id"],
-                    persona_version_id=persona_version["id"] if persona_version else None,
-                    job_id=job_id,
-                    kind=kind,
-                    prompt=payload.prompt,
-                    raw=content,
-                    disclosure=disclosure,
-                    rights_confirmed=payload.rights_confirmed,
-                    original_filename=item["filename"],
-                    lineage={"job_id": job_id, "workflow_id": payload.workflow_id},
-                )
-                asset_ids.append(asset["id"])
+            result = await _finalize_comfy_outputs(job_id, payload, person, persona_version, outputs, client)
             if _job_cancel_requested(job_id):
                 return
-            result = {"job_id": job_id, "asset_ids": asset_ids, "output_count": len(asset_ids)}
-            timestamp = now()
-            db.write(
-                "UPDATE jobs SET status='completed', result_json=?, finished_at=?, updated_at=?, "
-                "worker_id=NULL, heartbeat_at=NULL, lease_expires_at=NULL, next_retry_at=NULL WHERE id=?",
-                (json.dumps(result), timestamp, timestamp, job_id),
-            )
-            db.write("UPDATE series_episodes SET status='completed' WHERE job_id=?", (job_id,))
-            logger.info("job_completed", extra=_log_data({"job_id": job_id, "outputs": len(files)}))
+            _mark_job_completed(job_id, result)
+            logger.info("job_completed", extra=_log_data({"job_id": job_id, "outputs": result["output_count"]}))
     except asyncio.CancelledError:
         if not _job_cancel_requested(job_id):
             _mark_job_interrupted(job_id)
@@ -1082,13 +1158,7 @@ async def execute_job(job_id, payload: JobIn, person: dict):
         return
     except Exception as e:
         logger.exception("job_failed", extra=_log_data({"job_id": job_id}))
-        timestamp = now()
-        db.write(
-            "UPDATE jobs SET status='failed', error=?, finished_at=?, updated_at=?, "
-            "worker_id=NULL, heartbeat_at=NULL, lease_expires_at=NULL, next_retry_at=NULL WHERE id=?",
-            (str(e)[:1500], timestamp, timestamp, job_id),
-        )
-        db.write("UPDATE series_episodes SET status='failed' WHERE job_id=?", (job_id,))
+        _mark_job_failed(job_id, str(e))
 
 
 @app.post("/api/jobs", status_code=202)
