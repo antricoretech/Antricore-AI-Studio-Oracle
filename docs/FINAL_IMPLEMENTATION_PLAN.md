@@ -363,6 +363,14 @@ handoff preserves biometrics, master/negative identity prompts, wardrobe and
 world ringfences, and structured style/identity characteristics without
 creating a record or starting a media job before review.
 
+The legacy Orchestrator Generate action follows the same boundary. It now
+stores a session-scoped generation draft with the selected scene, dimensions,
+aspect ratio, and requested legacy model, then opens canonical
+`/workspace#production` with the active Persona ID. Canonical Production owns
+rights confirmation, approved ContentPack selection, preflight, and the final
+`POST /api/jobs`; the legacy generate endpoint is not used to bypass those
+gates.
+
 ### Cross-cutting frontend migration workstream
 
 The current static frontend is a legacy shell and is not considered aligned

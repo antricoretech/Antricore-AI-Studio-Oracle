@@ -10,6 +10,7 @@
 
 document.addEventListener('DOMContentLoaded', () => {
   const CANONICAL_PERSONA_DRAFT_KEY = 'persona-studio.canonical-persona-draft.v1';
+  const CANONICAL_GENERATION_DRAFT_KEY = 'persona-studio.canonical-generation-draft.v1';
 
   // Global Application State
   const state = {
@@ -520,6 +521,38 @@ document.addEventListener('DOMContentLoaded', () => {
     window.location.assign('/workspace#personas');
   }
 
+  function handoffOrchestratorRequestToCanonicalFlow() {
+    const aspect = state.orchAspectRatio || '9:16';
+    const dimensions = {
+      '9:16': [768, 1344],
+      '4:5': [1024, 1280],
+      '1:1': [1024, 1024],
+      '16:9': [1344, 768],
+    }[aspect] || [768, 1344];
+    const requestedModel = els.orchModelSelect?.value || 'legacy-orchestrator-default';
+    const draft = {
+      workflow_id: 'default_image_api',
+      prompt: els.orchPromptInput?.value.trim() || '',
+      width: dimensions[0],
+      height: dimensions[1],
+      content_pack_id: '',
+      rights_confirmed: false,
+      source: 'legacy-orchestrator',
+      legacy_model: requestedModel,
+      aspect_ratio: aspect,
+    };
+
+    if (!draft.prompt) throw new Error('Add a scene prompt before opening canonical Production.');
+    try {
+      sessionStorage.setItem(CANONICAL_GENERATION_DRAFT_KEY, JSON.stringify(draft));
+    } catch (error) {
+      throw new Error(`Unable to preserve the generation draft locally: ${error.message}`);
+    }
+
+    const personaQuery = state.activePersonaId ? `?persona_id=${encodeURIComponent(state.activePersonaId)}` : '';
+    window.location.assign(`/workspace${personaQuery}#production`);
+  }
+
   function setupGeneratorControls() {
     // Real-time live synthesis on typing in narrative textarea
     if (els.vaultNarrativeInput) {
@@ -868,11 +901,15 @@ document.addEventListener('DOMContentLoaded', () => {
     // Generate Render Button
     if (els.btnOrchGenerate) {
       els.btnOrchGenerate.addEventListener('click', async () => {
-        appendLog("[Orchestrator] Queuing photoshoot render on Apple MPS...");
+        appendLog("[Orchestrator] Preparing canonical Production review...");
         els.btnOrchGenerate.textContent = "⏳ Generating 4K Visual...";
         els.btnOrchGenerate.disabled = true;
 
         try {
+          handoffOrchestratorRequestToCanonicalFlow();
+          return;
+
+          // Kept below as a legacy compatibility reference until Orchestrator parity is retired.
           const res = await fetch('/api/v2/orchestrator/generate', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},

@@ -27,6 +27,7 @@ const viewMeta = {
 };
 
 const CANONICAL_PERSONA_DRAFT_KEY = 'persona-studio.canonical-persona-draft.v1';
+const CANONICAL_GENERATION_DRAFT_KEY = 'persona-studio.canonical-generation-draft.v1';
 
 const state = {
   view: 'overview',
@@ -47,6 +48,8 @@ const state = {
   preflighting: false,
   submittingJob: false,
   generationDraft: { workflow_id: '', prompt: '', width: 768, height: 1152, content_pack_id: '', rights_confirmed: false },
+  generationDraftImported: false,
+  generationSourceModel: '',
   submittingPersona: false,
   personaDraft: null,
   freezingPersona: false,
@@ -71,6 +74,19 @@ function readCanonicalPersonaDraft() {
     return draft && typeof draft === 'object' && !Array.isArray(draft) ? draft : null;
   } catch (error) {
     console.warn('Canonical Persona draft could not be loaded:', error);
+    return null;
+  }
+}
+
+function readCanonicalGenerationDraft() {
+  try {
+    const raw = sessionStorage.getItem(CANONICAL_GENERATION_DRAFT_KEY);
+    if (!raw) return null;
+    sessionStorage.removeItem(CANONICAL_GENERATION_DRAFT_KEY);
+    const draft = JSON.parse(raw);
+    return draft && typeof draft === 'object' && !Array.isArray(draft) ? draft : null;
+  } catch (error) {
+    console.warn('Canonical generation draft could not be loaded:', error);
     return null;
   }
 }
@@ -360,6 +376,7 @@ function renderGenerationForm() {
   return `<section class="panel" aria-labelledby="generation-heading">
     <div class="section-heading"><div><p class="eyebrow">Controlled generation</p><h2 id="generation-heading">Author a generation request</h2></div>${state.preflight ? badge(`preflight ${state.preflight.overall}`) : badge('preflight required')}</div>
     <p class="helper">Select a locally verified workflow, describe the scene, and run the read-only preflight before queueing. Catalog recipes remain visible but cannot be queued until their verified graph and required model are installed.</p>
+    ${state.generationDraftImported ? `<div class="callout"><p><strong>Draft imported from legacy Orchestrator.</strong></p><p class="helper">Review the prompt, confirm rights, select an approved ContentPack if needed, and run preflight before queueing. Requested legacy model: ${escapeHtml(state.generationSourceModel || 'not recorded')}.</p></div>` : ''}
     <form id="generation-form" class="generation-form">
       <div class="form-grid generation-grid">
         <div class="field"><label for="generation-workflow">Verified workflow</label><select id="generation-workflow" name="workflow_id" required>${state.workflows.length ? state.workflows.map((workflow) => `<option value="${escapeHtml(workflow.id)}" ${workflow.id === draft.workflow_id ? 'selected' : ''} ${workflow.ready ? '' : 'disabled'}>${escapeHtml(workflow.label || workflow.id)} · ${workflow.ready ? 'ready' : 'catalog / not installed'}</option>`).join('') : '<option value="">No workflow catalog entries available</option>'}</select></div>
@@ -484,6 +501,24 @@ async function loadViewData() {
 
 async function loadBase() {
   if (state.personaDraft === null) state.personaDraft = readCanonicalPersonaDraft();
+  if (!state.generationDraftImported) {
+    const importedGeneration = readCanonicalGenerationDraft();
+    if (importedGeneration) {
+      const width = Number(importedGeneration.width);
+      const height = Number(importedGeneration.height);
+      state.generationDraft = {
+        ...state.generationDraft,
+        workflow_id: String(importedGeneration.workflow_id || 'default_image_api'),
+        prompt: String(importedGeneration.prompt || '').trim().slice(0, 3000),
+        width: Number.isFinite(width) && width >= 256 && width <= 2048 ? width : 768,
+        height: Number.isFinite(height) && height >= 256 && height <= 2048 ? height : 1152,
+        content_pack_id: String(importedGeneration.content_pack_id || ''),
+        rights_confirmed: false,
+      };
+      state.generationSourceModel = String(importedGeneration.legacy_model || '');
+      state.generationDraftImported = true;
+    }
+  }
   $('#workspace-view').setAttribute('aria-busy', 'true');
   setStatus('Loading Master Personas…');
   try {
@@ -756,6 +791,8 @@ async function createGenerationJob(event) {
     state.submittingJob = false;
     state.preflight = null;
     state.preflightFingerprint = '';
+    state.generationDraftImported = false;
+    state.generationSourceModel = '';
     setStatus(`Generation job ${queued.id} queued.`, 'success');
     await loadViewData();
   } catch (error) {
