@@ -46,7 +46,7 @@ from .engines import get as get_engine, rows as engine_rows
 from .media import read_limited, validate_image_bytes, validate_media_signature
 from .model_registry import get as get_model, rows as model_rows, workflow_model
 from .policies import AI_DISCLOSURE
-from .preflight import workflow_preflight
+from .preflight import resource_preflight, workflow_preflight
 from .provenance import manifest, media_metadata, quality_report, sha256_bytes
 from .repositories import ContentPackRepository, JobRepository, PersonaRepository, ReferencePackRepository, SeriesRepository
 from .readiness import evaluate as evaluate_readiness
@@ -1229,6 +1229,10 @@ async def create_job(payload: JobIn, idempotency_key: str | None = Header(defaul
         raise HTTPException(400, "Workflow requires a generated audio asset")
     if payload.width % 8 or payload.height % 8:
         raise HTTPException(400, "Width and height must be multiples of 8")
+    resource_checks = resource_preflight(workflow_id=payload.workflow_id, width=payload.width, height=payload.height)
+    resource_errors = [item["detail"] for item in resource_checks if item.get("status") == "error"]
+    if resource_errors:
+        raise HTTPException(409, "Resource preflight failed: " + "; ".join(resource_errors)[:1200])
     if payload.reference_id and not db.row("SELECT id FROM reference_images WHERE id=? AND persona_id=?", (payload.reference_id, payload.persona_id)):
         raise HTTPException(400, "Invalid reference for selected persona")
     if payload.source_asset_id:

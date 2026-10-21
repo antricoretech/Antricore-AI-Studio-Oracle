@@ -5,11 +5,15 @@ from __future__ import annotations
 import json
 import shutil
 import importlib.util
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 from . import database as db
 from .engines import supports as engine_supports
 from .model_registry import get as get_model, is_installed, match as match_model
+from .settings import get_settings
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -70,6 +74,89 @@ def _model_checks(model_id: str | None, task: str | None, backend: str | None):
     return checks
 
 
+def _memory_snapshot() -> tuple[int | None, int | None]:
+    """Best-effort total/available system memory without adding a dependency."""
+
+    total = available = None
+    try:
+        import psutil  # Optional when already present; never installed by preflight.
+        memory = psutil.virtual_memory()
+        return int(memory.total), int(memory.available)
+    except Exception:
+        pass
+    try:
+        page_size = int(os.sysconf("SC_PAGE_SIZE"))
+        total_pages = int(os.sysconf("SC_PHYS_PAGES"))
+        available_pages = int(os.sysconf("SC_AVPHYS_PAGES"))
+        total = page_size * total_pages
+        available = page_size * available_pages
+    except (AttributeError, OSError, ValueError):
+        pass
+    if sys.platform == "darwin":
+        try:
+            result = subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True, timeout=2)
+            if result.returncode == 0 and result.stdout.strip():
+                total = int(result.stdout.strip())
+        except (OSError, ValueError, subprocess.SubprocessError):
+            pass
+    return total, available
+
+
+def resource_preflight(workflow_id: str | None = None, width: int | None = None,
+                       height: int | None = None, task: str | None = None):
+    """Estimate local disk/memory pressure before a generation Job is queued."""
+
+    settings = get_settings()
+    width = max(1, int(width or 768))
+    height = max(1, int(height or 1152))
+    label = (task or workflow_id or "image").lower()
+    kind = "video" if any(token in label for token in ("video", "wan", "motion")) else "audio" if any(token in label for token in ("audio", "voice", "narration")) else "image"
+    frames = settings.job_video_frames if kind == "video" else 1
+    pixels = width * height
+    # This is intentionally conservative and model-agnostic. The actual model
+    # may require more; model-specific VRAM checks remain a separate gate.
+    estimated_output_bytes = max(
+        8 * 1024 * 1024,
+        pixels * 4 * frames * (2 if kind == "video" else 1),
+    )
+    estimated_working_set_gb = {
+        "image": 4.0,
+        "video": 6.0,
+        "audio": 3.0,
+    }[kind] + min(2.0, (pixels / 1_000_000) * 0.5)
+    try:
+        usage = shutil.disk_usage(db.DATA)
+        free_gb = usage.free / (1024 ** 3)
+        required_disk_gb = settings.job_min_free_disk_gb + (estimated_output_bytes / (1024 ** 3)) + settings.job_resource_margin_gb
+        disk_ok = free_gb >= required_disk_gb
+        disk_status = "ready" if disk_ok else "error"
+        disk_detail = f"{free_gb:.1f} GiB free; estimated job need {required_disk_gb:.1f} GiB including safety margin"
+        disk_check = {"id": "resource_disk", "status": disk_status, "detail": disk_detail,
+                      "free_gb": round(free_gb, 2), "required_gb": round(required_disk_gb, 2),
+                      "estimated_output_gb": round(estimated_output_bytes / (1024 ** 3), 3), "kind": kind}
+    except OSError as exc:
+        disk_check = {"id": "resource_disk", "status": "error", "detail": str(exc)[:200], "kind": kind}
+
+    total_bytes, available_bytes = _memory_snapshot()
+    required_memory_gb = min(settings.job_memory_budget_gb, estimated_working_set_gb + settings.job_resource_margin_gb)
+    if total_bytes is None:
+        memory_check = {"id": "resource_memory", "status": "warning", "detail": "System memory could not be measured; run a smaller job or verify free memory before generation", "required_gb": round(required_memory_gb, 2), "kind": kind}
+    else:
+        total_gb = total_bytes / (1024 ** 3)
+        available_gb = available_bytes / (1024 ** 3) if available_bytes is not None else None
+        capacity_ok = total_gb >= required_memory_gb and (available_gb is None or available_gb >= required_memory_gb)
+        memory_check = {
+            "id": "resource_memory",
+            "status": "ready" if capacity_ok else "error",
+            "detail": f"{available_gb:.1f} GiB available of {total_gb:.1f} GiB total; estimated job need {required_memory_gb:.1f} GiB" if available_gb is not None else f"{total_gb:.1f} GiB total; estimated job need {required_memory_gb:.1f} GiB",
+            "total_gb": round(total_gb, 2),
+            "available_gb": round(available_gb, 2) if available_gb is not None else None,
+            "required_gb": round(required_memory_gb, 2),
+            "kind": kind,
+        }
+    return [disk_check, memory_check]
+
+
 def workflow_preflight(workflow_id: str | None = None, model_id: str | None = None,
                        task: str | None = None, width: int | None = None,
                        height: int | None = None):
@@ -118,10 +205,12 @@ def workflow_preflight(workflow_id: str | None = None, model_id: str | None = No
                        "detail": f"{width}x{height} matches {multiple}px alignment" if valid else f"Width and height must be multiples of {multiple} for {task or 'this workflow'}",
                        "width": width, "height": height, "multiple": multiple})
 
+    checks.extend(resource_preflight(workflow_id=workflow_id, width=width, height=height, task=task))
+
     if task and ("audio" in task or "assembly" in task or "video" in task):
         ffmpeg = shutil.which("ffmpeg")
         checks.append({"id": "ffmpeg", **check(bool(ffmpeg), ffmpeg or "FFmpeg is not on PATH")})
     return checks
 
 # End of read-only preflight helpers.
-__all__ = ["workflow_preflight"]
+__all__ = ["resource_preflight", "workflow_preflight"]

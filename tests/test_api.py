@@ -573,7 +573,10 @@ def test_monitor_reports_control_plane_runtime_models_and_storage(client):
     assert 'active' in payload['queue']
 
 
-def test_phase6_model_registry_and_capability_preflight(client):
+def test_phase6_model_registry_and_capability_preflight(client, monkeypatch):
+    import shutil
+    import studio.preflight as resource_checks
+    monkeypatch.setattr(resource_checks.shutil, 'disk_usage', lambda path: shutil._ntuple_diskusage(500 * 1024 ** 3, 450 * 1024 ** 3, 50 * 1024 ** 3))
     models = client.get('/api/models')
     assert models.status_code == 200
     flux = next(item for item in models.json() if item['id'] == 'flux2-klein-4b')
@@ -594,6 +597,38 @@ def test_phase6_model_registry_and_capability_preflight(client):
     assert cloud_readiness.status_code == 200
     assert cloud_readiness.json()['status'] == 'blocked'
     assert any(item['code'] == 'auth' for item in cloud_readiness.json()['blockers'])
+
+
+def test_phase4_resource_preflight_and_queue_gate(client, monkeypatch):
+    import json
+    import shutil
+    import studio.app as backend
+    import studio.preflight as resource_checks
+
+    monkeypatch.setattr(resource_checks, '_memory_snapshot', lambda: (16 * 1024 ** 3, 12 * 1024 ** 3))
+    monkeypatch.setattr(resource_checks.shutil, 'disk_usage', lambda path: shutil._ntuple_diskusage(500 * 1024 ** 3, 450 * 1024 ** 3, 50 * 1024 ** 3))
+    ready = resource_checks.resource_preflight('image_resource_test', 768, 1152)
+    assert {item['id'] for item in ready} == {'resource_disk', 'resource_memory'}
+    assert all(item['status'] == 'ready' for item in ready)
+
+    monkeypatch.setattr(resource_checks.shutil, 'disk_usage', lambda path: shutil._ntuple_diskusage(20 * 1024 ** 3, 19 * 1024 ** 3, 1 * 1024 ** 3))
+    low_disk = resource_checks.resource_preflight('image_resource_test', 768, 1152)
+    assert next(item for item in low_disk if item['id'] == 'resource_disk')['status'] == 'error'
+
+    persona = client.post('/api/personas', json={
+        'name': 'Resource Gate', 'age': 29,
+        'appearance': 'short dark hair and brown eyes',
+        'description': 'fictional adult editorial creator'
+    }).json()
+    workflow = resource_checks.db.WORKFLOWS / 'resource_gate.json'
+    workflow.write_text(json.dumps({'1': {'class_type': 'SaveImage', 'inputs': {}}}))
+    monkeypatch.setattr(backend, 'resource_preflight', lambda **kwargs: [{'id': 'resource_memory', 'status': 'error', 'detail': 'Synthetic low-memory condition'}])
+    response = client.post('/api/jobs', json={
+        'persona_id': persona['id'], 'workflow_id': 'resource_gate',
+        'prompt': 'A resource-gated portrait', 'rights_confirmed': True
+    })
+    assert response.status_code == 409
+    assert 'Resource preflight failed' in response.json()['detail']
 
 
 def test_workflow_upload_requires_api_json(client):
@@ -781,9 +816,13 @@ def test_complete_generation_lifecycle_with_mocked_comfy(client, monkeypatch):
     assert client.get('/api/summary').json()['approved'] == 1
 
 
-def test_phase3_preflight_and_job_lineage(client):
+def test_phase3_preflight_and_job_lineage(client, monkeypatch):
     import json
+    import shutil
     import studio.database as test_db
+    import studio.preflight as resource_checks
+
+    monkeypatch.setattr(resource_checks.shutil, 'disk_usage', lambda path: shutil._ntuple_diskusage(500 * 1024 ** 3, 450 * 1024 ** 3, 50 * 1024 ** 3))
 
     persona = client.post('/api/personas', json={
         'name': 'Phase Three', 'age': 29,

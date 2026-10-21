@@ -556,6 +556,31 @@ states with accessible progressbar semantics.
 The 16 GB Mac default remains one heavy job at a time. Memory/disk preflight
 is the next Phase 4 slice; generation models remain deferred.
 
+### Phase 4 slice 5 — memory and disk preflight gates
+
+The local runner now performs dependency-free resource checks before queue
+creation. Disk checks measure the configured Studio data volume and account for
+the minimum free-disk reserve, estimated output size, and a safety margin.
+Memory checks use already-available system telemetry when possible, including
+Apple Silicon/Unix probes and optional `psutil` when it is already installed;
+preflight never installs a monitoring dependency. Conservative image, video,
+and audio working-set estimates are reported with the detected total and
+available memory.
+
+Resource thresholds are configurable through `STUDIO_JOB_MIN_FREE_DISK_GB`,
+`STUDIO_JOB_MEMORY_BUDGET_GB`, `STUDIO_JOB_RESOURCE_MARGIN_GB`, and
+`STUDIO_JOB_VIDEO_FRAMES`. The read-only `/api/preflight` response exposes
+`resource_disk` and `resource_memory` diagnostics, while canonical Job
+creation rejects an error-level resource check before writing a queued Job.
+This prevents unsafe work from entering the durable queue while preserving
+warnings when telemetry is unavailable.
+
+The default remains conservative for the 16 GB unified-memory Mac: one heavy
+job, an 8 GiB job memory budget, a 10 GiB free-disk reserve, and a 2 GiB
+safety margin. Model-specific requirements remain a separate final
+installation/readiness gate; no generation models are installed by this
+slice.
+
 ### Cross-cutting frontend migration workstream
 
 The current static frontend is a legacy shell and is not considered aligned

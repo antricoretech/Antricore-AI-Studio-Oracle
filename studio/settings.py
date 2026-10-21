@@ -20,6 +20,14 @@ def _int_env(name: str, default: int) -> int:
     return max(1, value)
 
 
+def _float_env(name: str, default: float) -> float:
+    try:
+        value = float(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+    return max(0.1, value)
+
+
 @dataclass(frozen=True)
 class Settings:
     auth_token: str = os.getenv("STUDIO_AUTH_TOKEN", "").strip()
@@ -34,6 +42,10 @@ class Settings:
     job_lease_seconds: int = _int_env("STUDIO_JOB_LEASE_SECONDS", 120)
     job_retry_backoff_seconds: int = _int_env("STUDIO_JOB_RETRY_BACKOFF_SECONDS", 5)
     job_max_attempts: int = _int_env("STUDIO_JOB_MAX_ATTEMPTS", 3)
+    job_min_free_disk_gb: float = _float_env("STUDIO_JOB_MIN_FREE_DISK_GB", 10.0)
+    job_memory_budget_gb: float = _float_env("STUDIO_JOB_MEMORY_BUDGET_GB", 8.0)
+    job_resource_margin_gb: float = _float_env("STUDIO_JOB_RESOURCE_MARGIN_GB", 2.0)
+    job_video_frames: int = _int_env("STUDIO_JOB_VIDEO_FRAMES", 16)
 
 
 def get_settings() -> Settings:
@@ -52,4 +64,8 @@ def get_settings() -> Settings:
         job_lease_seconds=_int_env("STUDIO_JOB_LEASE_SECONDS", 120),
         job_retry_backoff_seconds=_int_env("STUDIO_JOB_RETRY_BACKOFF_SECONDS", 5),
         job_max_attempts=_int_env("STUDIO_JOB_MAX_ATTEMPTS", 3),
+        job_min_free_disk_gb=_float_env("STUDIO_JOB_MIN_FREE_DISK_GB", 10.0),
+        job_memory_budget_gb=_float_env("STUDIO_JOB_MEMORY_BUDGET_GB", 8.0),
+        job_resource_margin_gb=_float_env("STUDIO_JOB_RESOURCE_MARGIN_GB", 2.0),
+        job_video_frames=_int_env("STUDIO_JOB_VIDEO_FRAMES", 16),
     )
