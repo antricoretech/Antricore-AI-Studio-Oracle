@@ -656,6 +656,28 @@ current CLI/diffusion compatibility work; the remaining Phase 4 gate is the
 separate model/runtime installation and hardware-readiness decision. No
 generation models are installed by this slice.
 
+### Final model/runtime gate audit — target Mac required
+
+The final installation gate has been audited but not executed. The declared
+target is an Apple M5 Mac with 16 GB unified memory and 512 GB storage, while
+the current development session is an HP 245 G7 Windows host with roughly
+19.2 GB system memory. PyTorch/MPS and Apple-Silicon memory behavior cannot be
+validated from this host, so Mac-specific runtime or model installation must
+wait until the repository is opened in the target Mac environment.
+
+The recommended first install is deliberately minimal: one approved
+photorealistic image model that fits the 16 GB memory budget, one approved
+short-video model, Kokoro for narration, and the runtime packages required by
+those paths. Do not install the 24 GB-class Wan2.2 5B path or multiple large
+image checkpoints before a measured first-model benchmark. Every selected
+model still requires a pinned revision, license record, checksum, measured
+disk usage, and a real MPS smoke test before its register row can change from
+`NOT INSTALLED`.
+
+No model, model weight, model repository, or Mac-specific runtime was installed
+by this audit. The next action is to run the gate on the target Mac, confirm
+the exact approved model set, then install and benchmark one model at a time.
+
 ### Cross-cutting frontend migration workstream
 
 The current static frontend is a legacy shell and is not considered aligned

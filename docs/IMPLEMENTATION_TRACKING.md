@@ -152,6 +152,8 @@ Every completed activity must record:
 
 | MEDIA-007 | Phase 4 | Add opt-in canonical registration to direct free-CLI generation commands | COMPLETED | `.\\.venv\\Scripts\\python.exe -m py_compile studio/free_cli.py`; `.\\.venv\\Scripts\\python.exe -m pytest -q tests/test_free_cli.py tests/test_api.py tests/test_comfy.py` â€” 47 passed, 1 pre-existing failure in `test_registry_only_freely_available_models`; `.\\.venv\\Scripts\\python.exe -m studio.free_cli image --help`; `.\\.venv\\Scripts\\python.exe -m pip check`; no model-backed job executed | 2026-10-21 | Direct image, video, voice, mux, and pipeline commands accept an optional canonical `--persona-id`; when supplied after successful local generation, outputs are registered through the same Asset boundary. Without the flag, existing caller-selected file behavior is preserved. No command auto-confirms rights or review. |
 
+| GATE-001 | Final gate | Audit target hardware, model register, and installation boundary | COMPLETED | PowerShell host audit: Windows 10 / HP 245 G7 / ~19.2 GB RAM; `.\\.venv\\Scripts\\python.exe scripts/deployment-readiness.py` returned warning only for unavailable PyTorch; official MPS/model source review completed; no model or Mac-specific runtime installed | 2026-10-21 | Current host is not the declared Apple M5 target, so MPS and unified-memory fit cannot be validated here. Recommended next gate: target-Mac installation of one image model, one short-video model, Kokoro, and required runtime packages one at a time with pinned revisions/checksums and measured memory/disk evidence. Wan2.2 5B remains excluded from the first 16 GB benchmark. |
+
 ## Frontend migration workstream
 
 The existing `static/index.html`, `static/app.js`, and `static/styles.css`
@@ -380,6 +382,7 @@ Evidence: Master Persona ContentPack authoring/review/resolution is available on
 | DEC-004 | Install all image/audio/video generation models and model assets only at final installation gate | CLOSED | User clarification recorded; ordinary application/runtime dependencies may be installed or updated when required |
 | DEC-005 | Create new Master Personas with the new structure; existing personas are legacy/reference-only after implementation | CLOSED | User clarification recorded; preserve old data, use new unique IDs, and require explicit reviewed import for any legacy reuse |
 | DEC-006 | Migrate the current frontend to the new canonical implementation; permit non-model dependency/tooling updates while keeping generation models final-gate-only | CLOSED | User clarification recorded; frontend migration workstream and ADR-013 added |
+| DEC-007 | Run final model/runtime installation on the declared Apple M5 target rather than the current Windows host | OPEN | User/action: open the repository in the target Mac environment before installing MPS/runtime/model artifacts |
 
 ## Final model and dependency installation register
 
@@ -442,4 +445,5 @@ disk usage, and rollback/removal instructions.
 | 2026-10-21 | Completed Phase 4 standalone diffusion asset-boundary migration | Optional diffusion registration now uses canonical PersonaVersion-aware media storage with pending review, unconfirmed rights, hashes, quality, and lineage metadata; focused suite passed 39 tests, full suite passed 47 with the known model-license assertion, and no models were installed or executed |
 | 2026-10-21 | Completed Phase 4 explicit free-CLI registration bridge | Added canonical registration for existing CLI image/video/audio outputs with PersonaVersion binding, media validation, pending review, and explicit rights confirmation; targeted suite passed 47 tests with the known model-license assertion, and no models were installed or executed |
 | 2026-10-21 | Completed Phase 4 opt-in direct free-CLI registration | Image, video, voice, mux, and pipeline commands can now register successful outputs when given a canonical `--persona-id`; targeted suite passed 47 tests with the known model-license assertion, help validation passed, and no models were installed or executed |
+| 2026-10-21 | Audited final model/runtime installation gate | Confirmed the current host is Windows HP 245 G7 rather than the declared Apple M5 target; recorded target-Mac requirement, minimal install sequence, source/license verification, and no-install decision |
 
