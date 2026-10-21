@@ -2,7 +2,7 @@
 
 **Purpose:** Track every approved implementation activity, validation result, file change, status transition, blocker, and next action.
 
-**Current status:** Phase 0 runtime hardening complete; Phase 2 ContentPack authoring/review workspace active on its dedicated branch. Model installation remains deferred to the final installation gate.
+**Current status:** Phase 0 runtime hardening complete; Phase 2 Master Persona and ContentPack core completed on its dedicated branch after the final validation gate. Cross-cutting legacy-shell parity and model installation remain separately tracked.
 **Tracking rule:** Update this file after every successfully verified activity. If an activity fails, record the failure and evidence before retrying. Do not mark an activity complete from intention or an unverified edit.
 
 ## Branch strategy
@@ -17,7 +17,7 @@ from the updated `main`.
 |---|---|---|
 | `phase/00-baseline` | Baseline and Phase 0 foundation checkpoint | CREATED |
 | `phase/01-canonical-persona` | PersonaVersion, pack review/canonical selection, and unified media linkage | CHECKPOINTED |
-| `phase/02-master-persona-content-packs` | Master Persona and ContentPack implementation | ACTIVE |
+| `phase/02-master-persona-content-packs` | Master Persona and ContentPack implementation | CHECKPOINTED |
 | `phase/03-unified-media-assets` | Unified rendering and asset lifecycle | PLANNED |
 | `phase/04-local-job-runner` through `phase/09-analytics` | Subsequent roadmap phases | PLANNED |
 
@@ -59,7 +59,7 @@ Every completed activity must record:
 |---|---|---|---:|---|---|
 | 0 | Baseline and contracts | COMPLETED | 100% | User approval | Contracts, states, storage, API ownership, observability and runtime enforcement verified |
 | 1 | Canonical PersonaVersion | IN_PROGRESS | 70% | Phase 0 | SQLite canonical source; persistence, v2 compatibility, pack review/canonical selection, unified asset linkage, archive reconciliation, and migration boundary recorded |
-| 2 | Master Persona and content packs | IN_PROGRESS | 99% | Phase 1 | ContentPack persistence, canonical-anchor resolver, adult/glamour-family Identity Core rules, focused author/review/resolve UI, shared API client, canonical shell, Master Persona/PersonaVersion creation, ReferencePack review/canonical selection, Asset Review, Production Queue, preflight-gated generation authoring, stale-asset/lineage visibility, axe/accessibility-tree/error-state coverage, persona-preserving legacy-to-canonical handoff, stale-preflight protection, and Gallery-to-Asset-Review handoff completed; full feature parity remains active |
+| 2 | Master Persona and content packs | COMPLETED | 100% | Phase 1 | Formal Phase 2 exit gate passed: canonical Persona/PersonaVersion, ReferencePack, ContentPack, adult/glamour Identity Core anchoring, review/linkage/lineage controls, Production/Asset Review flow, frontend certification, and guarded legacy handoffs are complete; feature-equivalent legacy replacement remains a separate cross-cutting workstream |
 | 3 | Unified rendering and assets | PLANNED | 0% | Phase 1 | One job and asset contract |
 | 4 | Persistent local job runner | PLANNED | 0% | Phase 3 | Mac memory-aware execution |
 | 5 | Identity-conditioned rendering | PLANNED | 0% | Phases 2–4 | Benchmark before selection |
@@ -121,6 +121,8 @@ Every completed activity must record:
 | IMP-011 | Phase 8 | Add account-aware publishing workflow | PLANNED | Not started | — | Only approved assets |
 | IMP-012 | Phase 9 | Add analytics and optimization loop | PLANNED | Not started | — | After publishing stability |
 
+| CLOSE-002 | Phase 2 | Run Phase 2 formal exit gate and close the Master Persona/ContentPack core | COMPLETED | `node --check static/workspace.js`; `node --check static/modules/api.js`; `node --check static/content_packs.js`; `.\\.venv\\Scripts\\python.exe -m compileall -q studio`; `.\\.venv\\Scripts\\python.exe -m pytest -q tests/test_frontend.py tests/test_api.py tests/test_comfy.py` — 29 passed; `.\\.venv\\Scripts\\python.exe -m pip check`; `scripts/browser-smoke-test.py --url http://127.0.0.1:8123`; `scripts/workspace-accessibility-smoke.py --url http://127.0.0.1:8123` | 2026-10-21 | Phase 2 formal exit criteria passed. Adult/glamour remains Identity Core plus style authority, canonical selection is explicitly reviewed and lineage-safe, and no image/audio/video model or generation job was installed or executed. Legacy feature-equivalent replacement remains separately tracked. Next: create the Phase 3 branch only after Phase 2 integration approval. |
+
 ## Frontend migration workstream
 
 The existing `static/index.html`, `static/app.js`, and `static/styles.css`
@@ -135,7 +137,7 @@ PersonaVersion/ReferencePack/ContentPack journey.
 | Persona and PersonaVersion screens | COMPLETED | `/workspace#personas` creates new Master Personas, shows draft/frozen PersonaVersion lineage, and calls canonical create/version/freeze APIs; unique IDs remain server-owned |
 | ReferencePack review and canonical selection screens | COMPLETED | `/workspace#references` exposes pack/item review, rights confirmation, image-asset linkage, eligibility diagnostics, and explicit canonical selection/clearing through canonical APIs |
 | ContentPack author/review/resolve screen | COMPLETED | `/content-packs` is available on the Phase 2 branch |
-| Generation and asset-review screens | IN_PROGRESS | Asset Review, Production Queue, preflight-gated generation authoring, stale-preflight protection, and stale-asset/lineage visualization are complete; full model-backed execution and legacy-shell parity remain |
+| Generation and asset-review screens | COMPLETED | Asset Review, Production Queue, preflight-gated generation authoring, stale-preflight protection, and stale-asset/lineage visualization are complete for the Phase 2 gate; full model-backed execution remains deferred to later runtime phases |
 | Export and Instagram publishing-readiness screens | PLANNED | Only approved, disclosed, policy-checked assets can advance |
 | Accessibility/responsive/regression coverage | COMPLETED | Automated skip-link, landmark, named-control, loading/error/empty, no-overflow, 320/768/1024/1440px, axe WCAG 2A/2AA, and Chrome accessibility-tree coverage is available; manual assistive-technology certification remains operational follow-up |
 | Legacy-shell parity bridge | COMPLETED | Root legacy shell is module-loaded, preserves Persona context on global, feature-level, and Gallery item-level canonical links, has a real-tab/axe/accessibility-tree smoke gate, and maps each legacy surface to a canonical destination; feature-by-feature replacement remains planned |

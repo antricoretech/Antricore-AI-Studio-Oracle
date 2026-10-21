@@ -1,6 +1,6 @@
 # Final Implementation Plan — AI Influencer Studio
 
-**Status:** Phase 0 runtime hardening completed; Phase 1 PersonaVersion foundation in progress  
+**Status:** Phase 0 runtime hardening completed; Phase 2 Master Persona and ContentPack core completed on its dedicated branch; Phase 1 reconciliation and cross-cutting legacy parity remain tracked  
 **Target:** Local-first modular monolith on a 16 GB unified-memory Mac  
 **Goal:** Build a reliable AI influencer persona and content-creator studio from persona design through reviewed, export-ready, and optionally publishable content.
 
@@ -370,6 +370,28 @@ aspect ratio, and requested legacy model, then opens canonical
 rights confirmation, approved ContentPack selection, preflight, and the final
 `POST /api/jobs`; the legacy generate endpoint is not used to bypass those
 gates.
+
+### Phase 2 closeout — validated
+
+The formal Phase 2 exit gate is complete on
+`phase/02-master-persona-content-packs`. The canonical journey distinguishes
+identity references from style/content references, binds them to a
+PersonaVersion, and permits approved adult/glamour references to participate in
+Identity Core canonical anchoring. Adult/glamour, lingerie, boudoir, and
+nude-editorial ContentPacks retain both style authority and Identity Core
+authority; they cannot be downgraded to style-only presets by the UI or API.
+
+The completion gate covered Persona and PersonaVersion creation, ReferencePack
+review and canonical selection, rights and media linkage, ContentPack authoring
+and resolution, stale-lineage protection, Production preflight and queue
+lineage, Asset Review, guarded legacy handoffs, and frontend/API/browser/axe/
+accessibility-tree/error-state validation.
+
+Legacy feature-equivalent replacement and retirement of the preserved `/` shell
+remain a cross-cutting frontend workstream. Deeper Story Studio, Gallery,
+Vault-inspector, and System/Telemetry replacement is not silently claimed as
+complete by this Phase 2 domain closeout. Generation-model installation and
+model-backed execution also remain deferred to their planned final gates.
 
 ### Cross-cutting frontend migration workstream
 
