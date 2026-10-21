@@ -393,6 +393,23 @@ Vault-inspector, and System/Telemetry replacement is not silently claimed as
 complete by this Phase 2 domain closeout. Generation-model installation and
 model-backed execution also remain deferred to their planned final gates.
 
+### Phase 3 starting audit — unified media and asset lifecycle
+
+Phase 3 begins on `phase/03-unified-media-assets`. The current runtime has
+several direct rendering paths: canonical `/api/jobs`, Photo Studio generation,
+Orchestrator anchor/batch generation, and the standalone diffusion engine. They
+do not yet share one asset-registration and storage contract. The main risks are
+duplicate media copies in `data/outputs`, `data/references`, and `generated`,
+direct generation routes that do not create a Job lineage record, missing
+idempotency keys, and file-serving paths that do not consistently verify the
+recorded media file.
+
+The first Phase 3 implementation slice is therefore the common media
+registration/storage boundary. It must preserve pending review, PersonaVersion
+lineage, disclosure, rights, hash, metadata, and quality results for every
+image, video, and audio output before the direct rendering routes are migrated
+to the shared job contract. Model installation remains deferred.
+
 ### Cross-cutting frontend migration workstream
 
 The current static frontend is a legacy shell and is not considered aligned

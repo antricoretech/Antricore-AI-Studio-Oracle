@@ -18,7 +18,7 @@ from the updated `main`.
 | `phase/00-baseline` | Baseline and Phase 0 foundation checkpoint | CREATED |
 | `phase/01-canonical-persona` | PersonaVersion, pack review/canonical selection, and unified media linkage | CHECKPOINTED |
 | `phase/02-master-persona-content-packs` | Master Persona and ContentPack implementation | CHECKPOINTED |
-| `phase/03-unified-media-assets` | Unified rendering and asset lifecycle | PLANNED |
+| `phase/03-unified-media-assets` | Unified rendering and asset lifecycle | ACTIVE |
 | `phase/04-local-job-runner` through `phase/09-analytics` | Subsequent roadmap phases | PLANNED |
 
 Milestone tags use `phase-0-complete`, `phase-1-complete`, and the same
@@ -60,7 +60,7 @@ Every completed activity must record:
 | 0 | Baseline and contracts | COMPLETED | 100% | User approval | Contracts, states, storage, API ownership, observability and runtime enforcement verified |
 | 1 | Canonical PersonaVersion | IN_PROGRESS | 70% | Phase 0 | SQLite canonical source; persistence, v2 compatibility, pack review/canonical selection, unified asset linkage, archive reconciliation, and migration boundary recorded |
 | 2 | Master Persona and content packs | COMPLETED | 100% | Phase 1 | Formal Phase 2 exit gate passed: canonical Persona/PersonaVersion, ReferencePack, ContentPack, adult/glamour Identity Core anchoring, review/linkage/lineage controls, Production/Asset Review flow, frontend certification, and guarded legacy handoffs are complete; feature-equivalent legacy replacement remains a separate cross-cutting workstream |
-| 3 | Unified rendering and assets | PLANNED | 0% | Phase 1 | One job and asset contract |
+| 3 | Unified rendering and assets | IN_PROGRESS | 0% | Phase 2 | Starting audit complete; direct Photo Studio, Orchestrator, and diffusion paths still need one storage, registration, idempotency, and Job-lineage contract |
 | 4 | Persistent local job runner | PLANNED | 0% | Phase 3 | Mac memory-aware execution |
 | 5 | Identity-conditioned rendering | PLANNED | 0% | Phases 2–4 | Benchmark before selection |
 | 6 | Creator personality/content system | PLANNED | 0% | Phases 1–2 | Content pillars and creator behavior |
@@ -122,6 +122,7 @@ Every completed activity must record:
 | IMP-012 | Phase 9 | Add analytics and optimization loop | PLANNED | Not started | — | After publishing stability |
 
 | CLOSE-002 | Phase 2 | Run Phase 2 formal exit gate and close the Master Persona/ContentPack core | COMPLETED | `node --check static/workspace.js`; `node --check static/modules/api.js`; `node --check static/content_packs.js`; `.\\.venv\\Scripts\\python.exe -m compileall -q studio`; `.\\.venv\\Scripts\\python.exe -m pytest -q tests/test_frontend.py tests/test_api.py tests/test_comfy.py` — 29 passed; `.\\.venv\\Scripts\\python.exe -m pip check`; `scripts/browser-smoke-test.py --url http://127.0.0.1:8123`; `scripts/workspace-accessibility-smoke.py --url http://127.0.0.1:8123` | 2026-10-21 | Phase 2 formal exit criteria passed. Adult/glamour remains Identity Core plus style authority, canonical selection is explicitly reviewed and lineage-safe, and no image/audio/video model or generation job was installed or executed. Legacy feature-equivalent replacement remains separately tracked. Next: create the Phase 3 branch only after Phase 2 integration approval. |
+| BRANCH-003 | Planning / Phase 3 | Create and activate the Phase 3 unified media/assets branch | COMPLETED | `git switch -c phase/03-unified-media-assets`; branch and Phase 2 tag verified; unrelated working-tree changes preserved | 2026-10-21 | Phase 3 is isolated from the Phase 2 checkpoint. Next: implement and verify the common media registration/storage boundary before migrating direct rendering routes. |
 
 ## Frontend migration workstream
 
