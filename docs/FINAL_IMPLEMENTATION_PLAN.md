@@ -344,6 +344,11 @@ The root shell's direct “Open Canonical Workspace” entry follows the same
 rule, so users cannot lose the selected Persona simply by leaving a legacy tab
 through the global bridge.
 
+Canonical Production also binds a successful preflight to the exact workflow
+and dimensions it validated. If those inputs change, the preflight is cleared;
+an in-flight response whose inputs are no longer current is discarded and the
+user must validate again before queueing.
+
 ### Cross-cutting frontend migration workstream
 
 The current static frontend is a legacy shell and is not considered aligned

@@ -41,6 +41,7 @@ const state = {
   assets: [],
   workflows: [],
   preflight: null,
+  preflightFingerprint: '',
   preflighting: false,
   submittingJob: false,
   generationDraft: { workflow_id: '', prompt: '', width: 768, height: 1152, content_pack_id: '', rights_confirmed: false },
@@ -383,6 +384,14 @@ function renderProductionCanonical() {
   </section>`;
 }
 
+function generationPreflightFingerprint(draft) {
+  return JSON.stringify({
+    workflow_id: draft?.workflow_id || '',
+    width: Number(draft?.width || 0),
+    height: Number(draft?.height || 0),
+  });
+}
+
 function renderAssetsLegacy() {
   if (!state.assets.length) return emptyState('No generated or imported assets are recorded yet.');
   return `<section class="panel" aria-labelledby="assets-heading"><div class="section-heading"><div><p class="eyebrow">Human review gate</p><h2 id="assets-heading">Recent assets</h2></div></div><div class="table-wrap"><table><thead><tr><th>Asset</th><th>Kind</th><th>Persona</th><th>Review</th><th>File</th></tr></thead><tbody>${state.assets.map((asset) => `<tr><td>${escapeHtml(asset.id)}</td><td>${escapeHtml(asset.kind)}</td><td>${escapeHtml(asset.persona_name || asset.persona_id)}</td><td>${badge(asset.review)}</td><td><a class="asset-link" href="/api/assets/${encodeURIComponent(asset.id)}/file" target="_blank" rel="noreferrer">Open media</a></td></tr>`).join('')}</tbody></table></div></section>`;
@@ -633,8 +642,8 @@ async function actOnJob(jobId, action) {
   }
 }
 
-function syncGenerationDraft(form) {
-  state.generationDraft = {
+function readGenerationDraft(form) {
+  return {
     workflow_id: form.elements.workflow_id.value,
     prompt: form.elements.prompt.value.trim(),
     width: Number(form.elements.width.value),
@@ -642,6 +651,15 @@ function syncGenerationDraft(form) {
     content_pack_id: form.elements.content_pack_id.value,
     rights_confirmed: form.elements.rights_confirmed.checked,
   };
+}
+
+function syncGenerationDraft(form) {
+  const nextDraft = readGenerationDraft(form);
+  if (state.preflight && state.preflightFingerprint !== generationPreflightFingerprint(nextDraft)) {
+    state.preflight = null;
+    state.preflightFingerprint = '';
+  }
+  state.generationDraft = nextDraft;
 }
 
 async function runGenerationPreflight() {
@@ -656,14 +674,30 @@ async function runGenerationPreflight() {
   state.preflighting = true;
   renderView();
   const { workflow_id: workflowId, width, height } = state.generationDraft;
+  const requestFingerprint = generationPreflightFingerprint(state.generationDraft);
   try {
-    state.preflight = await get(`/api/preflight?workflow_id=${encodeURIComponent(workflowId)}&width=${encodeURIComponent(width)}&height=${encodeURIComponent(height)}`);
+    const result = await get(`/api/preflight?workflow_id=${encodeURIComponent(workflowId)}&width=${encodeURIComponent(width)}&height=${encodeURIComponent(height)}`);
+    const liveForm = $('#generation-form');
+    const liveDraft = liveForm ? readGenerationDraft(liveForm) : state.generationDraft;
+    if (requestFingerprint !== generationPreflightFingerprint(liveDraft)) {
+      state.generationDraft = liveDraft;
+      state.preflighting = false;
+      state.preflight = null;
+      state.preflightFingerprint = '';
+      renderView();
+      setStatus('Generation inputs changed while preflight was running. Run preflight again.', 'error');
+      return;
+    }
+    state.generationDraft = liveDraft;
+    state.preflight = result;
+    state.preflightFingerprint = requestFingerprint;
     state.preflighting = false;
     renderView();
     setStatus(`Preflight ${state.preflight.overall}.`, state.preflight.overall === 'ready' ? 'success' : 'error');
   } catch (error) {
     state.preflighting = false;
     state.preflight = null;
+    state.preflightFingerprint = '';
     renderView();
     setStatus(error.message, 'error');
   }
@@ -679,6 +713,7 @@ async function createGenerationJob(event) {
     return;
   }
   if (state.preflight?.overall !== 'ready') {
+    renderView();
     setStatus('Run a passing preflight before queueing generation.', 'error');
     return;
   }
@@ -696,6 +731,7 @@ async function createGenerationJob(event) {
     });
     state.submittingJob = false;
     state.preflight = null;
+    state.preflightFingerprint = '';
     setStatus(`Generation job ${queued.id} queued.`, 'success');
     await loadViewData();
   } catch (error) {
