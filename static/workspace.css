@@ -112,6 +112,8 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .content-brief-form textarea { min-height: 76px; }
 .content-artifacts-panel { margin-top: 16px; }
 .content-artifact-form { display: grid; gap: 12px; }
+.artifact-quality-checks { display: grid; gap: 6px; margin-top: 11px; border-top: 1px solid var(--border); padding-top: 10px; }
+.artifact-quality-check { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 8px; color: var(--muted); font-size: .76rem; }
 .artifact-content { margin-top: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .creator-pillar { border: 1px solid var(--border); border-radius: 8px; background: var(--surface-raised); padding: 13px; }
 .creator-pillar-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -199,6 +201,7 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .badge.approved, .badge.ready { border-color: rgba(105, 210, 154, .45); color: var(--success); }
 .badge.pending, .badge.queued, .badge.planned { border-color: rgba(242, 196, 111, .45); color: var(--warning); }
 .badge.rejected, .badge.failed { border-color: rgba(239, 140, 140, .45); color: var(--danger); }
+.badge.needs_review, .badge.warning { border-color: rgba(242, 196, 111, .5); color: var(--warning); }
 .badge.stale, .badge.mismatch, .badge.blocked, .badge.missing { border-color: rgba(242, 196, 111, .5); color: var(--warning); }
 .card-list { display: grid; gap: 9px; }
 .entity-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-raised); padding: 13px; }

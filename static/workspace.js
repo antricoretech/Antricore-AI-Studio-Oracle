@@ -52,6 +52,7 @@ const state = {
   contentArtifacts: [],
   creatingContentBrief: false,
   creatingContentArtifact: false,
+  assessingContentArtifact: '',
   approvingContentArtifact: '',
   approvingContentBrief: '',
   editingContentBriefId: '',
@@ -559,10 +560,17 @@ function renderContentBriefs() {
   </div>`;
 }
 
+function renderContentArtifactQuality(artifact) {
+  const quality = artifact.quality || {};
+  const checks = Array.isArray(quality.checks) ? quality.checks : [];
+  if (!checks.length) return '<p class="helper">Quality check has not run yet.</p>';
+  return `<div class="artifact-quality-checks" aria-label="Content quality checks">${checks.map((check) => `<div class="artifact-quality-check"><span>${badge(check.status)}</span><span>${escapeHtml(check.detail)}</span></div>`).join('')}</div>`;
+}
+
 function renderContentArtifacts() {
   const approvedBriefs = state.contentBriefs.filter((brief) => brief.status === 'approved');
   const briefNames = Object.fromEntries(state.contentBriefs.map((brief) => [brief.id, brief.title]));
-  return `<section class="panel content-artifacts-panel" aria-labelledby="content-artifacts-heading"><div class="section-heading"><div><p class="eyebrow">Reviewable output</p><h2 id="content-artifacts-heading">Caption and Script Drafts</h2></div>${badge(`${state.contentArtifacts.length} artifact${state.contentArtifacts.length === 1 ? '' : 's'}`)}</div><p class="helper">Create deterministic draft templates from an approved ContentBrief, then review the copy before any production or publishing handoff. These templates are not model-generated.</p>${approvedBriefs.length ? `<form id="content-artifact-create-form" class="content-artifact-form"><div class="form-grid"><label>Approved ContentBrief<select name="content_brief_id" required>${approvedBriefs.map((brief) => `<option value="${escapeHtml(brief.id)}">${escapeHtml(brief.title)} · ${escapeHtml(brief.content_class)}</option>`).join('')}</select></label><label>Artifact type<select name="artifact_type"><option value="caption">Caption draft</option><option value="script">Script draft</option></select></label></div><label>Optional operator copy <span class="field-hint">leave blank to create a structured template</span><textarea name="content" rows="4" maxlength="5000" placeholder="Paste or write reviewed copy here, or leave blank for the deterministic template."></textarea><p id="content-artifact-form-error" class="form-error" role="alert" hidden></p><div class="form-actions"><button class="button primary" type="submit" ${state.creatingContentArtifact ? 'disabled' : ''}>${state.creatingContentArtifact ? 'Creating...' : 'Create draft artifact'}</button></div></form>` : `<div class="callout readiness-callout"><p><strong>Approve a ContentBrief first.</strong></p><p class="helper">Caption and script artifacts inherit the frozen PersonaVersion, disclosure, and adult/glamour Identity Core checks from the approved brief.</p></div>`}${state.contentArtifacts.length ? `<div class="card-list artifact-list">${state.contentArtifacts.map((artifact) => `<article class="entity-card"><div><h3>${escapeHtml(artifact.artifact_type)} · ${escapeHtml(briefNames[artifact.content_brief_id] || artifact.content_brief_id)}</h3><div class="entity-meta">${badge(artifact.status)}${badge(`revision ${artifact.revision || 1}`)}${badge(artifact.source || 'operator')}</div><p class="artifact-content">${escapeHtml(artifact.content)}</p><p class="helper">Disclosure: ${escapeHtml(artifact.disclosure)}</p></div><div class="entity-actions">${artifact.status === 'draft' ? `<button class="button secondary" type="button" data-artifact-approve="${escapeHtml(artifact.id)}" ${state.approvingContentArtifact ? 'disabled' : ''}>${state.approvingContentArtifact === artifact.id ? 'Approving...' : 'Approve artifact'}</button>` : ''}${artifact.status === 'approved' ? `<span class="badge approved">Ready for handoff</span>` : ''}</div></article>`).join('')}</div>` : emptyState('No caption or script artifacts exist yet. Approve a brief, then create the first draft above.')}</section>`;
+  return `<section class="panel content-artifacts-panel" aria-labelledby="content-artifacts-heading"><div class="section-heading"><div><p class="eyebrow">Reviewable output</p><h2 id="content-artifacts-heading">Caption and Script Drafts</h2></div>${badge(`${state.contentArtifacts.length} artifact${state.contentArtifacts.length === 1 ? '' : 's'}`)}</div><p class="helper">Create deterministic draft templates from an approved ContentBrief, run structural quality checks, then review the copy before any production or publishing handoff. These checks do not censor adult/glamour content and are not model-generated.</p>${approvedBriefs.length ? `<form id="content-artifact-create-form" class="content-artifact-form"><div class="form-grid"><label>Approved ContentBrief<select name="content_brief_id" required>${approvedBriefs.map((brief) => `<option value="${escapeHtml(brief.id)}">${escapeHtml(brief.title)} · ${escapeHtml(brief.content_class)}</option>`).join('')}</select></label><label>Artifact type<select name="artifact_type"><option value="caption">Caption draft</option><option value="script">Script draft</option></select></label></div><label>Optional operator copy <span class="field-hint">leave blank to create a structured template</span><textarea name="content" rows="4" maxlength="5000" placeholder="Paste or write reviewed copy here, or leave blank for the deterministic template."></textarea><p id="content-artifact-form-error" class="form-error" role="alert" hidden></p><div class="form-actions"><button class="button primary" type="submit" ${state.creatingContentArtifact ? 'disabled' : ''}>${state.creatingContentArtifact ? 'Creating...' : 'Create draft artifact'}</button></div></form>` : `<div class="callout readiness-callout"><p><strong>Approve a ContentBrief first.</strong></p><p class="helper">Caption and script artifacts inherit the frozen PersonaVersion, disclosure, and adult/glamour Identity Core checks from the approved brief.</p></div>`}${state.contentArtifacts.length ? `<div class="card-list artifact-list">${state.contentArtifacts.map((artifact) => { const qualityStatus = artifact.quality_status || 'pending'; const busy = state.assessingContentArtifact === artifact.id || state.approvingContentArtifact === artifact.id; return `<article class="entity-card"><div><h3>${escapeHtml(artifact.artifact_type)} · ${escapeHtml(briefNames[artifact.content_brief_id] || artifact.content_brief_id)}</h3><div class="entity-meta">${badge(artifact.status)}${badge(`revision ${artifact.revision || 1}`)}${badge(artifact.source || 'operator')}${badge(qualityStatus)}</div><p class="artifact-content">${escapeHtml(artifact.content)}</p><p class="helper">Disclosure: ${escapeHtml(artifact.disclosure)}</p>${renderContentArtifactQuality(artifact)}</div><div class="entity-actions">${artifact.status === 'draft' ? `<button class="button secondary" type="button" data-artifact-quality="${escapeHtml(artifact.id)}" ${busy ? 'disabled' : ''}>${state.assessingContentArtifact === artifact.id ? 'Checking...' : 'Run quality check'}</button><button class="button primary" type="button" data-artifact-approve="${escapeHtml(artifact.id)}" ${(busy || qualityStatus === 'failed') ? 'disabled' : ''}>${state.approvingContentArtifact === artifact.id ? 'Approving...' : 'Approve artifact'}</button>` : ''}${artifact.status === 'approved' ? `<span class="badge approved">Ready for handoff</span>` : ''}</div></article>`; }).join('')}</div>` : emptyState('No caption or script artifacts exist yet. Approve a brief, then create the first draft above.')}</section>`;
 }
 
 function renderContentBriefsWithEditing() {
@@ -925,6 +933,21 @@ async function createContentArtifact(event) {
   }
 }
 
+async function assessContentArtifact(artifactId) {
+  state.assessingContentArtifact = artifactId;
+  renderView();
+  try {
+    await post(`/api/personas/${encodeURIComponent(state.activePersonaId)}/content-artifacts/${encodeURIComponent(artifactId)}/quality`, {});
+    state.assessingContentArtifact = '';
+    setStatus('Content artifact quality checks completed.', 'success');
+    await loadViewData();
+  } catch (error) {
+    state.assessingContentArtifact = '';
+    renderView();
+    setStatus(error.message, 'error');
+  }
+}
+
 async function approveContentArtifact(artifactId) {
   state.approvingContentArtifact = artifactId;
   renderView();
@@ -1259,6 +1282,11 @@ $('#workspace-view').addEventListener('click', (event) => {
   const approveArtifactButton = event.target.closest('[data-artifact-approve]');
   if (approveArtifactButton) {
     approveContentArtifact(approveArtifactButton.dataset.artifactApprove);
+    return;
+  }
+  const qualityArtifactButton = event.target.closest('[data-artifact-quality]');
+  if (qualityArtifactButton) {
+    assessContentArtifact(qualityArtifactButton.dataset.artifactQuality);
     return;
   }
   const approveBriefButton = event.target.closest('[data-brief-approve]');

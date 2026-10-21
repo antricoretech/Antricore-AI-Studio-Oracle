@@ -498,7 +498,12 @@ def test_content_brief_requires_creator_system_and_frozen_version_for_production
     artifact = caption.json()
     assert artifact['status'] == 'draft'
     assert artifact['source'] == 'deterministic_template'
+    assert artifact['quality_status'] == 'needs_review'
+    assert any(check['key'] == 'operator_review' and check['status'] == 'warning' for check in artifact['quality']['checks'])
     assert 'Disclosure:' in artifact['content']
+    template_quality = client.post(f"/api/personas/{pid}/content-artifacts/{artifact['id']}/quality")
+    assert template_quality.status_code == 200
+    assert template_quality.json()['quality_status'] == 'needs_review'
     edited_artifact = client.put(f"/api/personas/{pid}/content-artifacts/{artifact['id']}", json={
         'artifact_type': 'caption',
         'content': 'A reviewed caption draft. Fictional adult creator. AI-generated synthetic media.',
@@ -506,12 +511,15 @@ def test_content_brief_requires_creator_system_and_frozen_version_for_production
     assert edited_artifact.status_code == 200
     assert edited_artifact.json()['revision'] == 2
     assert edited_artifact.json()['source'] == 'operator'
+    assert edited_artifact.json()['quality_status'] == 'passed'
     approved_artifact = client.patch(f"/api/personas/{pid}/content-artifacts/{artifact['id']}/review", json={'review': 'approved'})
     assert approved_artifact.status_code == 200
+    assert approved_artifact.json()['quality_status'] == 'passed'
     resolved_artifact = client.get(f"/api/personas/{pid}/content-artifacts/{artifact['id']}/resolve")
     assert resolved_artifact.status_code == 200
     assert resolved_artifact.json()['content_brief_id'] == brief['id']
     assert resolved_artifact.json()['persona_version_id'] == handoff['persona_version_id']
+    assert resolved_artifact.json()['quality']['status'] == 'passed'
     duplicate_artifact = client.post(f"/api/personas/{pid}/content-briefs/{brief['id']}/artifacts", json={'artifact_type': 'caption'})
     assert duplicate_artifact.status_code == 409
     immutable = client.put(f"/api/personas/{pid}/content-briefs/{brief['id']}", json=revised_payload)

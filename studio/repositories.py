@@ -849,6 +849,11 @@ class ContentArtifactRepository:
             result["metadata"] = json.loads(raw or "{}")
         except (TypeError, json.JSONDecodeError):
             result["metadata"] = {}
+        quality_raw = result.pop("quality_json", "{}")
+        try:
+            result["quality"] = json.loads(quality_raw or "{}")
+        except (TypeError, json.JSONDecodeError):
+            result["quality"] = {}
         return result
 
     @staticmethod
@@ -905,6 +910,77 @@ class ContentArtifactRepository:
         return artifact_type
 
     @staticmethod
+    def _quality(artifact: dict, evaluated_at: str):
+        checks = []
+
+        def add(key: str, status: str, detail: str):
+            checks.append({"key": key, "status": status, "detail": detail})
+
+        content = (artifact.get("content") or "").strip()
+        if content:
+            add("content_present", "passed", "Artifact contains reviewable copy.")
+        else:
+            add("content_present", "failed", "Artifact copy cannot be empty.")
+
+        disclosure = (artifact.get("disclosure") or "").strip()
+        if len(disclosure) >= 20:
+            add("disclosure", "passed", "Disclosure metadata is present.")
+        else:
+            add("disclosure", "failed", "Disclosure metadata must contain at least 20 characters.")
+
+        resolved = None
+        try:
+            resolved = ContentBriefRepository.resolve(artifact["persona_id"], artifact["content_brief_id"])
+            if resolved["persona_version_id"] == artifact["persona_version_id"]:
+                add("lineage", "passed", "Approved ContentBrief and PersonaVersion lineage are aligned.")
+            else:
+                add("lineage", "failed", "Artifact PersonaVersion no longer matches its approved ContentBrief.")
+        except (LookupError, ValueError) as exc:
+            add("lineage", "failed", str(exc))
+
+        if artifact.get("source") == "deterministic_template" or any(
+            token in content for token in ("[Caption draft template]", "[Script draft template]", "TODO", "{{", "}}")
+        ):
+            add("operator_review", "warning", "Template or placeholder markers remain; complete human copy review before publishing.")
+        else:
+            add("operator_review", "passed", "No template or placeholder markers were detected.")
+
+        limit = 2200 if artifact.get("artifact_type") == "caption" else 5000
+        if len(content) <= limit:
+            add("length", "passed", f"Copy is within the {limit}-character {artifact.get('artifact_type')} limit.")
+        else:
+            add("length", "warning", f"Copy exceeds the {limit}-character {artifact.get('artifact_type')} limit and needs editing.")
+
+        if resolved and is_adult_glamour_content_class(resolved["brief"]["content_class"]):
+            pillar = resolved.get("content_pillar") or {}
+            if pillar.get("identity_core") and pillar.get("identity_authority") == "identity_and_style":
+                add("adult_identity_core", "passed", "Adult/glamour content remains bound to Identity Core and style authority.")
+            else:
+                add("adult_identity_core", "failed", "Adult/glamour content must retain Identity Core and identity_and_style authority.")
+
+        status = "failed" if any(item["status"] == "failed" for item in checks) else (
+            "needs_review" if any(item["status"] == "warning" for item in checks) else "passed"
+        )
+        return {
+            "status": status,
+            "checks": checks,
+            "evaluated_at": evaluated_at,
+            "blocking": status == "failed",
+        }
+
+    @staticmethod
+    def assess(*, persona_id: str, artifact_id: str, evaluated_at: str):
+        artifact = ContentArtifactRepository.get(persona_id, artifact_id)
+        if not artifact:
+            raise LookupError("Content artifact not found")
+        quality = ContentArtifactRepository._quality(artifact, evaluated_at)
+        db.write(
+            "UPDATE content_artifacts SET quality_status=?, quality_json=?, updated_at=? WHERE id=? AND persona_id=?",
+            (quality["status"], json.dumps(quality, ensure_ascii=False, sort_keys=True), evaluated_at, artifact_id, persona_id),
+        )
+        return ContentArtifactRepository.get(persona_id, artifact_id)
+
+    @staticmethod
     def create(*, persona_id: str, brief_id: str, artifact_type: str, content: str,
                metadata: dict, created_at: str):
         artifact_type = ContentArtifactRepository._validate_type(artifact_type)
@@ -916,20 +992,21 @@ class ContentArtifactRepository:
         )
         if existing:
             raise ValueError(f"A non-archived {artifact_type} artifact already exists for this ContentBrief")
-        content = content.strip() or ContentArtifactRepository._template(brief, artifact_type)
+        operator_content = content.strip()
+        content = operator_content or ContentArtifactRepository._template(brief, artifact_type)
         if not content:
             raise ValueError("Content artifact cannot be empty")
         artifact_id = uuid.uuid4().hex
         db.write(
-            "INSERT INTO content_artifacts (id,persona_id,persona_version_id,content_brief_id,artifact_type,status,revision,content,disclosure,source,metadata_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO content_artifacts (id,persona_id,persona_version_id,content_brief_id,artifact_type,status,revision,content,disclosure,source,quality_status,quality_json,metadata_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 artifact_id, persona_id, resolved["persona_version_id"], brief_id, artifact_type,
                 "draft", 1, content, brief["disclosure"],
-                "operator" if content != ContentArtifactRepository._template(brief, artifact_type) else "deterministic_template",
+                "operator" if operator_content else "deterministic_template", "pending", "{}",
                 json.dumps(dict(metadata or {}), ensure_ascii=False, sort_keys=True), created_at, created_at,
             ),
         )
-        return ContentArtifactRepository.get(persona_id, artifact_id)
+        return ContentArtifactRepository.assess(persona_id=persona_id, artifact_id=artifact_id, evaluated_at=created_at)
 
     @staticmethod
     def update(*, persona_id: str, artifact_id: str, content: str, metadata: dict, updated_at: str):
@@ -942,10 +1019,10 @@ class ContentArtifactRepository:
         if not content:
             raise ValueError("Content artifact cannot be empty")
         db.write(
-            "UPDATE content_artifacts SET revision=revision+1, content=?, source='operator', metadata_json=?, updated_at=? WHERE id=? AND persona_id=? AND status='draft'",
+            "UPDATE content_artifacts SET revision=revision+1, content=?, source='operator', quality_status='pending', quality_json='{}', metadata_json=?, updated_at=? WHERE id=? AND persona_id=? AND status='draft'",
             (content, json.dumps(dict(metadata or {}), ensure_ascii=False, sort_keys=True), updated_at, artifact_id, persona_id),
         )
-        return ContentArtifactRepository.get(persona_id, artifact_id)
+        return ContentArtifactRepository.assess(persona_id=persona_id, artifact_id=artifact_id, evaluated_at=updated_at)
 
     @staticmethod
     def review(*, persona_id: str, artifact_id: str, review: str, reviewed_at: str):
@@ -955,11 +1032,10 @@ class ContentArtifactRepository:
         if not artifact:
             raise LookupError("Content artifact not found")
         if review == "approved":
-            resolved = ContentBriefRepository.resolve(persona_id, artifact["content_brief_id"])
-            if resolved["persona_version_id"] != artifact["persona_version_id"]:
-                raise ValueError("Content artifact PersonaVersion no longer matches its ContentBrief")
-            if len(artifact["disclosure"].strip()) < 20:
-                raise ValueError("Approved content artifacts require disclosure metadata")
+            artifact = ContentArtifactRepository.assess(persona_id=persona_id, artifact_id=artifact_id, evaluated_at=reviewed_at)
+            if artifact["quality_status"] == "failed":
+                failed = next((item["detail"] for item in artifact["quality"].get("checks", []) if item["status"] == "failed"), "Content artifact quality check failed")
+                raise ValueError(f"Resolve content artifact quality failure before approval: {failed}")
         db.write(
             "UPDATE content_artifacts SET status=?, updated_at=? WHERE id=? AND persona_id=?",
             (review, reviewed_at, artifact_id, persona_id),
@@ -976,6 +1052,8 @@ class ContentArtifactRepository:
         brief = ContentBriefRepository.resolve(persona_id, artifact["content_brief_id"])
         if brief["persona_version_id"] != artifact["persona_version_id"]:
             raise ValueError("Content artifact lineage is stale")
+        if artifact.get("quality_status") == "failed":
+            raise ValueError("Content artifact quality check failed")
         return {
             "id": artifact["id"],
             "persona_id": artifact["persona_id"],
@@ -987,6 +1065,7 @@ class ContentArtifactRepository:
             "content": artifact["content"],
             "disclosure": artifact["disclosure"],
             "source": artifact["source"],
+            "quality": artifact.get("quality") or {},
         }
 
 

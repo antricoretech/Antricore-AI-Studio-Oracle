@@ -1028,6 +1028,15 @@ def get_content_artifact(pid: str, artifact_id: str):
     return artifact
 
 
+@app.post("/api/personas/{pid}/content-artifacts/{artifact_id}/quality")
+def assess_content_artifact(pid: str, artifact_id: str):
+    must_persona(pid)
+    try:
+        return ContentArtifactRepository.assess(persona_id=pid, artifact_id=artifact_id, evaluated_at=now())
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
 @app.put("/api/personas/{pid}/content-artifacts/{artifact_id}")
 def update_content_artifact(pid: str, artifact_id: str, payload: ContentArtifactIn):
     must_persona(pid)
