@@ -136,6 +136,43 @@ def initialize():
             created_at TEXT NOT NULL, sha256 TEXT, metadata_json TEXT NOT NULL DEFAULT '{}',
             quality_json TEXT NOT NULL DEFAULT '{}'
         );
+        CREATE TABLE IF NOT EXISTS identity_benchmarks (
+            id TEXT PRIMARY KEY,
+            persona_id TEXT NOT NULL,
+            persona_version_id TEXT NOT NULL,
+            anchor_asset_id TEXT NOT NULL,
+            anchor_reference_pack_id TEXT,
+            anchor_content_class TEXT NOT NULL DEFAULT 'identity',
+            base_model_id TEXT,
+            status TEXT NOT NULL DEFAULT 'planned',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            FOREIGN KEY(persona_id) REFERENCES personas(id),
+            FOREIGN KEY(persona_version_id) REFERENCES persona_versions(id),
+            FOREIGN KEY(anchor_asset_id) REFERENCES assets(id)
+        );
+        CREATE TABLE IF NOT EXISTS identity_benchmark_cases (
+            id TEXT PRIMARY KEY,
+            benchmark_id TEXT NOT NULL,
+            method TEXT NOT NULL,
+            scenario_id TEXT NOT NULL,
+            scenario_label TEXT NOT NULL,
+            content_class TEXT NOT NULL,
+            prompt TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'planned',
+            output_asset_id TEXT,
+            metrics_json TEXT NOT NULL DEFAULT '{}',
+            notes TEXT NOT NULL DEFAULT '',
+            error TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            started_at TEXT,
+            completed_at TEXT,
+            UNIQUE(benchmark_id, method, scenario_id),
+            FOREIGN KEY(benchmark_id) REFERENCES identity_benchmarks(id) ON DELETE CASCADE,
+            FOREIGN KEY(output_asset_id) REFERENCES assets(id)
+        );
         CREATE TABLE IF NOT EXISTS links (
             code TEXT PRIMARY KEY, label TEXT NOT NULL,
             destination TEXT NOT NULL, clicks INTEGER NOT NULL DEFAULT 0,
@@ -305,12 +342,16 @@ def initialize():
         CREATE INDEX IF NOT EXISTS idx_assets_review_kind ON assets(review, kind);
         CREATE INDEX IF NOT EXISTS idx_assets_sha256 ON assets(sha256);
         CREATE INDEX IF NOT EXISTS idx_assets_persona_version ON assets(persona_id, persona_version_id, kind, review);
+        CREATE INDEX IF NOT EXISTS idx_identity_benchmarks_persona ON identity_benchmarks(persona_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_identity_benchmarks_version ON identity_benchmarks(persona_version_id, status);
+        CREATE INDEX IF NOT EXISTS idx_identity_benchmark_cases_benchmark ON identity_benchmark_cases(benchmark_id, status);
+        CREATE INDEX IF NOT EXISTS idx_identity_benchmark_cases_asset ON identity_benchmark_cases(output_asset_id);
         CREATE INDEX IF NOT EXISTS idx_series_persona_created ON series(persona_id, created_at);
         CREATE INDEX IF NOT EXISTS idx_series_persona_version ON series(persona_version_id);
         CREATE INDEX IF NOT EXISTS idx_series_episodes_job ON series_episodes(job_id);
         """)
         con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_idempotency_key ON jobs(idempotency_key) WHERE idempotency_key IS NOT NULL")
-        con.execute("INSERT INTO schema_meta(key,value) VALUES('schema_version','12') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+        con.execute("INSERT INTO schema_meta(key,value) VALUES('schema_version','13') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
         # A durable queued row is safe to dispatch after restart. Only work
         # that may already have reached ComfyUI is interrupted and requires
         # prompt reconciliation or explicit operator retry.

@@ -323,6 +323,73 @@ def test_content_pack_persists_style_and_resolves_canonical_identity(client, tmp
     assert client.get(f"/api/personas/maya_bhutia/content-packs/{content_pack['id']}/resolve").status_code == 409
 
 
+def test_identity_benchmark_binds_frozen_version_and_adult_glamour_anchor(client, tmp_path, monkeypatch):
+    import studio.api_v2 as api_v2
+
+    monkeypatch.setattr(api_v2, 'PERSONAS_FILE', tmp_path / 'personas_v2.json')
+    packs = client.get('/api/v2/personas/maya_bhutia/reference-packs').json()['packs']
+    source_pack = next(item for item in packs if item['pack_type'] == 'adult_glamour')
+    source_item = source_pack['items'][0]
+    image = Image.new('RGB', (64, 64), 'plum')
+    bio = BytesIO()
+    image.save(bio, format='PNG')
+    imported = client.post('/api/assets/import', data={
+        'persona_id': 'maya_bhutia', 'kind': 'image', 'prompt': 'Identity benchmark adult glamour anchor',
+        'disclosure': 'Fictional adult character. AI-generated synthetic media.', 'rights_confirmed': 'true'
+    }, files={'file': ('benchmark-anchor.png', bio.getvalue(), 'image/png')})
+    assert imported.status_code == 201
+    asset_id = imported.json()['id']
+    assert client.patch(f'/api/assets/{asset_id}/review', json={'review': 'approved'}).status_code == 200
+    assert client.post(
+        f"/api/v2/personas/maya_bhutia/reference-packs/{source_pack['id']}/items/{source_item['id']}/asset",
+        json={'asset_id': asset_id},
+    ).status_code == 200
+    for item in source_pack['items']:
+        assert client.patch(
+            f"/api/v2/personas/maya_bhutia/reference-packs/{source_pack['id']}/items/{item['id']}/review",
+            json={'review': 'approved', 'rights_confirmed': True},
+        ).status_code == 200
+    assert client.patch(
+        f"/api/v2/personas/maya_bhutia/reference-packs/{source_pack['id']}/review",
+        json={'review': 'approved'},
+    ).status_code == 200
+    assert client.patch(
+        f"/api/v2/personas/maya_bhutia/reference-packs/{source_pack['id']}/canonical",
+        json={'selected': True, 'item_ids': [source_item['id']]},
+    ).status_code == 200
+    assert client.post('/api/personas/maya_bhutia/freeze').status_code == 200
+
+    created = client.post('/api/personas/maya_bhutia/identity-benchmarks', json={
+        'base_model_id': 'pending-final-gate',
+        'methods': ['text_only', 'ip_adapter_faceid'],
+        'scenario_ids': ['neutral_portrait', 'adult_glamour_editorial'],
+    })
+    assert created.status_code == 201
+    benchmark = created.json()
+    assert benchmark['status'] == 'planned'
+    assert benchmark['anchor_content_class'] == 'adult_glamour'
+    assert benchmark['persona_version_id'] == source_pack['persona_version_id']
+    assert len(benchmark['cases']) == 4
+    assert {case['method'] for case in benchmark['cases']} == {'text_only', 'ip_adapter_faceid'}
+
+    first_case = benchmark['cases'][0]
+    invalid = client.post(
+        f"/api/personas/maya_bhutia/identity-benchmarks/{benchmark['id']}/cases/{first_case['id']}/result",
+        json={'status': 'completed', 'metrics': {'identity_score': 1.1}},
+    )
+    assert invalid.status_code == 409
+    recorded = client.post(
+        f"/api/personas/maya_bhutia/identity-benchmarks/{benchmark['id']}/cases/{first_case['id']}/result",
+        json={'status': 'completed', 'metrics': {
+            'identity_score': 0.91, 'prompt_adherence': 0.82, 'anatomy_score': 0.88,
+            'latency_ms': 1200,
+        }},
+    )
+    assert recorded.status_code == 200
+    assert recorded.json()['status'] == 'in_progress'
+    assert next(case for case in recorded.json()['cases'] if case['id'] == first_case['id'])['status'] == 'completed'
+
+
 def test_link_redirect_and_review_validation(client):
     assert client.post('/api/links', json={"label": "Test", "destination": "http://example.com/"}).status_code == 400
     r = client.post('/api/links', json={"label": "Landing", "destination": "https://example.com/landing"})

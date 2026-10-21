@@ -11,6 +11,13 @@ import json
 import uuid
 
 from . import database as db
+from .identity_conditioning import (
+    BENCHMARK_STATUSES,
+    CASE_STATUSES,
+    normalize_selection,
+    validate_completed_metrics,
+    validate_metrics,
+)
 
 ADULT_GLAMOUR_CONTENT_CLASSES = frozenset({
     "adult_glamour",
@@ -271,7 +278,8 @@ class ReferencePackRepository:
     @staticmethod
     def resolve_canonical_asset(persona_id: str, persona_version_id: str | None = None):
         sql = (
-            "SELECT assets.*, reference_packs.id AS reference_pack_id, reference_packs.pack_type AS reference_pack_type "
+            "SELECT assets.*, reference_packs.id AS reference_pack_id, reference_packs.pack_type AS reference_pack_type, "
+            "reference_packs.content_class AS reference_content_class "
             "FROM reference_pack_items "
             "JOIN reference_packs ON reference_packs.id=reference_pack_items.pack_id "
             "JOIN assets ON assets.id=reference_pack_items.asset_id "
@@ -502,6 +510,182 @@ class ContentPackRepository:
             "anchors": anchors,
             "reference_pack_id": source["id"],
         }
+
+
+class IdentityBenchmarkRepository:
+    @staticmethod
+    def _decode_case(case: dict):
+        result = dict(case)
+        raw = result.pop("metrics_json", "{}")
+        try:
+            result["metrics"] = json.loads(raw or "{}")
+        except (TypeError, json.JSONDecodeError):
+            result["metrics"] = {}
+        return result
+
+    @staticmethod
+    def _decode(benchmark: dict | None):
+        if not benchmark:
+            return None
+        result = dict(benchmark)
+        raw = result.pop("metadata_json", "{}")
+        try:
+            result["metadata"] = json.loads(raw or "{}")
+        except (TypeError, json.JSONDecodeError):
+            result["metadata"] = {}
+        result["cases"] = [
+            IdentityBenchmarkRepository._decode_case(case)
+            for case in db.all_rows(
+                "SELECT * FROM identity_benchmark_cases WHERE benchmark_id=? ORDER BY created_at, id",
+                (result["id"],),
+            )
+        ]
+        return result
+
+    @staticmethod
+    def list(persona_id: str):
+        return [
+            IdentityBenchmarkRepository._decode(row)
+            for row in db.all_rows(
+                "SELECT * FROM identity_benchmarks WHERE persona_id=? ORDER BY created_at DESC",
+                (persona_id,),
+            )
+        ]
+
+    @staticmethod
+    def get(persona_id: str, benchmark_id: str):
+        return IdentityBenchmarkRepository._decode(
+            db.row(
+                "SELECT * FROM identity_benchmarks WHERE id=? AND persona_id=?",
+                (benchmark_id, persona_id),
+            )
+        )
+
+    @staticmethod
+    def create(*, persona_id: str, persona_version_id: str, anchor: dict,
+               base_model_id: str | None, methods: list[str] | None,
+               scenario_ids: list[str] | None, metadata: dict | None,
+               created_at: str):
+        selected_methods, scenarios = normalize_selection(methods, scenario_ids)
+        benchmark_id = uuid.uuid4().hex
+        benchmark_metadata = dict(metadata or {})
+        benchmark_metadata.update({
+            "methods": selected_methods,
+            "scenarios": [scenario["id"] for scenario in scenarios],
+            "execution": "deferred_until_final_model_gate",
+        })
+        statements = [(
+            "INSERT INTO identity_benchmarks "
+            "(id,persona_id,persona_version_id,anchor_asset_id,anchor_reference_pack_id,anchor_content_class,"
+            "base_model_id,status,created_at,updated_at,metadata_json) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                benchmark_id,
+                persona_id,
+                persona_version_id,
+                anchor["id"],
+                anchor.get("reference_pack_id"),
+                anchor.get("reference_content_class") or anchor.get("content_class") or "identity",
+                base_model_id,
+                "planned",
+                created_at,
+                created_at,
+                json.dumps(benchmark_metadata, ensure_ascii=False, sort_keys=True),
+            ),
+        )]
+        for method in selected_methods:
+            for scenario in scenarios:
+                statements.append((
+                    "INSERT INTO identity_benchmark_cases "
+                    "(id,benchmark_id,method,scenario_id,scenario_label,content_class,prompt,status,created_at,updated_at) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        uuid.uuid4().hex,
+                        benchmark_id,
+                        method,
+                        scenario["id"],
+                        scenario["label"],
+                        scenario["content_class"],
+                        scenario["prompt"],
+                        "planned",
+                        created_at,
+                        created_at,
+                    ),
+                ))
+        db.write_many(statements)
+        return IdentityBenchmarkRepository.get(persona_id, benchmark_id)
+
+    @staticmethod
+    def record_case_result(*, persona_id: str, benchmark_id: str, case_id: str,
+                           status: str, metrics: dict | None, notes: str,
+                           error: str | None, output_asset_id: str | None,
+                           updated_at: str):
+        if status not in CASE_STATUSES:
+            raise ValueError("Unsupported identity benchmark case status")
+        benchmark = db.row(
+            "SELECT * FROM identity_benchmarks WHERE id=? AND persona_id=?",
+            (benchmark_id, persona_id),
+        )
+        if not benchmark:
+            raise LookupError("Identity benchmark not found")
+        case = db.row(
+            "SELECT * FROM identity_benchmark_cases WHERE id=? AND benchmark_id=?",
+            (case_id, benchmark_id),
+        )
+        if not case:
+            raise LookupError("Identity benchmark case not found")
+        normalized_metrics = validate_metrics(metrics)
+        if status == "completed":
+            validate_completed_metrics(normalized_metrics)
+        if output_asset_id:
+            asset = db.row(
+                "SELECT id, persona_id, persona_version_id, kind, filename FROM assets WHERE id=? AND persona_id=?",
+                (output_asset_id, persona_id),
+            )
+            if not asset:
+                raise LookupError("Benchmark output asset not found for this persona")
+            if asset["kind"] != "image":
+                raise ValueError("Identity benchmark output must be an image asset")
+            if asset["persona_version_id"] != benchmark["persona_version_id"]:
+                raise ValueError("Benchmark output asset must match the benchmark PersonaVersion")
+            if not (db.OUTPUTS / asset["filename"]).is_file():
+                raise ValueError("Benchmark output asset file is missing from local media storage")
+        started_at = updated_at if status == "running" and not case.get("started_at") else case.get("started_at")
+        completed_at = updated_at if status in {"completed", "blocked", "failed"} else None
+        db.write(
+            "UPDATE identity_benchmark_cases SET status=?, output_asset_id=?, metrics_json=?, notes=?, error=?, "
+            "updated_at=?, started_at=?, completed_at=? WHERE id=? AND benchmark_id=?",
+            (
+                status,
+                output_asset_id,
+                json.dumps(normalized_metrics, ensure_ascii=False, sort_keys=True),
+                notes,
+                error,
+                updated_at,
+                started_at,
+                completed_at,
+                case_id,
+                benchmark_id,
+            ),
+        )
+        remaining = db.row(
+            "SELECT COUNT(*) AS count FROM identity_benchmark_cases WHERE benchmark_id=? AND status NOT IN ('completed','blocked','failed')",
+            (benchmark_id,),
+        )["count"]
+        if remaining:
+            benchmark_status = "in_progress" if status != "planned" else "planned"
+        else:
+            completed = db.row(
+                "SELECT COUNT(*) AS count FROM identity_benchmark_cases WHERE benchmark_id=? AND status='completed'",
+                (benchmark_id,),
+            )["count"]
+            benchmark_status = "completed" if completed else "blocked"
+        if benchmark_status not in BENCHMARK_STATUSES:
+            raise ValueError("Invalid derived identity benchmark status")
+        db.write(
+            "UPDATE identity_benchmarks SET status=?, updated_at=? WHERE id=? AND persona_id=?",
+            (benchmark_status, updated_at, benchmark_id, persona_id),
+        )
+        return IdentityBenchmarkRepository.get(persona_id, benchmark_id)
 
 
 class SeriesRepository:

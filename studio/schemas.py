@@ -71,6 +71,22 @@ class ContentPackReviewIn(BaseModel):
     review: str
 
 
+class IdentityBenchmarkIn(BaseModel):
+    persona_version_id: str | None = None
+    base_model_id: str | None = Field(default=None, max_length=160)
+    methods: list[str] = Field(default_factory=list, max_length=10)
+    scenario_ids: list[str] = Field(default_factory=list, max_length=20)
+    metadata: dict = Field(default_factory=dict)
+
+
+class IdentityBenchmarkResultIn(BaseModel):
+    status: str = "completed"
+    metrics: dict = Field(default_factory=dict)
+    notes: str = Field(default="", max_length=2000)
+    error: str | None = Field(default=None, max_length=1500)
+    output_asset_id: str | None = None
+
+
 class VoiceIn(BaseModel):
     persona_id: str
     text: str = Field(min_length=2, max_length=1200)

@@ -48,10 +48,10 @@ from .model_registry import get as get_model, rows as model_rows, workflow_model
 from .policies import AI_DISCLOSURE
 from .preflight import resource_preflight, workflow_preflight
 from .provenance import manifest, media_metadata, quality_report, sha256_bytes
-from .repositories import ContentPackRepository, JobRepository, PersonaRepository, ReferencePackRepository, SeriesRepository
+from .repositories import ContentPackRepository, IdentityBenchmarkRepository, JobRepository, PersonaRepository, ReferencePackRepository, SeriesRepository
 from .readiness import evaluate as evaluate_readiness
 from .schemas import (
-    ContentPackIn, ContentPackReviewIn, JobIn, LinkIn, PersonaIn, ReviewIn, ReferencePackReviewIn, ReferencePackCanonicalIn, ReferencePackAssetLinkIn,
+    ContentPackIn, ContentPackReviewIn, IdentityBenchmarkIn, IdentityBenchmarkResultIn, JobIn, LinkIn, PersonaIn, ReviewIn, ReferencePackReviewIn, ReferencePackCanonicalIn, ReferencePackAssetLinkIn,
     SeriesEpisodeIn, SeriesIn, SeriesQueueIn, VoiceIn, PhotoStudioPromptIn, PhotoStudioGenerateIn,
     OrchestratorCompilePersonaIn, OrchestratorCreatePersonaIn, OrchestratorRenderAnchorIn, OrchestratorLockAnchorIn,
     OrchestratorSynthesizeScenesIn, OrchestratorBatchGenerateIn
@@ -832,6 +832,68 @@ def resolve_content_pack(pid: str, pack_id: str):
     must_persona(pid)
     try:
         return ContentPackRepository.resolve(pid, pack_id)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@app.get("/api/personas/{pid}/identity-benchmarks")
+def list_identity_benchmarks(pid: str):
+    must_persona(pid)
+    return IdentityBenchmarkRepository.list(pid)
+
+
+@app.post("/api/personas/{pid}/identity-benchmarks", status_code=201)
+def create_identity_benchmark(pid: str, payload: IdentityBenchmarkIn):
+    must_persona(pid)
+    version = PersonaRepository.version(pid, payload.persona_version_id) if payload.persona_version_id else PersonaRepository.current_version(pid)
+    if not version:
+        raise HTTPException(409, "Persona has no persisted identity version")
+    if version["state"] != "frozen":
+        raise HTTPException(409, "Freeze the PersonaVersion before creating an identity benchmark")
+    anchor = ReferencePackRepository.resolve_canonical_asset(pid, version["id"])
+    if not anchor:
+        raise HTTPException(409, "Identity benchmark requires an approved canonical anchor for the selected PersonaVersion")
+    try:
+        return IdentityBenchmarkRepository.create(
+            persona_id=pid,
+            persona_version_id=version["id"],
+            anchor=anchor,
+            base_model_id=payload.base_model_id,
+            methods=payload.methods,
+            scenario_ids=payload.scenario_ids,
+            metadata=payload.metadata,
+            created_at=now(),
+        )
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@app.get("/api/personas/{pid}/identity-benchmarks/{benchmark_id}")
+def get_identity_benchmark(pid: str, benchmark_id: str):
+    must_persona(pid)
+    benchmark = IdentityBenchmarkRepository.get(pid, benchmark_id)
+    if not benchmark:
+        raise HTTPException(404, "Identity benchmark not found")
+    return benchmark
+
+
+@app.post("/api/personas/{pid}/identity-benchmarks/{benchmark_id}/cases/{case_id}/result")
+def record_identity_benchmark_result(pid: str, benchmark_id: str, case_id: str, payload: IdentityBenchmarkResultIn):
+    must_persona(pid)
+    try:
+        return IdentityBenchmarkRepository.record_case_result(
+            persona_id=pid,
+            benchmark_id=benchmark_id,
+            case_id=case_id,
+            status=payload.status,
+            metrics=payload.metrics,
+            notes=payload.notes,
+            error=payload.error,
+            output_asset_id=payload.output_asset_id,
+            updated_at=now(),
+        )
     except LookupError as exc:
         raise HTTPException(404, str(exc)) from exc
     except ValueError as exc:

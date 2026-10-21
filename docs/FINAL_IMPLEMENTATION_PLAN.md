@@ -756,6 +756,20 @@ Exit: interrupted jobs are resumable or clearly interrupted, and the UI never re
 
 Benchmark text-only generation against IP-Adapter FaceID, InstantID, PuLID, and, if necessary, a controlled LoRA/DreamBooth adapter.
 
+Phase 5 first slice is now model-independent. The application persists an
+identity benchmark plan bound to a frozen PersonaVersion and an approved
+canonical Asset, then expands it into fixed scenarios for neutral identity,
+profile, full-body lifestyle, fashion editorial, and adult/glamour editorial
+coverage. The adult/glamour scenario uses the same Identity Core anchor model;
+it is not a separate identity system or an unreviewed content shortcut.
+
+The benchmark API records method-level results, identity/prompt/anatomy/style
+metrics, latency, peak memory, disk usage, notes, failures, and an optional
+PersonaVersion-compatible output Asset. It does not execute a model or install
+weights. The final Mac gate remains the only place where adapters, checkpoints,
+and measured MPS results can be introduced. Until then, benchmark runs remain
+planned or manually recordable, and no method is promoted to production.
+
 Measure face similarity, body consistency, prompt adherence, pose diversity, adult/glamour identity consistency, video drift, latency, memory use, and human approval rate.
 
 Exit: one production identity method is selected from measured results on project personas and target hardware.
