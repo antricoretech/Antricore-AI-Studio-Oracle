@@ -349,6 +349,10 @@ and dimensions it validated. If those inputs change, the preflight is cleared;
 an in-flight response whose inputs are no longer current is discarded and the
 user must validate again before queueing.
 
+The preserved legacy Gallery now exposes an item-level handoff to canonical
+Asset Review. The handoff uses the asset's owning Persona ID rather than the
+currently selected global Persona, preventing cross-persona review mistakes.
+
 ### Cross-cutting frontend migration workstream
 
 The current static frontend is a legacy shell and is not considered aligned

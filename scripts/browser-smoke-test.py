@@ -59,6 +59,12 @@ def main(argv=None) -> int:
                 assert button.count() == 1, f"missing legacy navigation item: {button_selector}"
                 button.click()
                 assert page.locator(panel_selector).is_visible(), f"legacy panel did not mount: {panel_selector}"
+            page.locator("#nav-btn-gallery").click()
+            asset_review_bridge = page.locator("#gallery-grid a[data-canonical-asset-review]").first
+            if asset_review_bridge.count():
+                gallery_persona_id = asset_review_bridge.get_attribute("data-canonical-persona-id")
+                assert gallery_persona_id, "gallery asset review bridge has no asset Persona context"
+                assert f"persona_id={gallery_persona_id}" in asset_review_bridge.get_attribute("href"), "gallery asset review bridge lost asset Persona context"
             page.locator("#nav-btn-vault").click()
             assert page.locator("#tab-vault").is_visible(), "legacy shell did not return to the vault"
             page.add_script_tag(url=AXE_URL)

@@ -1219,6 +1219,8 @@ document.addEventListener('DOMContentLoaded', () => {
     list.forEach(item => {
       const card = document.createElement('div');
       card.className = 'gallery-card-item';
+      const reviewPersonaId = item.persona_id || state.activePersonaId || '';
+      const reviewQuery = reviewPersonaId ? `?persona_id=${encodeURIComponent(reviewPersonaId)}` : '';
       card.innerHTML = `
         <div class="gallery-card-thumb-wrap">
           <img src="${item.clean_url}" alt="${item.title}" class="gallery-card-thumb"/>
@@ -1229,9 +1231,15 @@ document.addEventListener('DOMContentLoaded', () => {
             <span>${item.category}</span>
             <span style="color: var(--gold-light);">${item.aspect_ratio}</span>
           </div>
+          <div class="gallery-card-actions">
+            <a class="btn-glass canonical-asset-review-link" data-canonical-asset-review data-canonical-persona-id="${reviewPersonaId}" href="/workspace${reviewQuery}#assets">Open canonical review</a>
+          </div>
         </div>
       `;
-      card.addEventListener('click', () => openMetadataModal(item));
+      card.addEventListener('click', (event) => {
+        if (event.target.closest('a')) return;
+        openMetadataModal(item);
+      });
       els.galleryGrid.appendChild(card);
     });
   }
