@@ -306,8 +306,25 @@ Responsive and keyboard smoke coverage is now part of the canonical workspace
 gate. The page provides a skip link, labelled main landmark, explicit loading
 busy state, and a 320px toolbar constraint; fixture-driven Chromium validation
 covers 320, 768, 1024, and 1440px layouts, named interactive controls, no
-horizontal overflow, and page-error detection. Full axe/screen-reader
-certification remains a later hardening task.
+horizontal overflow, and page-error detection.
+
+The certification gate is now automated for the canonical workspace: pinned
+axe-core 4.10.2 reports zero WCAG 2A/2AA violations across the seven views,
+Chrome's accessibility tree exposes the main/navigation/heading landmarks,
+and fixture scenarios cover loading, base API failure, view API failure, and
+empty-persona recovery. Error announcements use `role="alert"`, while normal
+status updates remain polite. Manual VoiceOver/Narrator verification is still
+an operational follow-up rather than a claim of complete assistive-technology
+certification.
+
+Legacy-shell parity has started with a bounded bridge. The root `/` V2 shell is
+still preserved, now loads its app entrypoint as a module, exposes a direct
+`/workspace` link, and has a real-tab smoke gate with axe and accessibility-tree
+checks. It has not been retired because its vault, orchestrator, story studio,
+gallery, and system/telemetry feature surfaces are not yet feature-equivalent
+to the canonical journey. The next migration work should move those remaining
+capabilities behind canonical contracts one surface at a time, preserving `/`
+until replacement parity and regression evidence are complete.
 
 ### Cross-cutting frontend migration workstream
 

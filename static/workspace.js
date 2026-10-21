@@ -67,6 +67,7 @@ function setStatus(message, tone = '') {
   const target = $('#workspace-status');
   target.textContent = message;
   target.className = `status ${tone}`.trim();
+  target.setAttribute('role', tone === 'error' ? 'alert' : 'status');
 }
 
 function activePersona() {
@@ -451,6 +452,7 @@ async function loadViewData() {
 }
 
 async function loadBase() {
+  $('#workspace-view').setAttribute('aria-busy', 'true');
   setStatus('Loading Master Personas…');
   try {
     const [personas, summary] = await Promise.all([get('/api/personas'), get('/api/summary')]);

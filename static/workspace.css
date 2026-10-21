@@ -54,12 +54,12 @@ h3 { margin-bottom: 5px; font-size: 1rem; }
 select { width: 100%; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--text); padding: 9px 10px; }
 input, textarea { width: 100%; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--text); padding: 9px 10px; }
 textarea { min-height: 94px; resize: vertical; }
-input::placeholder, textarea::placeholder { color: #71808e; }
+input::placeholder, textarea::placeholder { color: var(--muted); }
 .persona-form { display: grid; gap: 13px; }
 .form-grid { display: grid; grid-template-columns: minmax(0, 1fr) 120px; gap: 10px; }
 .field { display: grid; gap: 5px; }
 .field label { color: var(--muted); font-size: .76rem; font-weight: 700; }
-.field-hint { color: #71808e; font-weight: 400; }
+.field-hint { color: var(--muted); font-weight: 400; }
 .code-field { min-height: 150px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .78rem; }
 .form-actions, .detail-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .form-error { margin: 0; color: var(--danger); font-size: .82rem; }
