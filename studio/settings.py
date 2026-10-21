@@ -31,6 +31,9 @@ class Settings:
     strict_media_validation: bool = os.getenv("STUDIO_STRICT_MEDIA", "0").lower() in {"1", "true", "yes"}
     job_timeout_seconds: int = _int_env("STUDIO_JOB_TIMEOUT_SECONDS", 60 * 60)
     job_concurrency: int = _int_env("STUDIO_JOB_CONCURRENCY", 1)
+    job_lease_seconds: int = _int_env("STUDIO_JOB_LEASE_SECONDS", 120)
+    job_retry_backoff_seconds: int = _int_env("STUDIO_JOB_RETRY_BACKOFF_SECONDS", 5)
+    job_max_attempts: int = _int_env("STUDIO_JOB_MAX_ATTEMPTS", 3)
 
 
 def get_settings() -> Settings:
@@ -46,4 +49,7 @@ def get_settings() -> Settings:
         strict_media_validation=os.getenv("STUDIO_STRICT_MEDIA", "0").lower() in {"1", "true", "yes"},
         job_timeout_seconds=_int_env("STUDIO_JOB_TIMEOUT_SECONDS", 60 * 60),
         job_concurrency=_int_env("STUDIO_JOB_CONCURRENCY", 1),
+        job_lease_seconds=_int_env("STUDIO_JOB_LEASE_SECONDS", 120),
+        job_retry_backoff_seconds=_int_env("STUDIO_JOB_RETRY_BACKOFF_SECONDS", 5),
+        job_max_attempts=_int_env("STUDIO_JOB_MAX_ATTEMPTS", 3),
     )

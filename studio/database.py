@@ -224,6 +224,16 @@ def initialize():
             con.execute("ALTER TABLE jobs ADD COLUMN idempotency_key TEXT")
         if "result_json" not in job_columns:
             con.execute("ALTER TABLE jobs ADD COLUMN result_json TEXT NOT NULL DEFAULT '{}'")
+        if "worker_id" not in job_columns:
+            con.execute("ALTER TABLE jobs ADD COLUMN worker_id TEXT")
+        if "started_at" not in job_columns:
+            con.execute("ALTER TABLE jobs ADD COLUMN started_at TEXT")
+        if "heartbeat_at" not in job_columns:
+            con.execute("ALTER TABLE jobs ADD COLUMN heartbeat_at TEXT")
+        if "lease_expires_at" not in job_columns:
+            con.execute("ALTER TABLE jobs ADD COLUMN lease_expires_at TEXT")
+        if "next_retry_at" not in job_columns:
+            con.execute("ALTER TABLE jobs ADD COLUMN next_retry_at TEXT")
         # Backfill one deterministic version for legacy personas before the
         # repository starts creating new canonical PersonaVersion records.
         legacy_personas = con.execute(
@@ -270,6 +280,7 @@ def initialize():
         CREATE INDEX IF NOT EXISTS idx_persona_versions_persona ON persona_versions(persona_id, version_no);
         CREATE INDEX IF NOT EXISTS idx_persona_versions_state ON persona_versions(state, created_at);
         CREATE INDEX IF NOT EXISTS idx_jobs_status_created ON jobs(status, created_at);
+        CREATE INDEX IF NOT EXISTS idx_jobs_dispatch ON jobs(status, next_retry_at, created_at);
         CREATE INDEX IF NOT EXISTS idx_jobs_persona_created ON jobs(persona_id, created_at);
         CREATE INDEX IF NOT EXISTS idx_assets_persona_created ON assets(persona_id, created_at);
         CREATE INDEX IF NOT EXISTS idx_assets_review_kind ON assets(review, kind);
@@ -280,8 +291,8 @@ def initialize():
         CREATE INDEX IF NOT EXISTS idx_series_episodes_job ON series_episodes(job_id);
         """)
         con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_idempotency_key ON jobs(idempotency_key) WHERE idempotency_key IS NOT NULL")
-        con.execute("INSERT INTO schema_meta(key,value) VALUES('schema_version','10') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
-        con.execute("UPDATE jobs SET status='interrupted', error='App restarted during job; retry from Studio', updated_at=? WHERE status IN ('running','submitted','queued','cancelling')", (datetime_now(),))
+        con.execute("INSERT INTO schema_meta(key,value) VALUES('schema_version','11') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+        con.execute("UPDATE jobs SET status='interrupted', error='App restarted during job; retry from Studio', updated_at=?, worker_id=NULL, heartbeat_at=NULL, lease_expires_at=NULL WHERE status IN ('running','submitted','queued','cancelling')", (datetime_now(),))
 
 
 @contextmanager

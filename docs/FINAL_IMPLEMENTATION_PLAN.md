@@ -493,6 +493,29 @@ This is the first durable queue boundary, not the final Phase 4 exit: leases,
 heartbeats, retry backoff, child-task progress, prompt reconciliation, and
 memory/disk preflight remain outstanding.
 
+### Phase 4 slice 2 — execution leases, heartbeats, and retry backoff
+
+The local runner now assigns each process a worker ID and records execution
+ownership on every canonical generation Job. A claimed job records its start,
+heartbeat, and lease-expiry timestamps. ComfyUI polling refreshes the lease,
+and output downloads refresh it around each transfer. Completed, failed,
+cancelled, and interrupted jobs clear the lease metadata so the queue does not
+retain stale ownership.
+
+The dispatcher audits running/submitted rows before each dispatch cycle. An
+expired lease transitions the Job to `interrupted`, cancels its in-process
+task when present, and requires an explicit operator retry. Retry requests are
+scheduled through `next_retry_at` with capped exponential backoff; the policy
+is configurable with `STUDIO_JOB_RETRY_BACKOFF_SECONDS` and
+`STUDIO_JOB_MAX_ATTEMPTS`. The default remains conservative for the 16 GB
+Mac: one heavy job, five seconds before the first retry, and three total
+attempts.
+
+This slice improves crash/stall visibility and prevents immediate retry
+storms, but it does not yet reconcile an orphaned ComfyUI prompt after a
+process restart. Prompt reconciliation, child-task progress, and memory/disk
+preflight remain the next Phase 4 slices. Generation models remain deferred.
+
 ### Cross-cutting frontend migration workstream
 
 The current static frontend is a legacy shell and is not considered aligned

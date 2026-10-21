@@ -22,7 +22,7 @@ import logging
 import zipfile
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -98,11 +98,74 @@ def _job_cancel_requested(job_id: str) -> bool:
     return bool(row and (row.get("cancel_requested") or row.get("status") == "cancelled"))
 
 
-def _mark_job_interrupted(job_id: str, reason: str = "Job execution was interrupted; retry from Studio"):
+def _worker_id() -> str:
+    return getattr(app.state, "worker_id", "studio-local")
+
+
+def _lease_expiry() -> str:
+    return (datetime.now(timezone.utc) + timedelta(seconds=get_settings().job_lease_seconds)).isoformat(timespec="seconds")
+
+
+def _claim_job(job_id: str):
+    timestamp = now()
     db.write(
-        "UPDATE jobs SET status='interrupted', error=?, finished_at=?, updated_at=? "
+        "UPDATE jobs SET status='running', worker_id=?, started_at=COALESCE(started_at,?), "
+        "heartbeat_at=?, lease_expires_at=?, updated_at=? "
         "WHERE id=? AND status NOT IN ('completed','failed','cancelled')",
-        (reason[:1500], now(), now(), job_id),
+        (_worker_id(), timestamp, timestamp, _lease_expiry(), timestamp, job_id),
+    )
+
+
+def _heartbeat_job(job_id: str, status: str | None = None):
+    timestamp = now()
+    assignments = ["heartbeat_at=?", "lease_expires_at=?", "updated_at=?"]
+    values = [timestamp, _lease_expiry(), timestamp]
+    if status:
+        assignments.append("status=?")
+        values.append(status)
+    values.append(job_id)
+    db.write(
+        f"UPDATE jobs SET {', '.join(assignments)} WHERE id=? AND status IN ('running','submitted')",
+        tuple(values),
+    )
+
+
+def _retry_delay(attempt: int) -> int:
+    settings = get_settings()
+    exponent = max(0, int(attempt) - 2)
+    return min(settings.job_retry_backoff_seconds * (2 ** exponent), 300)
+
+
+def _recover_expired_jobs():
+    """Mark jobs whose local execution lease expired as interrupted."""
+
+    expired = db.all_rows(
+        "SELECT id, worker_id, lease_expires_at FROM jobs "
+        "WHERE status IN ('running','submitted') AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?",
+        (now(),),
+    )
+    for row in expired:
+        job_id = row["id"]
+        updated = now()
+        db.write(
+            "UPDATE jobs SET status='interrupted', error=?, finished_at=?, updated_at=?, "
+            "worker_id=NULL, heartbeat_at=NULL, lease_expires_at=NULL "
+            "WHERE id=? AND status IN ('running','submitted')",
+            ("Execution lease expired; retry from Studio", updated, updated, job_id),
+        )
+        task = getattr(app.state, "job_task_map", {}).get(job_id)
+        if task and not task.done():
+            task.cancel()
+        logger.warning("job_lease_expired", extra=_log_data({"job_id": job_id, "worker_id": row.get("worker_id")}))
+
+
+def _mark_job_interrupted(job_id: str, reason: str = "Job execution was interrupted; retry from Studio"):
+    timestamp = now()
+    db.write(
+        "UPDATE jobs SET status='interrupted', error=?, finished_at=?, updated_at=?, "
+        "worker_id=NULL, heartbeat_at=NULL, lease_expires_at=NULL "
+        "WHERE id=? AND status NOT IN ('completed','failed','cancelled')",
+        (reason[:1500], timestamp, timestamp, job_id),
     )
 
 
@@ -188,6 +251,7 @@ async def _finish_direct_job(job_id: str, handler):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db.initialize()
+    app.state.worker_id = f"studio-{uuid.uuid4().hex[:12]}"
     app.state.job_tasks = set()
     app.state.job_task_map = {}
     app.state.job_semaphore = asyncio.Semaphore(get_settings().job_concurrency)
@@ -198,6 +262,9 @@ async def lifespan(app: FastAPI):
     logger.info("job_recovery_state", extra=_log_data({
         "interrupted_jobs": int((interrupted or {}).get("count") or 0),
         "concurrency": get_settings().job_concurrency,
+        "worker_id": app.state.worker_id,
+        "lease_seconds": get_settings().job_lease_seconds,
+        "max_attempts": get_settings().job_max_attempts,
         "retry_policy": "explicit_operator_retry",
     }))
     try:
@@ -907,7 +974,10 @@ async def execute_job(job_id, payload: JobIn, person: dict):
         if _job_cancel_requested(job_id):
             return
         persona_version = PersonaRepository.current_version(person["id"])
-        db.write("UPDATE jobs SET status='running', updated_at=? WHERE id=?", (now(), job_id))
+        _claim_job(job_id)
+        claimed = db.row("SELECT status FROM jobs WHERE id=?", (job_id,))
+        if not claimed or claimed["status"] == "cancelled":
+            return
         logger.info("job_started", extra=_log_data({"job_id": job_id, "persona_id": person.get("id"), "workflow_id": payload.workflow_id}))
         graph = json.loads(workflow_path(payload.workflow_id).read_text(encoding="utf8"))
         creative_prompt = payload.video_prompt if (payload.video_prompt and ("video" in payload.workflow_id.lower() or "wan" in payload.workflow_id.lower())) else payload.prompt
@@ -948,9 +1018,14 @@ async def execute_job(job_id, payload: JobIn, person: dict):
                 return
             prompt_id = await client.submit(graph)
             db.write("UPDATE jobs SET status='submitted', comfy_prompt_id=?, updated_at=? WHERE id=?", (prompt_id, now(), job_id))
+            _heartbeat_job(job_id, status="submitted")
             try:
                 outputs = await asyncio.wait_for(
-                    client.wait(prompt_id, cancel_check=lambda: _job_cancel_requested(job_id)),
+                    client.wait(
+                        prompt_id,
+                        cancel_check=lambda: _job_cancel_requested(job_id),
+                        heartbeat=lambda: _heartbeat_job(job_id),
+                    ),
                     timeout=get_settings().job_timeout_seconds,
                 )
             except asyncio.CancelledError:
@@ -966,7 +1041,9 @@ async def execute_job(job_id, payload: JobIn, person: dict):
                 raise RuntimeError("Workflow completed but no SaveImage / SaveVideo or compatible output was detected")
             asset_ids = []
             for item in files[:20]:
+                _heartbeat_job(job_id)
                 content = await client.download(item)
+                _heartbeat_job(job_id)
                 if len(content) > get_settings().output_max_bytes:
                     raise ValueError("Generated output exceeds 200MB safety limit")
                 ext = Path(item["filename"]).suffix.lower()
@@ -990,7 +1067,12 @@ async def execute_job(job_id, payload: JobIn, person: dict):
             if _job_cancel_requested(job_id):
                 return
             result = {"job_id": job_id, "asset_ids": asset_ids, "output_count": len(asset_ids)}
-            db.write("UPDATE jobs SET status='completed', result_json=?, finished_at=?, updated_at=? WHERE id=?", (json.dumps(result), now(), now(), job_id))
+            timestamp = now()
+            db.write(
+                "UPDATE jobs SET status='completed', result_json=?, finished_at=?, updated_at=?, "
+                "worker_id=NULL, heartbeat_at=NULL, lease_expires_at=NULL, next_retry_at=NULL WHERE id=?",
+                (json.dumps(result), timestamp, timestamp, job_id),
+            )
             db.write("UPDATE series_episodes SET status='completed' WHERE job_id=?", (job_id,))
             logger.info("job_completed", extra=_log_data({"job_id": job_id, "outputs": len(files)}))
     except asyncio.CancelledError:
@@ -1000,7 +1082,12 @@ async def execute_job(job_id, payload: JobIn, person: dict):
         return
     except Exception as e:
         logger.exception("job_failed", extra=_log_data({"job_id": job_id}))
-        db.write("UPDATE jobs SET status='failed', error=?, finished_at=?, updated_at=? WHERE id=?", (str(e)[:1500], now(), now(), job_id))
+        timestamp = now()
+        db.write(
+            "UPDATE jobs SET status='failed', error=?, finished_at=?, updated_at=?, "
+            "worker_id=NULL, heartbeat_at=NULL, lease_expires_at=NULL, next_retry_at=NULL WHERE id=?",
+            (str(e)[:1500], timestamp, timestamp, job_id),
+        )
         db.write("UPDATE series_episodes SET status='failed' WHERE job_id=?", (job_id,))
 
 
@@ -1150,8 +1237,9 @@ async def _dispatch_queued_jobs():
     if capacity <= 0:
         return
     rows = db.all_rows(
-        "SELECT * FROM jobs WHERE status='queued' ORDER BY created_at ASC LIMIT ?",
-        (capacity,),
+        "SELECT * FROM jobs WHERE status='queued' AND "
+        "(next_retry_at IS NULL OR next_retry_at <= ?) ORDER BY created_at ASC LIMIT ?",
+        (now(), capacity),
     )
     for row in rows:
         job_id = row["id"]
@@ -1177,6 +1265,7 @@ async def _job_dispatch_loop():
     """Durable queue supervisor for local generation jobs."""
 
     while True:
+        _recover_expired_jobs()
         await _dispatch_queued_jobs()
         event = getattr(app.state, "job_dispatch_event", None)
         if event is None:
@@ -1205,8 +1294,12 @@ async def cancel_job(job_id: str):
         raise HTTPException(404, "Job not found")
     if job["status"] in {"completed", "failed", "cancelled"}:
         raise HTTPException(409, f"Job is already {job['status']}")
-    db.write("UPDATE jobs SET status='cancelled', cancel_requested=1, finished_at=?, updated_at=?, error=? WHERE id=?",
-             (now(), now(), "Cancelled by operator", job_id))
+    timestamp = now()
+    db.write(
+        "UPDATE jobs SET status='cancelled', cancel_requested=1, finished_at=?, updated_at=?, error=?, "
+        "worker_id=NULL, heartbeat_at=NULL, lease_expires_at=NULL WHERE id=?",
+        (timestamp, timestamp, "Cancelled by operator", job_id),
+    )
     task = getattr(app.state, "job_task_map", {}).get(job_id)
     if task and not task.done():
         task.cancel()
@@ -1228,11 +1321,20 @@ async def retry_job(job_id: str):
         raise HTTPException(409, "This legacy job has no retryable request metadata") from exc
     person = must_persona(payload.persona_id)
     attempt = int(job.get("attempt") or 1) + 1
-    db.write("UPDATE jobs SET status='queued', attempt=?, cancel_requested=0, error=NULL, finished_at=NULL, updated_at=? WHERE id=?",
-             (attempt, now(), job_id))
+    settings = get_settings()
+    if attempt > settings.job_max_attempts:
+        raise HTTPException(409, f"Maximum retry attempts reached ({settings.job_max_attempts})")
+    delay = _retry_delay(attempt)
+    next_retry_at = (datetime.now(timezone.utc) + timedelta(seconds=delay)).isoformat(timespec="seconds")
+    timestamp = now()
+    db.write(
+        "UPDATE jobs SET status='queued', attempt=?, cancel_requested=0, error=NULL, finished_at=NULL, "
+        "updated_at=?, next_retry_at=?, worker_id=NULL, heartbeat_at=NULL, lease_expires_at=NULL WHERE id=?",
+        (attempt, timestamp, next_retry_at, job_id),
+    )
     _job_task(job_id, payload, person)
-    logger.info("job_retried", extra=_log_data({"job_id": job_id, "attempt": attempt}))
-    return {"id": job_id, "status": "queued", "attempt": attempt}
+    logger.info("job_retried", extra=_log_data({"job_id": job_id, "attempt": attempt, "retry_after_seconds": delay}))
+    return {"id": job_id, "status": "queued", "attempt": attempt, "next_retry_at": next_retry_at, "retry_after_seconds": delay}
 
 
 @app.get("/api/jobs")

@@ -847,6 +847,58 @@ def test_phase4_durable_dispatcher_picks_up_persisted_queue_row(client, monkeypa
     assert client.get('/api/jobs').json()[0]['result']['dispatcher'] is True
 
 
+def test_phase4_job_lease_recovery_and_retry_backoff(client, monkeypatch):
+    import datetime
+    import studio.app as backend
+    import studio.database as test_db
+
+    persona = client.post('/api/personas', json={
+        'name': 'Lease Persona', 'age': 31,
+        'appearance': 'long dark hair and brown eyes',
+        'description': 'fictional adult editorial creator'
+    }).json()
+    payload = backend.JobIn(
+        persona_id=persona['id'], workflow_id='lease_test',
+        prompt='A lease recovery test', rights_confirmed=True
+    )
+    expired_job_id = backend.uid()
+    test_db.write(
+        "INSERT INTO jobs (id,persona_id,workflow_id,type,prompt,status,created_at,worker_id,heartbeat_at,lease_expires_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (expired_job_id, persona['id'], payload.workflow_id, 'image', payload.prompt, 'running', backend.now(),
+         'stale-worker', backend.now(), '2000-01-01T00:00:00+00:00'),
+    )
+
+    # The supervisor performs this same recovery before dispatching queued work.
+    backend._recover_expired_jobs()
+    recovered = test_db.row("SELECT status,worker_id,heartbeat_at,lease_expires_at,error FROM jobs WHERE id=?", (expired_job_id,))
+    assert recovered['status'] == 'interrupted'
+    assert recovered['worker_id'] is None
+    assert recovered['heartbeat_at'] is None
+    assert recovered['lease_expires_at'] is None
+    assert 'lease expired' in recovered['error']
+
+    retry_job_id = backend.uid()
+    backend.JobRepository.create(
+        job_id=retry_job_id, persona_id=persona['id'], workflow_id=payload.workflow_id,
+        kind='image', prompt=payload.prompt, request_json=payload.model_dump_json(),
+        lineage_json='{}', created_at=backend.now(),
+    )
+    test_db.write("UPDATE jobs SET status='failed', error=? WHERE id=?", ('Synthetic failure', retry_job_id))
+    response = client.post(f'/api/jobs/{retry_job_id}/retry')
+    assert response.status_code == 202
+    body = response.json()
+    assert body['attempt'] == 2
+    assert body['retry_after_seconds'] == 5
+    assert datetime.datetime.fromisoformat(body['next_retry_at']) > datetime.datetime.now(datetime.timezone.utc)
+    queued = test_db.row("SELECT status,next_retry_at,worker_id,heartbeat_at,lease_expires_at FROM jobs WHERE id=?", (retry_job_id,))
+    assert queued['status'] == 'queued'
+    assert queued['next_retry_at'] == body['next_retry_at']
+    assert queued['worker_id'] is None
+    assert queued['heartbeat_at'] is None
+    assert queued['lease_expires_at'] is None
+
+
 def test_phase5_asset_manifest_and_approved_export_package(client):
     import io
     import zipfile

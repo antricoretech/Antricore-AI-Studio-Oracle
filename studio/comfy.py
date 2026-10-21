@@ -111,9 +111,11 @@ class ComfyClient:
         response = await self.client.post("/interrupt")
         response.raise_for_status()
 
-    async def wait(self, prompt_id: str, cancel_check=None):
+    async def wait(self, prompt_id: str, cancel_check=None, heartbeat=None):
         elapsed = 0
         while elapsed < TIMEOUT:
+            if heartbeat:
+                heartbeat()
             if cancel_check and cancel_check():
                 raise asyncio.CancelledError()
             response = await self.client.get(f"/history/{prompt_id}")
@@ -126,6 +128,8 @@ class ComfyClient:
                 if status.get("completed") is True or entry.get("outputs"):
                     return entry.get("outputs", {})
             await asyncio.sleep(POLL)
+            if heartbeat:
+                heartbeat()
             if cancel_check and cancel_check():
                 raise asyncio.CancelledError()
             elapsed += POLL
