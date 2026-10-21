@@ -30,6 +30,7 @@ class Settings:
     output_max_bytes: int = _int_env("STUDIO_MAX_OUTPUT_BYTES", 200 * 1024 * 1024)
     strict_media_validation: bool = os.getenv("STUDIO_STRICT_MEDIA", "0").lower() in {"1", "true", "yes"}
     job_timeout_seconds: int = _int_env("STUDIO_JOB_TIMEOUT_SECONDS", 60 * 60)
+    job_concurrency: int = _int_env("STUDIO_JOB_CONCURRENCY", 1)
 
 
 def get_settings() -> Settings:
@@ -44,4 +45,5 @@ def get_settings() -> Settings:
         output_max_bytes=_int_env("STUDIO_MAX_OUTPUT_BYTES", 200 * 1024 * 1024),
         strict_media_validation=os.getenv("STUDIO_STRICT_MEDIA", "0").lower() in {"1", "true", "yes"},
         job_timeout_seconds=_int_env("STUDIO_JOB_TIMEOUT_SECONDS", 60 * 60),
+        job_concurrency=_int_env("STUDIO_JOB_CONCURRENCY", 1),
     )

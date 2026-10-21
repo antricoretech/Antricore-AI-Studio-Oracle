@@ -93,6 +93,19 @@ def _log_data(data: dict | None = None) -> dict:
     return {"data": payload}
 
 
+def _job_cancel_requested(job_id: str) -> bool:
+    row = db.row("SELECT status, cancel_requested FROM jobs WHERE id=?", (job_id,))
+    return bool(row and (row.get("cancel_requested") or row.get("status") == "cancelled"))
+
+
+def _mark_job_interrupted(job_id: str, reason: str = "Job execution was interrupted; retry from Studio"):
+    db.write(
+        "UPDATE jobs SET status='interrupted', error=?, finished_at=?, updated_at=? "
+        "WHERE id=? AND status NOT IN ('completed','failed','cancelled')",
+        (reason[:1500], now(), now(), job_id),
+    )
+
+
 def _normalized_idempotency_key(value: str | None) -> str | None:
     key = (value or "").strip()
     if not key:
@@ -177,7 +190,14 @@ async def lifespan(app: FastAPI):
     db.initialize()
     app.state.job_tasks = set()
     app.state.job_task_map = {}
+    app.state.job_semaphore = asyncio.Semaphore(get_settings().job_concurrency)
+    interrupted = db.row("SELECT COUNT(*) AS count FROM jobs WHERE status='interrupted'")
     logger.info("studio_started", extra={"data_dir": str(db.DATA)})
+    logger.info("job_recovery_state", extra=_log_data({
+        "interrupted_jobs": int((interrupted or {}).get("count") or 0),
+        "concurrency": get_settings().job_concurrency,
+        "retry_policy": "explicit_operator_retry",
+    }))
     try:
         yield
     finally:
@@ -877,6 +897,8 @@ def persona_characteristics_text(person):
 
 async def execute_job(job_id, payload: JobIn, person: dict):
     try:
+        if _job_cancel_requested(job_id):
+            return
         persona_version = PersonaRepository.current_version(person["id"])
         db.write("UPDATE jobs SET status='running', updated_at=? WHERE id=?", (now(), job_id))
         logger.info("job_started", extra=_log_data({"job_id": job_id, "persona_id": person.get("id"), "workflow_id": payload.workflow_id}))
@@ -888,6 +910,7 @@ async def execute_job(job_id, payload: JobIn, person: dict):
                   "WIDTH": payload.width, "HEIGHT": payload.height, "SEED": payload.seed,
                   "REFERENCE_IMAGE": "", "AUDIO_FILENAME": ""}
         async with ComfyClient() as client:
+            prompt_id = None
             if payload.reference_id or payload.source_asset_id:
                 if payload.reference_id:
                     ref = db.row("SELECT * FROM reference_images WHERE id=? AND persona_id=?", (payload.reference_id, payload.persona_id))
@@ -914,9 +937,23 @@ async def execute_job(job_id, payload: JobIn, person: dict):
                     raise ValueError("Selected audio asset does not belong to this persona")
                 values["AUDIO_FILENAME"] = await client.upload_audio(resolve_asset_file(audio).read_bytes(), audio["filename"])
             graph = render_graph(graph, values)
+            if _job_cancel_requested(job_id):
+                return
             prompt_id = await client.submit(graph)
             db.write("UPDATE jobs SET status='submitted', comfy_prompt_id=?, updated_at=? WHERE id=?", (prompt_id, now(), job_id))
-            outputs = await asyncio.wait_for(client.wait(prompt_id), timeout=get_settings().job_timeout_seconds)
+            try:
+                outputs = await asyncio.wait_for(
+                    client.wait(prompt_id, cancel_check=lambda: _job_cancel_requested(job_id)),
+                    timeout=get_settings().job_timeout_seconds,
+                )
+            except asyncio.CancelledError:
+                try:
+                    await client.interrupt()
+                except Exception:
+                    logger.warning("comfy_interrupt_failed", extra=_log_data({"job_id": job_id, "prompt_id": prompt_id}), exc_info=True)
+                raise
+            if _job_cancel_requested(job_id):
+                return
             files = output_files(outputs)
             if not files:
                 raise RuntimeError("Workflow completed but no SaveImage / SaveVideo or compatible output was detected")
@@ -943,10 +980,17 @@ async def execute_job(job_id, payload: JobIn, person: dict):
                     lineage={"job_id": job_id, "workflow_id": payload.workflow_id},
                 )
                 asset_ids.append(asset["id"])
+            if _job_cancel_requested(job_id):
+                return
             result = {"job_id": job_id, "asset_ids": asset_ids, "output_count": len(asset_ids)}
             db.write("UPDATE jobs SET status='completed', result_json=?, finished_at=?, updated_at=? WHERE id=?", (json.dumps(result), now(), now(), job_id))
             db.write("UPDATE series_episodes SET status='completed' WHERE job_id=?", (job_id,))
             logger.info("job_completed", extra=_log_data({"job_id": job_id, "outputs": len(files)}))
+    except asyncio.CancelledError:
+        if not _job_cancel_requested(job_id):
+            _mark_job_interrupted(job_id)
+        logger.info("job_interrupted", extra=_log_data({"job_id": job_id}))
+        return
     except Exception as e:
         logger.exception("job_failed", extra=_log_data({"job_id": job_id}))
         db.write("UPDATE jobs SET status='failed', error=?, finished_at=?, updated_at=? WHERE id=?", (str(e)[:1500], now(), now(), job_id))
@@ -1064,7 +1108,15 @@ def preflight(workflow_id: str | None = None, model_id: str | None = None,
 
 
 def _job_task(job_id: str, payload: JobIn, person: dict):
-    task = asyncio.create_task(execute_job(job_id, payload, person), name=f"studio-job-{job_id}")
+    async def run():
+        semaphore = getattr(app.state, "job_semaphore", None)
+        if semaphore is None:
+            await execute_job(job_id, payload, person)
+            return
+        async with semaphore:
+            await execute_job(job_id, payload, person)
+
+    task = asyncio.create_task(run(), name=f"studio-job-{job_id}")
     task_map = getattr(app.state, "job_task_map", None)
     tasks = getattr(app.state, "job_tasks", None)
     if tasks is not None:

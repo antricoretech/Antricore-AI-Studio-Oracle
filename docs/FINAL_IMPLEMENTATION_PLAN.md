@@ -447,6 +447,16 @@ for the preserved shell, while canonical `data/outputs` media is now the
 reviewable source of truth. Resumed packs reuse an existing canonical asset or
 register an existing preview without invoking the renderer again.
 
+Phase 3 slice 5 is complete: the local execution boundary now uses a bounded
+asyncio semaphore with `STUDIO_JOB_CONCURRENCY=1` by default, checks durable
+cancel state before expensive work and during ComfyUI polling, attempts the
+local ComfyUI `/interrupt` endpoint when an active task is cancelled, and
+records interrupted execution without overwriting an operator-cancelled job.
+Startup logs expose the interrupted-job count and the explicit retry policy.
+This is a safe bridge toward Phase 4: active jobs are never silently replayed
+after restart, and the persisted retry endpoint remains the operator-controlled
+recovery path until prompt reconciliation and backoff are implemented.
+
 ### Cross-cutting frontend migration workstream
 
 The current static frontend is a legacy shell and is not considered aligned
@@ -502,6 +512,12 @@ Exit: Generated, Approved, and Publishable are separate states for every content
 - Add disk and memory preflight.
 
 For the 16 GB Mac, default to one heavy generation task and sequential Vault/content-pack generation.
+
+Phase 3 already establishes the first bounded-runner boundary and explicit
+interrupted status. Phase 4 must still replace request-created tasks with a
+durable dispatcher, add retry/backoff policy and ComfyUI prompt reconciliation,
+persist child-task progress, and add memory/disk preflight before increasing
+concurrency.
 
 Exit: interrupted jobs are resumable or clearly interrupted, and the UI never reports completion before output validation succeeds.
 
