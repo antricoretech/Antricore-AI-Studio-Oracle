@@ -51,6 +51,7 @@ const state = {
   contentBriefs: [],
   creatingContentBrief: false,
   approvingContentBrief: '',
+  editingContentBriefId: '',
   benchmarkCatalog: { execution_status: 'deferred_final_gate', methods: [], scenarios: [] },
   benchmarks: [],
   creatingBenchmark: false,
@@ -518,6 +519,12 @@ function renderCreatorSystem() {
   return `<section class="panel" aria-labelledby="creator-system-heading"><div class="section-heading"><div><p class="eyebrow">Phase 6 · canonical creative system</p><h2 id="creator-system-heading">Creator System</h2></div>${badge(frozen ? 'frozen' : 'draft')}</div><p class="helper">Define how this Master Persona thinks, speaks, serves its audience, and turns one identity into repeatable content. Adult/glamour remains a content pillar inside the same Identity Core, not a separate persona.</p>${frozen ? '<div class="callout readiness-callout"><p><strong>This PersonaVersion is frozen.</strong></p><p class="helper">Create a new draft PersonaVersion before changing the Creator System.</p></div>' : ''}<form id="creator-profile-form" class="creator-profile-form"><fieldset ${frozen ? 'disabled' : ''}><legend class="sr-only">Creator identity and content system</legend><div class="creator-section"><div class="section-heading"><div><p class="eyebrow">Who they are</p><h3>Personality and voice</h3></div></div><div class="form-grid"><label>Personality traits<textarea name="personality_traits" rows="2" placeholder="Confident, witty, curious">${escapeHtml(personality.traits)}</textarea></label><label>Interests and values<textarea name="personality_interests" rows="2" placeholder="Fashion, travel, self-expression">${escapeHtml(personality.interests_and_values)}</textarea></label><label>Speaking style<textarea name="personality_speech_style" rows="2" placeholder="Smart, warm, concise, relatable">${escapeHtml(personality.speech_style)}</textarea></label><label>Humor<textarea name="personality_humor" rows="2" placeholder="Dry wit, playful observations">${escapeHtml(personality.humor)}</textarea></label><label>Signature behaviors<textarea name="personality_mannerisms" rows="2" placeholder="A recurring greeting, pose, or phrase">${escapeHtml(personality.mannerisms)}</textarea></label></div></div><div class="creator-section"><div class="section-heading"><div><p class="eyebrow">Who they serve</p><h3>Audience definition</h3></div></div><div class="form-grid"><label>Primary audience<textarea name="audience_primary" rows="2" placeholder="Adults interested in ...">${escapeHtml(audience.primary)}</textarea></label><label>Audience needs<textarea name="audience_needs" rows="2" placeholder="Inspiration, education, confidence">${escapeHtml(audience.needs)}</textarea></label><label>Relationship to audience<textarea name="audience_relationship" rows="2" placeholder="Trusted friend and practical guide">${escapeHtml(audience.relationship)}</textarea></label><label>Locales and language<textarea name="audience_locales" rows="2" placeholder="English, global urban audience">${escapeHtml(audience.locales)}</textarea></label></div></div><div class="creator-section"><div class="section-heading"><div><p class="eyebrow">How the brand behaves</p><h3>Positioning and disclosure</h3></div></div><div class="form-grid"><label>Brand positioning<textarea name="brand_positioning" rows="2" placeholder="Luxury fashion and relatable lifestyle creator">${escapeHtml(brand.positioning)}</textarea></label><label>Brand promise<textarea name="brand_promise" rows="2" placeholder="What the audience can consistently expect">${escapeHtml(brand.promise)}</textarea></label><label>Boundaries<textarea name="brand_boundaries" rows="2" placeholder="Topics, claims, or collaborations to avoid">${escapeHtml(brand.boundaries)}</textarea></label><label>Voice tone<textarea name="voice_tone" rows="2" placeholder="Smart, confident, warm">${escapeHtml(voice.tone)}</textarea></label><label>Vocabulary and CTA style<textarea name="voice_vocabulary" rows="2" placeholder="Preferred words, rhythm, and calls to action">${escapeHtml(voice.vocabulary)}</textarea></label><label>Disclosure<textarea name="disclosure" rows="2" minlength="20" maxlength="300" required>${escapeHtml(profile.disclosure || 'Fictional adult character. AI-generated synthetic media.')}</textarea></label></div></div><div class="creator-section"><div class="section-heading"><div><p class="eyebrow">What they share</p><h3>Content pillars</h3></div>${badge(`${pillars.length} pillars`)}</div><p class="helper">Each pillar can guide story, visual style, audience goal, and format. The adult/glamour pillar is intentionally marked as Identity Core plus style authority.</p><div class="creator-pillar-list">${pillars.map(renderCreatorPillar).join('')}</div></div></fieldset><p id="creator-profile-form-error" class="form-error" role="alert" hidden></p><div class="form-actions"><button class="button primary" type="submit" ${frozen || state.savingCreatorProfile ? 'disabled' : ''}>${state.savingCreatorProfile ? 'Saving...' : 'Save Creator System'}</button></div></form></section>`;
 }
 
+function renderContentBriefEditor({ brief, profile, pillars, contentPacks, versionState }) {
+  const value = (key) => escapeHtml(brief[key] || '');
+  const selected = (candidate, current) => candidate === current ? 'selected' : '';
+  return `<section class="panel" aria-labelledby="brief-edit-heading"><div class="section-heading"><div><p class="eyebrow">Phase 6 · draft revision</p><h2 id="brief-edit-heading">Edit draft ContentBrief</h2></div>${badge(versionState)}${badge(`revision ${brief.revision || 1}`)}</div><p class="helper">Draft revisions stay attached to PersonaVersion ${escapeHtml(brief.persona_version_id)}. Approved briefs cannot be edited; create a new draft when the production direction must change.</p><form id="content-brief-form" class="content-brief-form"><div class="form-grid"><label>Title<input name="title" minlength="2" maxlength="160" required value="${value('title')}"></label><label>Format<select name="format"><option value="reel" ${selected('reel', brief.format)}>Reel</option><option value="photo" ${selected('photo', brief.format)}>Photo</option><option value="carousel" ${selected('carousel', brief.format)}>Carousel</option><option value="story" ${selected('story', brief.format)}>Story</option><option value="product_ad" ${selected('product_ad', brief.format)}>Product ad</option></select></label><label>Content class<select name="content_class"><option value="identity" ${selected('identity', brief.content_class)}>Identity / lifestyle</option><option value="fashion" ${selected('fashion', brief.content_class)}>Fashion</option><option value="adult_glamour" ${selected('adult_glamour', brief.content_class)}>Adult/glamour editorial</option><option value="lingerie" ${selected('lingerie', brief.content_class)}>Lingerie editorial</option><option value="boudoir" ${selected('boudoir', brief.content_class)}>Boudoir editorial</option></select></label><label>Creator System pillar<select name="pillar_key" required><option value="">Select a pillar</option>${pillars.map((pillar) => `<option value="${escapeHtml(pillar.key)}" ${selected(pillar.key, brief.pillar_key)}>${escapeHtml(pillar.name)}${pillar.identity_core ? ' · Identity Core' : ''}</option>`).join('')}</select></label></div><div class="form-grid"><label>Audience goal<textarea name="audience_goal" rows="2" maxlength="500">${value('audience_goal')}</textarea></label><label>Emotional objective<textarea name="emotional_objective" rows="2" maxlength="500">${value('emotional_objective')}</textarea></label></div><div class="form-grid"><label>Story direction<textarea name="story_direction" rows="3" maxlength="2000">${value('story_direction')}</textarea></label><label>Visual direction<textarea name="visual_direction" rows="3" maxlength="2000">${value('visual_direction')}</textarea></label><label>Motion direction<textarea name="motion_direction" rows="3" maxlength="2000">${value('motion_direction')}</textarea></label></div><div class="form-grid"><label>Caption direction<textarea name="caption_direction" rows="3" maxlength="1200">${value('caption_direction')}</textarea></label><label>Script direction<textarea name="script_direction" rows="3" maxlength="2000">${value('script_direction')}</textarea></label><label>ContentPack <span class="field-hint">optional</span><select name="content_pack_id"><option value="">Use pillar guidance only</option>${contentPacks.map((pack) => `<option value="${escapeHtml(pack.id)}" ${selected(pack.id, brief.content_pack_id)} ${pack.review === 'approved' || pack.id === brief.content_pack_id ? '' : 'disabled'}>${escapeHtml(pack.name)} · ${escapeHtml(pack.content_class)} · ${escapeHtml(pack.review)}</option>`).join('')}</select></label></div><div class="field"><label>Disclosure<textarea name="disclosure" rows="2" minlength="20" maxlength="300" required>${value('disclosure')}</textarea></label></div><p id="content-brief-form-error" class="form-error" role="alert" hidden></p><div class="form-actions"><button class="button primary" type="submit" ${state.creatingContentBrief ? 'disabled' : ''}>${state.creatingContentBrief ? 'Saving...' : 'Update draft brief'}</button><button class="button secondary" type="button" data-brief-cancel>Cancel</button></div></form></section>`;
+}
+
 function renderContentBriefs() {
   if (!state.activePersonaId) return emptyState('Select or create a Master Persona before authoring Content Briefs.', 'personas');
   const persona = activePersona();
@@ -527,6 +534,8 @@ function renderContentBriefs() {
   const pillars = profile.content_pillars || [];
   const contentPacks = state.contentPacks || [];
   const canAuthor = Boolean(profile.id);
+  const editingBrief = state.contentBriefs.find((brief) => brief.id === state.editingContentBriefId && brief.status === 'draft');
+  if (editingBrief) return renderContentBriefEditor({ brief: editingBrief, profile, pillars, contentPacks, versionState });
   return `<div class="panel-grid">
     <section class="panel" aria-labelledby="brief-create-heading">
       <div class="section-heading"><div><p class="eyebrow">Phase 6 Â· reusable direction</p><h2 id="brief-create-heading">Create Content Brief</h2></div>${badge(versionState)}</div>
@@ -547,6 +556,23 @@ function renderContentBriefs() {
   </div>`;
 }
 
+function renderContentBriefsWithEditing() {
+  const editingBrief = state.contentBriefs.find((brief) => brief.id === state.editingContentBriefId && brief.status === 'draft');
+  if (editingBrief) {
+    const profile = state.creatorProfile?.profile || {};
+    return renderContentBriefEditor({
+      brief: editingBrief,
+      profile,
+      pillars: profile.content_pillars || [],
+      contentPacks: state.contentPacks || [],
+      versionState: state.creatorProfile?.version_state || activePersona()?.current_version?.state || 'draft',
+    });
+  }
+  const drafts = state.contentBriefs.filter((brief) => brief.status === 'draft');
+  const controls = drafts.length ? `<section class="panel" aria-labelledby="brief-edit-list-heading"><div class="section-heading"><div><p class="eyebrow">Draft maintenance</p><h2 id="brief-edit-list-heading">Revise before approval</h2></div>${badge(`${drafts.length} editable`)}</div><p class="helper">Edit a draft to refine the creative direction. Each successful save increments its revision; approved briefs remain immutable.</p><div class="entity-actions">${drafts.map((brief) => `<button class="button secondary" type="button" data-brief-edit="${escapeHtml(brief.id)}">Edit ${escapeHtml(brief.title)}</button>`).join('')}</div></section>` : '';
+  return `${renderContentBriefs()}${controls}`;
+}
+
 function renderIdentityBenchmarks() {
   if (!state.activePersonaId) return emptyState('Select or create a Master Persona before planning identity benchmarks.', 'personas');
   const persona = activePersona();
@@ -562,7 +588,7 @@ function renderPublishing() {
 }
 
 function renderView() {
-  const renderer = { overview: renderOverview, personas: renderPersonasCanonical, references: renderReferencesCanonical, 'content-packs': renderContentPacks, creator: renderCreatorSystem, 'content-briefs': renderContentBriefs, benchmarks: renderIdentityBenchmarks, production: renderProductionCanonical, assets: renderAssetsCanonical, publishing: renderPublishing }[state.view] || renderOverview;
+  const renderer = { overview: renderOverview, personas: renderPersonasCanonical, references: renderReferencesCanonical, 'content-packs': renderContentPacks, creator: renderCreatorSystem, 'content-briefs': renderContentBriefsWithEditing, benchmarks: renderIdentityBenchmarks, production: renderProductionCanonical, assets: renderAssetsCanonical, publishing: renderPublishing }[state.view] || renderOverview;
   $('#workspace-view').innerHTML = `${renderCrossViewLineageNotice()}${renderAssetLineagePanel()}${renderer()}`;
 }
 
@@ -825,26 +851,31 @@ async function createContentBrief(event) {
   const form = event.target;
   showContentBriefFormError('');
   if (!form.reportValidity()) return;
+  const briefId = state.editingContentBriefId;
+  const payload = {
+    title: form.elements.title.value.trim(),
+    format: form.elements.format.value,
+    content_class: form.elements.content_class.value,
+    pillar_key: form.elements.pillar_key.value,
+    audience_goal: form.elements.audience_goal.value.trim(),
+    emotional_objective: form.elements.emotional_objective.value.trim(),
+    story_direction: form.elements.story_direction.value.trim(),
+    visual_direction: form.elements.visual_direction.value.trim(),
+    motion_direction: form.elements.motion_direction.value.trim(),
+    caption_direction: form.elements.caption_direction.value.trim(),
+    script_direction: form.elements.script_direction.value.trim(),
+    content_pack_id: form.elements.content_pack_id.value || null,
+    disclosure: form.elements.disclosure.value.trim(),
+  };
   state.creatingContentBrief = true;
   renderView();
   try {
-    await post(`/api/personas/${encodeURIComponent(state.activePersonaId)}/content-briefs`, {
-      title: form.elements.title.value.trim(),
-      format: form.elements.format.value,
-      content_class: form.elements.content_class.value,
-      pillar_key: form.elements.pillar_key.value,
-      audience_goal: form.elements.audience_goal.value.trim(),
-      emotional_objective: form.elements.emotional_objective.value.trim(),
-      story_direction: form.elements.story_direction.value.trim(),
-      visual_direction: form.elements.visual_direction.value.trim(),
-      motion_direction: form.elements.motion_direction.value.trim(),
-      caption_direction: form.elements.caption_direction.value.trim(),
-      script_direction: form.elements.script_direction.value.trim(),
-      content_pack_id: form.elements.content_pack_id.value || null,
-      disclosure: form.elements.disclosure.value.trim(),
-    });
+    await (briefId
+      ? put(`/api/personas/${encodeURIComponent(state.activePersonaId)}/content-briefs/${encodeURIComponent(briefId)}`, payload)
+      : post(`/api/personas/${encodeURIComponent(state.activePersonaId)}/content-briefs`, payload));
     state.creatingContentBrief = false;
-    setStatus('ContentBrief draft saved. Freeze the PersonaVersion before approval.', 'success');
+    state.editingContentBriefId = '';
+    setStatus(briefId ? 'ContentBrief draft revision saved.' : 'ContentBrief draft saved. Freeze the PersonaVersion before approval.', 'success');
     await loadViewData();
   } catch (error) {
     state.creatingContentBrief = false;
@@ -1156,6 +1187,18 @@ $('#workspace-view').addEventListener('click', (event) => {
   const generationAction = event.target.closest('[data-generation-action]');
   if (generationAction) {
     runGenerationPreflight();
+    return;
+  }
+  const editBriefButton = event.target.closest('[data-brief-edit]');
+  if (editBriefButton) {
+    state.editingContentBriefId = editBriefButton.dataset.briefEdit;
+    renderView();
+    return;
+  }
+  const cancelBriefButton = event.target.closest('[data-brief-cancel]');
+  if (cancelBriefButton) {
+    state.editingContentBriefId = '';
+    renderView();
     return;
   }
   const approveBriefButton = event.target.closest('[data-brief-approve]');

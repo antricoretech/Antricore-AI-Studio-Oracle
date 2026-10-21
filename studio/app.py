@@ -930,6 +930,41 @@ def get_content_brief(pid: str, brief_id: str):
     return brief
 
 
+@app.put("/api/personas/{pid}/content-briefs/{brief_id}")
+def update_content_brief(pid: str, brief_id: str, payload: ContentBriefIn):
+    must_persona(pid)
+    existing = ContentBriefRepository.get(pid, brief_id)
+    if not existing:
+        raise HTTPException(404, "ContentBrief not found")
+    if payload.persona_version_id and payload.persona_version_id != existing["persona_version_id"]:
+        raise HTTPException(409, "ContentBrief PersonaVersion cannot be changed")
+    try:
+        return ContentBriefRepository.update(
+            persona_id=pid,
+            brief_id=brief_id,
+            creator_profile_id=payload.creator_profile_id,
+            content_pack_id=payload.content_pack_id,
+            title=payload.title,
+            format=payload.format,
+            content_class=payload.content_class,
+            pillar_key=payload.pillar_key,
+            audience_goal=payload.audience_goal,
+            emotional_objective=payload.emotional_objective,
+            story_direction=payload.story_direction,
+            visual_direction=payload.visual_direction,
+            motion_direction=payload.motion_direction,
+            caption_direction=payload.caption_direction,
+            script_direction=payload.script_direction,
+            disclosure=payload.disclosure,
+            metadata=payload.metadata,
+            updated_at=now(),
+        )
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
 @app.patch("/api/personas/{pid}/content-briefs/{brief_id}/approve")
 def approve_content_brief(pid: str, brief_id: str):
     must_persona(pid)

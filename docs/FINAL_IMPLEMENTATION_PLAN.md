@@ -825,6 +825,12 @@ the adult/glamour pillar, which is normalized as Identity Core plus
 same PersonaVersion. Resolution returns a server-validated production handoff
 without executing a model or queueing a job.
 
+Draft briefs support in-place revision with a monotonic revision counter while
+retaining the original PersonaVersion and Creator Profile binding. Updates
+re-run adult/glamour pillar and ContentPack compatibility checks. Once a brief
+is approved or archived, it is immutable; a changed production direction must
+be authored as a new draft so the approved handoff remains auditable.
+
 Use this brief formula:
 
 ~~~text

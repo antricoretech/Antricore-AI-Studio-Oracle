@@ -735,6 +735,45 @@ class ContentBriefRepository:
         return ContentBriefRepository.get(persona_id, brief_id)
 
     @staticmethod
+    def update(*, persona_id: str, brief_id: str, creator_profile_id: str | None,
+               content_pack_id: str | None, title: str, format: str, content_class: str,
+               pillar_key: str, audience_goal: str, emotional_objective: str, story_direction: str,
+               visual_direction: str, motion_direction: str, caption_direction: str,
+               script_direction: str, disclosure: str, metadata: dict, updated_at: str):
+        existing = ContentBriefRepository.get(persona_id, brief_id)
+        if not existing:
+            raise LookupError("ContentBrief not found")
+        if existing["status"] != "draft":
+            raise ValueError("Approved or archived ContentBriefs are immutable; create a new draft")
+        fields = ContentBriefRepository._normalized_fields(
+            title=title, format=format, content_class=content_class, pillar_key=pillar_key,
+            audience_goal=audience_goal, emotional_objective=emotional_objective,
+            story_direction=story_direction, visual_direction=visual_direction,
+            motion_direction=motion_direction, caption_direction=caption_direction,
+            script_direction=script_direction, disclosure=disclosure, metadata=metadata,
+        )
+        if len(fields["disclosure"]) < 20:
+            raise ValueError("ContentBrief disclosure must be at least 20 characters")
+        _version, profile, _pillar, _pack = ContentBriefRepository._bindings(
+            persona_id=persona_id, persona_version_id=existing["persona_version_id"],
+            creator_profile_id=creator_profile_id or existing["creator_profile_id"],
+            content_pack_id=content_pack_id, content_class=fields["content_class"],
+            pillar_key=fields["pillar_key"],
+        )
+        db.write(
+            "UPDATE content_briefs SET creator_profile_id=?, content_pack_id=?, title=?, revision=revision+1, format=?, content_class=?, pillar_key=?, audience_goal=?, emotional_objective=?, story_direction=?, visual_direction=?, motion_direction=?, caption_direction=?, script_direction=?, disclosure=?, metadata_json=?, updated_at=? WHERE id=? AND persona_id=? AND status='draft'",
+            (
+                profile["id"], content_pack_id, fields["title"], fields["format"], fields["content_class"],
+                fields["pillar_key"], fields["audience_goal"], fields["emotional_objective"],
+                fields["story_direction"], fields["visual_direction"], fields["motion_direction"],
+                fields["caption_direction"], fields["script_direction"], fields["disclosure"],
+                json.dumps(fields["metadata"], ensure_ascii=False, sort_keys=True), updated_at,
+                brief_id, persona_id,
+            ),
+        )
+        return ContentBriefRepository.get(persona_id, brief_id)
+
+    @staticmethod
     def approve(*, persona_id: str, brief_id: str, reviewed_at: str):
         brief = ContentBriefRepository.get(persona_id, brief_id)
         if not brief:

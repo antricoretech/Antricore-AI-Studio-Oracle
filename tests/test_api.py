@@ -472,6 +472,12 @@ def test_content_brief_requires_creator_system_and_frozen_version_for_production
     brief = created.json()
     assert brief['status'] == 'draft'
     assert brief['content_class'] == 'adult_glamour'
+    revised_payload = {**payload, 'title': 'Adult glamour evening editorial revision', 'emotional_objective': 'Make the audience feel confident, seen, and engaged.'}
+    revised = client.put(f"/api/personas/{pid}/content-briefs/{brief['id']}", json=revised_payload)
+    assert revised.status_code == 200
+    assert revised.json()['title'].endswith('revision')
+    assert revised.json()['revision'] == 2
+    brief = revised.json()
     blocked = client.patch(f"/api/personas/{pid}/content-briefs/{brief['id']}/approve")
     assert blocked.status_code == 409
     assert client.post(f'/api/personas/{pid}/freeze').status_code == 200
@@ -485,6 +491,8 @@ def test_content_brief_requires_creator_system_and_frozen_version_for_production
     assert handoff['content_pillar']['identity_core'] is True
     assert handoff['content_pillar']['identity_authority'] == 'identity_and_style'
     assert handoff['creator_profile']['id'] == profile.json()['profile']['id']
+    immutable = client.put(f"/api/personas/{pid}/content-briefs/{brief['id']}", json=revised_payload)
+    assert immutable.status_code == 409
     assert client.get(f'/api/personas/{pid}/content-briefs').json()[0]['id'] == brief['id']
 
 

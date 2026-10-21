@@ -39,6 +39,8 @@ def test_frontend_is_module_split_and_static_modules_are_served():
         assert "['content-briefs', 'Content Briefs'" in workspace_js.text
         assert 'content-brief-form' in workspace_js.text
         assert '/content-briefs' in workspace_js.text
+        assert 'Edit draft' in workspace_js.text
+        assert 'revision' in workspace_js.text
         assert 'Hand off to Production' in workspace_js.text
         for module in ('core.js', 'api.js', 'navigation.js', 'photostudio.js'):
             response = client.get('/static/modules/' + module)
