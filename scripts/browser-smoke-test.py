@@ -31,6 +31,17 @@ def main(argv=None) -> int:
             assert page.locator(".brand-title h1").is_visible(), "legacy brand is not visible"
             assert page.locator("#global-persona-select").is_visible(), "legacy persona selector is not visible"
             assert page.locator("a[href='/workspace']").is_visible(), "canonical workspace bridge is not visible"
+            canonical_targets = {
+                "personas": "/workspace#personas",
+                "production": "/workspace#production",
+                "content-packs": "/workspace#content-packs",
+                "assets": "/workspace#assets",
+                "overview": "/workspace#overview",
+            }
+            for target, href in canonical_targets.items():
+                bridge = page.locator(f"a[data-canonical-target='{target}']")
+                assert bridge.count() == 1, f"missing legacy-to-canonical bridge: {target}"
+                assert bridge.get_attribute("href") == href, f"incorrect canonical bridge target: {target}"
             tab_targets = {
                 "#nav-btn-vault": "#tab-vault",
                 "#nav-btn-orchestrator": "#tab-orchestrator",

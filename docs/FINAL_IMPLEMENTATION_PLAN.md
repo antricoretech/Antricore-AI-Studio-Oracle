@@ -326,6 +326,14 @@ to the canonical journey. The next migration work should move those remaining
 capabilities behind canonical contracts one surface at a time, preserving `/`
 until replacement parity and regression evidence are complete.
 
+The migration bridge now includes explicit legacy-to-canonical handoffs: Master
+Vault opens Master Personas, Generate opens Production, Story opens ContentPacks,
+Gallery opens Asset Review, and System opens Overview. These links make the
+canonical journey reachable from every preserved legacy surface without
+silently changing the legacy behavior. Full feature-equivalent replacement and
+legacy retirement still require surface-by-surface migration and regression
+evidence.
+
 ### Cross-cutting frontend migration workstream
 
 The current static frontend is a legacy shell and is not considered aligned
