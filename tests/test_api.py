@@ -88,6 +88,8 @@ def test_canonical_workspace_page_is_served(client):
     assert 'Stale lineage warning' in workspace_js.text
     assert 'Reference linkage' in workspace_js.text
     assert 'assetReferenceLinks' in workspace_js.text
+    assert 'aria-busy' in response.text
+    assert 'skip-link' in response.text
     assert client.get('/static/workspace.css').status_code == 200
 
 

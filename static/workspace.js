@@ -414,6 +414,7 @@ async function loadViewData() {
   state.controller = new AbortController();
   const token = ++state.requestToken;
   const signal = state.controller.signal;
+  $('#workspace-view').setAttribute('aria-busy', 'true');
   renderNavigation();
   renderHeader();
   renderPersonaSelect();
@@ -440,9 +441,11 @@ async function loadViewData() {
     }
     if (state.view === 'personas') state.versions = results[0] || [];
     renderView();
+    $('#workspace-view').setAttribute('aria-busy', 'false');
     setStatus('Canonical workspace ready.', 'success');
   } catch (error) {
     if (error.name === 'AbortError') return;
+    $('#workspace-view').setAttribute('aria-busy', 'false');
     setStatus(error.message, 'error');
   }
 }
@@ -462,6 +465,7 @@ async function loadBase() {
   } catch (error) {
     setStatus(error.message, 'error');
     $('#workspace-view').innerHTML = emptyState('The canonical API could not load. Refresh after the local service is ready.');
+    $('#workspace-view').setAttribute('aria-busy', 'false');
   }
 }
 

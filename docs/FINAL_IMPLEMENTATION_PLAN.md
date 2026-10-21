@@ -302,6 +302,13 @@ adult/glamour packs inside the same Identity Core lineage and prevents a
 stored-but-invalid media link from being mistaken for a reusable canonical
 anchor.
 
+Responsive and keyboard smoke coverage is now part of the canonical workspace
+gate. The page provides a skip link, labelled main landmark, explicit loading
+busy state, and a 320px toolbar constraint; fixture-driven Chromium validation
+covers 320, 768, 1024, and 1440px layouts, named interactive controls, no
+horizontal overflow, and page-error detection. Full axe/screen-reader
+certification remains a later hardening task.
+
 ### Cross-cutting frontend migration workstream
 
 The current static frontend is a legacy shell and is not considered aligned

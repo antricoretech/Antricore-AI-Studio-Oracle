@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="/static/workspace.css">
 </head>
 <body>
+  <a class="skip-link" href="#workspace-view">Skip to workspace content</a>
   <div class="workspace-shell">
     <aside class="sidebar" aria-label="Workspace navigation">
       <a class="brand" href="/workspace" aria-label="AI Influencer Studio overview">
@@ -21,7 +22,7 @@
       </div>
     </aside>
 
-    <main class="main-content">
+    <main id="workspace-main" class="main-content" aria-labelledby="view-title">
       <header class="topbar">
         <div>
           <p class="eyebrow">Canonical control room</p>
@@ -36,7 +37,7 @@
       </header>
 
       <div id="workspace-status" class="status" role="status" aria-live="polite"></div>
-      <section id="workspace-view" aria-live="polite"></section>
+      <section id="workspace-view" aria-live="polite" aria-busy="false"></section>
     </main>
   </div>
   <script type="module" src="/static/workspace.js"></script>
