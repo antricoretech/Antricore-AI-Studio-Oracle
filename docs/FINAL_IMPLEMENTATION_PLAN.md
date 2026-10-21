@@ -859,6 +859,12 @@ reviewable by an operator. This is a content-output gate, not the later media
 quality evaluator for anatomy, identity similarity, video stability, audio, or
 export packaging.
 
+The canonical workspace also supports draft artifact revision before approval.
+Each saved revision re-runs the quality checks, while approved caption/script
+artifacts are included in the validated ContentBrief production resolution.
+This keeps copy, disclosure, brief, and PersonaVersion lineage together for the
+next production and export stages.
+
 Use this brief formula:
 
 ~~~text

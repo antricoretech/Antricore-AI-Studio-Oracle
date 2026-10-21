@@ -54,6 +54,7 @@ const state = {
   creatingContentArtifact: false,
   assessingContentArtifact: '',
   approvingContentArtifact: '',
+  editingContentArtifactId: '',
   approvingContentBrief: '',
   editingContentBriefId: '',
   benchmarkCatalog: { execution_status: 'deferred_final_gate', methods: [], scenarios: [] },
@@ -537,6 +538,10 @@ function renderContentBriefs() {
   const versionState = profileEnvelope.version_state || persona?.current_version?.state || 'draft';
   const pillars = profile.content_pillars || [];
   const contentPacks = state.contentPacks || [];
+  const approvedArtifactCounts = state.contentArtifacts.reduce((counts, artifact) => {
+    if (artifact.status === 'approved') counts[artifact.content_brief_id] = (counts[artifact.content_brief_id] || 0) + 1;
+    return counts;
+  }, {});
   const canAuthor = Boolean(profile.id);
   const editingBrief = state.contentBriefs.find((brief) => brief.id === state.editingContentBriefId && brief.status === 'draft');
   if (editingBrief) return renderContentBriefEditor({ brief: editingBrief, profile, pillars, contentPacks, versionState });
@@ -556,7 +561,7 @@ function renderContentBriefs() {
         <p id="content-brief-form-error" class="form-error" role="alert" hidden></p><div class="form-actions"><button class="button primary" type="submit" ${!canAuthor || state.creatingContentBrief ? 'disabled' : ''}>${state.creatingContentBrief ? 'Saving...' : 'Save draft brief'}</button></div>
       </form>
     </section>
-    <section class="panel" aria-labelledby="brief-list-heading"><div class="section-heading"><div><p class="eyebrow">Production library</p><h2 id="brief-list-heading">Reusable Content Briefs</h2></div>${badge(`${state.contentBriefs.length} brief${state.contentBriefs.length === 1 ? '' : 's'}`)}</div>${state.contentBriefs.length ? `<div class="card-list">${state.contentBriefs.map((brief) => `<article class="entity-card"><div><h3>${escapeHtml(brief.title)}</h3><p>${escapeHtml(brief.format)} Â· ${escapeHtml(brief.content_class)}${brief.pillar_key ? ` Â· ${escapeHtml(brief.pillar_key)}` : ''}</p><div class="entity-meta">${badge(brief.status)}${badge(brief.persona_version_id)}${brief.content_pack_id ? badge('ContentPack linked') : badge('pillar-led')}</div><p class="helper">${escapeHtml(brief.emotional_objective || brief.audience_goal || brief.story_direction || 'No objective recorded yet.')}</p></div><div class="entity-actions">${brief.status === 'draft' ? `<button class="button secondary" type="button" data-brief-approve="${escapeHtml(brief.id)}" ${state.approvingContentBrief ? 'disabled' : ''}>${state.approvingContentBrief === brief.id ? 'Approving...' : 'Approve for production'}</button>` : ''}${brief.status === 'approved' ? `<button class="button primary" type="button" data-brief-handoff="${escapeHtml(brief.id)}">Hand off to Production</button>` : ''}</div></article>`).join('')}</div>` : emptyState('No ContentBriefs exist for this PersonaVersion yet. Create the first reusable story and production direction above.')}</section>
+    <section class="panel" aria-labelledby="brief-list-heading"><div class="section-heading"><div><p class="eyebrow">Production library</p><h2 id="brief-list-heading">Reusable Content Briefs</h2></div>${badge(`${state.contentBriefs.length} brief${state.contentBriefs.length === 1 ? '' : 's'}`)}</div>${state.contentBriefs.length ? `<div class="card-list">${state.contentBriefs.map((brief) => { const approvedCount = approvedArtifactCounts[brief.id] || 0; return `<article class="entity-card"><div><h3>${escapeHtml(brief.title)}</h3><p>${escapeHtml(brief.format)} Â· ${escapeHtml(brief.content_class)}${brief.pillar_key ? ` Â· ${escapeHtml(brief.pillar_key)}` : ''}</p><div class="entity-meta">${badge(brief.status)}${badge(brief.persona_version_id)}${brief.content_pack_id ? badge('ContentPack linked') : badge('pillar-led')}${badge(`${approvedCount} approved artifact${approvedCount === 1 ? '' : 's'}`)}</div><p class="helper">${escapeHtml(brief.emotional_objective || brief.audience_goal || brief.story_direction || 'No objective recorded yet.')}</p></div><div class="entity-actions">${brief.status === 'draft' ? `<button class="button secondary" type="button" data-brief-approve="${escapeHtml(brief.id)}" ${state.approvingContentBrief ? 'disabled' : ''}>${state.approvingContentBrief === brief.id ? 'Approving...' : 'Approve for production'}</button>` : ''}${brief.status === 'approved' ? `<button class="button primary" type="button" data-brief-handoff="${escapeHtml(brief.id)}">Hand off to Production</button>` : ''}</div></article>`; }).join('')}</div>` : emptyState('No ContentBriefs exist for this PersonaVersion yet. Create the first reusable story and production direction above.')}</section>
   </div>`;
 }
 
@@ -567,10 +572,20 @@ function renderContentArtifactQuality(artifact) {
   return `<div class="artifact-quality-checks" aria-label="Content quality checks">${checks.map((check) => `<div class="artifact-quality-check"><span>${badge(check.status)}</span><span>${escapeHtml(check.detail)}</span></div>`).join('')}</div>`;
 }
 
+function renderContentArtifactEditor(artifact) {
+  return `<section class="panel content-artifacts-panel" aria-labelledby="artifact-edit-heading"><div class="section-heading"><div><p class="eyebrow">Phase 6 · draft revision</p><h2 id="artifact-edit-heading">Edit ${escapeHtml(artifact.artifact_type)} draft</h2></div>${badge(`revision ${artifact.revision || 1}`)}</div><p class="helper">Draft copy remains bound to ContentBrief ${escapeHtml(artifact.content_brief_id)} and PersonaVersion ${escapeHtml(artifact.persona_version_id)}. Saving creates a new artifact revision and re-runs the quality checks.</p><form id="content-artifact-edit-form" class="content-artifact-form"><input type="hidden" name="artifact_type" value="${escapeHtml(artifact.artifact_type)}"><label>Artifact copy<textarea name="content" rows="10" maxlength="5000" required>${escapeHtml(artifact.content)}</textarea></label><p id="content-artifact-edit-error" class="form-error" role="alert" hidden></p><div class="form-actions"><button class="button primary" type="submit" ${state.creatingContentArtifact ? 'disabled' : ''}>${state.creatingContentArtifact ? 'Saving...' : 'Save artifact revision'}</button><button class="button secondary" type="button" data-artifact-edit-cancel>Cancel</button></div></form></section>`;
+}
+
 function renderContentArtifacts() {
   const approvedBriefs = state.contentBriefs.filter((brief) => brief.status === 'approved');
   const briefNames = Object.fromEntries(state.contentBriefs.map((brief) => [brief.id, brief.title]));
   return `<section class="panel content-artifacts-panel" aria-labelledby="content-artifacts-heading"><div class="section-heading"><div><p class="eyebrow">Reviewable output</p><h2 id="content-artifacts-heading">Caption and Script Drafts</h2></div>${badge(`${state.contentArtifacts.length} artifact${state.contentArtifacts.length === 1 ? '' : 's'}`)}</div><p class="helper">Create deterministic draft templates from an approved ContentBrief, run structural quality checks, then review the copy before any production or publishing handoff. These checks do not censor adult/glamour content and are not model-generated.</p>${approvedBriefs.length ? `<form id="content-artifact-create-form" class="content-artifact-form"><div class="form-grid"><label>Approved ContentBrief<select name="content_brief_id" required>${approvedBriefs.map((brief) => `<option value="${escapeHtml(brief.id)}">${escapeHtml(brief.title)} · ${escapeHtml(brief.content_class)}</option>`).join('')}</select></label><label>Artifact type<select name="artifact_type"><option value="caption">Caption draft</option><option value="script">Script draft</option></select></label></div><label>Optional operator copy <span class="field-hint">leave blank to create a structured template</span><textarea name="content" rows="4" maxlength="5000" placeholder="Paste or write reviewed copy here, or leave blank for the deterministic template."></textarea><p id="content-artifact-form-error" class="form-error" role="alert" hidden></p><div class="form-actions"><button class="button primary" type="submit" ${state.creatingContentArtifact ? 'disabled' : ''}>${state.creatingContentArtifact ? 'Creating...' : 'Create draft artifact'}</button></div></form>` : `<div class="callout readiness-callout"><p><strong>Approve a ContentBrief first.</strong></p><p class="helper">Caption and script artifacts inherit the frozen PersonaVersion, disclosure, and adult/glamour Identity Core checks from the approved brief.</p></div>`}${state.contentArtifacts.length ? `<div class="card-list artifact-list">${state.contentArtifacts.map((artifact) => { const qualityStatus = artifact.quality_status || 'pending'; const busy = state.assessingContentArtifact === artifact.id || state.approvingContentArtifact === artifact.id; return `<article class="entity-card"><div><h3>${escapeHtml(artifact.artifact_type)} · ${escapeHtml(briefNames[artifact.content_brief_id] || artifact.content_brief_id)}</h3><div class="entity-meta">${badge(artifact.status)}${badge(`revision ${artifact.revision || 1}`)}${badge(artifact.source || 'operator')}${badge(qualityStatus)}</div><p class="artifact-content">${escapeHtml(artifact.content)}</p><p class="helper">Disclosure: ${escapeHtml(artifact.disclosure)}</p>${renderContentArtifactQuality(artifact)}</div><div class="entity-actions">${artifact.status === 'draft' ? `<button class="button secondary" type="button" data-artifact-quality="${escapeHtml(artifact.id)}" ${busy ? 'disabled' : ''}>${state.assessingContentArtifact === artifact.id ? 'Checking...' : 'Run quality check'}</button><button class="button primary" type="button" data-artifact-approve="${escapeHtml(artifact.id)}" ${(busy || qualityStatus === 'failed') ? 'disabled' : ''}>${state.approvingContentArtifact === artifact.id ? 'Approving...' : 'Approve artifact'}</button>` : ''}${artifact.status === 'approved' ? `<span class="badge approved">Ready for handoff</span>` : ''}</div></article>`; }).join('')}</div>` : emptyState('No caption or script artifacts exist yet. Approve a brief, then create the first draft above.')}</section>`;
+}
+
+function renderContentArtifactEditControls() {
+  const drafts = state.contentArtifacts.filter((artifact) => artifact.status === 'draft');
+  if (!drafts.length) return '';
+  return `<section class="panel" aria-labelledby="artifact-edit-list-heading"><div class="section-heading"><div><p class="eyebrow">Draft maintenance</p><h2 id="artifact-edit-list-heading">Revise artifact copy</h2></div>${badge(`${drafts.length} editable`)}</div><p class="helper">Edit draft copy before approval. Each successful save increments the artifact revision and re-runs its quality checks.</p><div class="entity-actions">${drafts.map((artifact) => `<button class="button secondary" type="button" data-artifact-edit="${escapeHtml(artifact.id)}">Edit ${escapeHtml(artifact.artifact_type)} draft</button>`).join('')}</div></section>`;
 }
 
 function renderContentBriefsWithEditing() {
@@ -587,7 +602,9 @@ function renderContentBriefsWithEditing() {
   }
   const drafts = state.contentBriefs.filter((brief) => brief.status === 'draft');
   const controls = drafts.length ? `<section class="panel" aria-labelledby="brief-edit-list-heading"><div class="section-heading"><div><p class="eyebrow">Draft maintenance</p><h2 id="brief-edit-list-heading">Revise before approval</h2></div>${badge(`${drafts.length} editable`)}</div><p class="helper">Edit a draft to refine the creative direction. Each successful save increments its revision; approved briefs remain immutable.</p><div class="entity-actions">${drafts.map((brief) => `<button class="button secondary" type="button" data-brief-edit="${escapeHtml(brief.id)}">Edit ${escapeHtml(brief.title)}</button>`).join('')}</div></section>` : '';
-  return `${renderContentBriefs()}${controls}${renderContentArtifacts()}`;
+  const editingArtifact = state.contentArtifacts.find((artifact) => artifact.id === state.editingContentArtifactId && artifact.status === 'draft');
+  if (editingArtifact) return `${renderContentBriefs()}${controls}${renderContentArtifactEditor(editingArtifact)}`;
+  return `${renderContentBriefs()}${controls}${renderContentArtifacts()}${renderContentArtifactEditControls()}`;
 }
 
 function renderIdentityBenchmarks() {
@@ -910,6 +927,13 @@ function showContentArtifactFormError(message) {
   target.hidden = !message;
 }
 
+function showContentArtifactEditError(message) {
+  const target = $('#content-artifact-edit-error');
+  if (!target) return;
+  target.textContent = message;
+  target.hidden = !message;
+}
+
 async function createContentArtifact(event) {
   event.preventDefault();
   const form = event.target;
@@ -929,6 +953,31 @@ async function createContentArtifact(event) {
     state.creatingContentArtifact = false;
     renderView();
     showContentArtifactFormError(error.message);
+    setStatus(error.message, 'error');
+  }
+}
+
+async function saveContentArtifact(event) {
+  event.preventDefault();
+  const form = event.target;
+  showContentArtifactEditError('');
+  if (!form.reportValidity()) return;
+  const artifactId = state.editingContentArtifactId;
+  state.creatingContentArtifact = true;
+  renderView();
+  try {
+    await put(`/api/personas/${encodeURIComponent(state.activePersonaId)}/content-artifacts/${encodeURIComponent(artifactId)}`, {
+      artifact_type: form.elements.artifact_type.value,
+      content: form.elements.content.value.trim(),
+    });
+    state.creatingContentArtifact = false;
+    state.editingContentArtifactId = '';
+    setStatus('Content artifact revision saved and quality checks re-run.', 'success');
+    await loadViewData();
+  } catch (error) {
+    state.creatingContentArtifact = false;
+    renderView();
+    showContentArtifactEditError(error.message);
     setStatus(error.message, 'error');
   }
 }
@@ -991,6 +1040,7 @@ async function handoffContentBrief(briefId) {
       content_pack_id: resolved.content_pack?.id || '',
       brief_id: resolved.id,
       disclosure: handoff.disclosure,
+      content_artifacts: resolved.content_artifacts || [],
     }));
     window.location.assign(`/workspace?persona_id=${encodeURIComponent(state.activePersonaId)}#production`);
   } catch (error) {
@@ -1273,9 +1323,21 @@ $('#workspace-view').addEventListener('click', (event) => {
     renderView();
     return;
   }
+  const editArtifactButton = event.target.closest('[data-artifact-edit]');
+  if (editArtifactButton) {
+    state.editingContentArtifactId = editArtifactButton.dataset.artifactEdit;
+    renderView();
+    return;
+  }
   const cancelBriefButton = event.target.closest('[data-brief-cancel]');
   if (cancelBriefButton) {
     state.editingContentBriefId = '';
+    renderView();
+    return;
+  }
+  const cancelArtifactButton = event.target.closest('[data-artifact-edit-cancel]');
+  if (cancelArtifactButton) {
+    state.editingContentArtifactId = '';
     renderView();
     return;
   }
@@ -1321,6 +1383,10 @@ $('#workspace-view').addEventListener('submit', (event) => {
   }
   if (event.target.id === 'content-artifact-create-form') {
     createContentArtifact(event);
+    return;
+  }
+  if (event.target.id === 'content-artifact-edit-form') {
+    saveContentArtifact(event);
     return;
   }
   if (event.target.id === 'identity-benchmark-create-form') {

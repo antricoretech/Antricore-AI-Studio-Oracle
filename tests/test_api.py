@@ -515,6 +515,10 @@ def test_content_brief_requires_creator_system_and_frozen_version_for_production
     approved_artifact = client.patch(f"/api/personas/{pid}/content-artifacts/{artifact['id']}/review", json={'review': 'approved'})
     assert approved_artifact.status_code == 200
     assert approved_artifact.json()['quality_status'] == 'passed'
+    handoff_with_artifact = client.get(f"/api/personas/{pid}/content-briefs/{brief['id']}/resolve")
+    assert handoff_with_artifact.status_code == 200
+    assert handoff_with_artifact.json()['content_artifacts'][0]['id'] == artifact['id']
+    assert handoff_with_artifact.json()['content_artifacts'][0]['artifact_type'] == 'caption'
     resolved_artifact = client.get(f"/api/personas/{pid}/content-artifacts/{artifact['id']}/resolve")
     assert resolved_artifact.status_code == 200
     assert resolved_artifact.json()['content_brief_id'] == brief['id']

@@ -811,6 +811,22 @@ class ContentBriefRepository:
         )
         if version["state"] != "frozen":
             raise ValueError("ContentBrief production handoff requires a frozen PersonaVersion")
+        approved_artifacts = [
+            {
+                "id": artifact["id"],
+                "artifact_type": artifact["artifact_type"],
+                "status": artifact["status"],
+                "revision": artifact["revision"],
+                "content": artifact["content"],
+                "disclosure": artifact["disclosure"],
+                "source": artifact["source"],
+                "quality": artifact.get("quality") or {},
+                "persona_version_id": artifact["persona_version_id"],
+                "content_brief_id": artifact["content_brief_id"],
+            }
+            for artifact in ContentArtifactRepository.list_for_brief(persona_id, brief_id)
+            if artifact["status"] == "approved"
+        ]
         return {
             "id": brief["id"],
             "persona_id": persona_id,
@@ -820,6 +836,7 @@ class ContentBriefRepository:
             "creator_profile": profile,
             "content_pillar": pillar,
             "content_pack": ContentPackRepository.resolve(persona_id, content_pack["id"]) if content_pack else None,
+            "content_artifacts": approved_artifacts,
             "production_handoff": {
                 "format": brief["format"],
                 "content_class": brief["content_class"],
