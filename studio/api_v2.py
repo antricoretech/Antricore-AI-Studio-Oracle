@@ -99,6 +99,7 @@ def _v2_start_job(*, persona: dict, version: dict | None, payload: BaseModel, pr
             lineage_json=json.dumps(lineage, separators=(",", ":")),
             created_at=_utc_now(),
             idempotency_key=normalized,
+            status="running",
         )
     except sqlite3.IntegrityError:
         if not normalized:

@@ -656,6 +656,16 @@ current CLI/diffusion compatibility work; the remaining Phase 4 gate is the
 separate model/runtime installation and hardware-readiness decision. No
 generation models are installed by this slice.
 
+### Phase 4 slice 11 — isolate synchronous legacy jobs from the durable dispatcher
+
+Legacy v2 photoshoot rendering is synchronous and does not use the ComfyUI
+workflow runner. Its Job record is therefore created with `running` status at
+insert time, preventing the durable dispatcher from claiming the row during
+the brief interval before the legacy renderer completes. All normal Job
+creation paths retain the default `queued` status. This closes a startup/test
+race without changing the legacy response contract or installing generation
+models.
+
 ### Final model/runtime gate audit — target Mac required
 
 The final installation gate has been audited but not executed. The declared
