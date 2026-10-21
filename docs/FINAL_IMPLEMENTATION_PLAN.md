@@ -641,6 +641,21 @@ silently create or approve assets. This keeps the compatibility boundary
 explicit while enabling every CLI media type to enter the same review,
 lineage, and export workflow. Generation models remain deferred.
 
+### Phase 4 slice 10 — opt-in direct CLI registration
+
+The direct `image`, `video`, `voice`, `mux`, and `pipeline` commands now accept
+an optional canonical `--persona-id`. When supplied, each successful output is
+registered through the same bounded Asset bridge used by the explicit
+`register` command. The pipeline propagates the Persona ID through each stage,
+so image, video, narration, and assembled video outputs can share the same
+PersonaVersion lineage. Without the flag, existing caller-selected file
+behavior remains unchanged.
+
+The opt-in path never auto-confirms rights or review. This completes the
+current CLI/diffusion compatibility work; the remaining Phase 4 gate is the
+separate model/runtime installation and hardware-readiness decision. No
+generation models are installed by this slice.
+
 ### Cross-cutting frontend migration workstream
 
 The current static frontend is a legacy shell and is not considered aligned
