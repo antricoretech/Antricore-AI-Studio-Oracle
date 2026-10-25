@@ -46,6 +46,7 @@ from .engines import get as get_engine, rows as engine_rows
 from .media import read_limited, validate_image_bytes, validate_media_signature
 from .model_registry import get as get_model, rows as model_rows, workflow_model
 from .policies import AI_DISCLOSURE, normalize_content_class, normalize_destination_policy
+from .publishing_policies import catalog as publishing_policy_catalog, evaluate as evaluate_publishing_policy, infer_format
 from .preflight import resource_preflight, workflow_preflight
 from .provenance import manifest, media_metadata, quality_report, sha256_bytes
 from .identity_conditioning import method_catalog, scenario_catalog
@@ -2066,7 +2067,11 @@ def asset_publishing_readiness(aid: str):
         quality_checks.get("identity_version", {"id": "identity_version", "status": "error", "detail": "PersonaVersion check is missing"}),
         quality_checks.get("identity_state", {"id": "identity_state", "status": "error", "detail": "PersonaVersion state check is missing"}),
         quality_checks.get("content_class", {"id": "content_class", "status": "error", "detail": "Content class check is missing"}),
-        quality_checks.get("destination_policy", {"id": "destination_policy", "status": "error", "detail": "Destination policy check is missing"}),
+        {
+            "id": "destination_policy",
+            "status": "ready" if asset.get("destination_policy") == "eligible" else "error",
+            "detail": "Destination policy is eligible for external publishing" if asset.get("destination_policy") == "eligible" else "Destination policy must be eligible for external publishing",
+        },
         {
             "id": "quality",
             "status": "ready" if quality.get("status") == "ready" else "error",
@@ -2081,6 +2086,42 @@ def asset_publishing_readiness(aid: str):
         "content_class": asset.get("content_class") or "identity",
         "destination_policy": asset.get("destination_policy") or "review_required",
         "checks": checks,
+    }
+
+
+@app.get("/api/publishing/policies")
+def publishing_policies():
+    return {
+        "execution_status": "catalog_only",
+        "external_calls": False,
+        "policies": publishing_policy_catalog(),
+    }
+
+
+@app.get("/api/assets/{aid}/platform-readiness")
+def asset_platform_readiness(aid: str, platform: str = "instagram", format: str | None = None):
+    asset, _job, _person, quality = _asset_bundle(aid)
+    base = asset_publishing_readiness(aid)
+    format_name = format or infer_format(platform, asset.get("kind") or "")
+    if not format_name:
+        raise HTTPException(400, "A supported publishing format is required for this asset kind")
+    try:
+        report = evaluate_publishing_policy(
+            platform,
+            format_name,
+            asset_kind=asset.get("kind") or "",
+            base_ready=base["ready"],
+            destination_policy=asset.get("destination_policy") or "review_required",
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {
+        "id": aid,
+        "content_class": asset.get("content_class") or "identity",
+        "destination_policy": asset.get("destination_policy") or "review_required",
+        "base_readiness": base,
+        "platform_readiness": report,
+        "quality_status": quality.get("status"),
     }
 
 

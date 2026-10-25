@@ -65,6 +65,7 @@ const state = {
   assessingAssetId: '',
   savingAssetAssessment: '',
   assetPublishingReadiness: {},
+  assetPlatformReadiness: {},
   workflows: [],
   preflight: null,
   preflightFingerprint: '',
@@ -485,6 +486,13 @@ function renderAssetPublishingReadiness(asset) {
   return `<div class="callout ${report.ready ? '' : 'stale-callout'}" aria-live="polite"><p><strong>Publishing readiness:</strong> ${badge(report.status)}</p><div class="entity-meta">${report.checks.map((check) => badge(`${check.id}: ${check.status}`)).join('')}</div></div>`;
 }
 
+function renderAssetPlatformReadiness(asset) {
+  const report = state.assetPlatformReadiness[asset.id];
+  if (!report) return '';
+  const platform = report.platform_readiness || {};
+  return `<div class="callout ${platform.ready ? '' : 'stale-callout'}" aria-live="polite"><p><strong>${escapeHtml(platform.platform || 'Platform')} readiness (${escapeHtml(platform.format || 'format')}):</strong> ${badge(platform.status || 'blocked')}</p><p class="helper">${escapeHtml(platform.execution_status || 'local policy evaluation')}</p><div class="artifact-quality-checks" aria-label="Platform readiness checks">${(platform.checks || []).map((check) => `<div class="artifact-quality-check"><span>${escapeHtml(check.id || 'check')}</span>${badge(check.status || 'unknown')}<small>${escapeHtml(check.detail || '')}</small></div>`).join('')}</div></div>`;
+}
+
 function renderAssetsCanonical() {
   return `<section class="panel" aria-labelledby="assets-heading">
     <div class="section-heading"><div><p class="eyebrow">Human review gate</p><h2 id="assets-heading">Asset Review</h2></div>${badge(`${state.assets.length} asset${state.assets.length === 1 ? '' : 's'}`)}</div>
@@ -495,8 +503,9 @@ function renderAssetsCanonical() {
       ${renderAssetQuality(asset)}
       ${renderAssetAssessment(asset)}
       ${renderAssetPublishingReadiness(asset)}
+      ${renderAssetPlatformReadiness(asset)}
       ${asset.reviewed_at ? `<p class="helper">Reviewed by ${escapeHtml(asset.reviewer || 'local operator')} at ${escapeHtml(asset.reviewed_at)}: ${escapeHtml(asset.review_reason || 'No reason recorded.')}</p>` : '<p class="helper">Review evidence has not been recorded yet.</p>'}
-      <div class="asset-review-actions"><form class="inline-form" data-asset-review="${escapeHtml(asset.id)}"><label>Review<select name="review">${reviewOption('pending', asset.review)}${reviewOption('approved', asset.review)}${reviewOption('rejected', asset.review)}</select></label><label>Reviewer<input name="reviewer" maxlength="120" value="${escapeHtml(asset.reviewer || 'local_operator')}" required></label><label>Reason<input name="reason" maxlength="1000" value="${escapeHtml(asset.review_reason || '')}" placeholder="Why is this decision being made?" required></label><button class="button primary" type="submit">Save review</button></form><button class="button secondary" type="button" data-asset-quality="${escapeHtml(asset.id)}" ${state.assessingAssetId === asset.id ? 'disabled' : ''}>${state.assessingAssetId === asset.id ? 'Refreshing quality…' : 'Refresh quality'}</button><button class="button secondary" type="button" data-asset-publishing-readiness="${escapeHtml(asset.id)}">Check publishing readiness</button><a class="button secondary" href="/api/assets/${encodeURIComponent(asset.id)}/file" target="_blank" rel="noreferrer">Open media</a>${asset.review === 'approved' ? `<a class="button secondary" href="/api/assets/${encodeURIComponent(asset.id)}/package" target="_blank" rel="noreferrer">Export package</a>` : ''}</div>
+      <div class="asset-review-actions"><form class="inline-form" data-asset-review="${escapeHtml(asset.id)}"><label>Review<select name="review">${reviewOption('pending', asset.review)}${reviewOption('approved', asset.review)}${reviewOption('rejected', asset.review)}</select></label><label>Reviewer<input name="reviewer" maxlength="120" value="${escapeHtml(asset.reviewer || 'local_operator')}" required></label><label>Reason<input name="reason" maxlength="1000" value="${escapeHtml(asset.review_reason || '')}" placeholder="Why is this decision being made?" required></label><button class="button primary" type="submit">Save review</button></form><button class="button secondary" type="button" data-asset-quality="${escapeHtml(asset.id)}" ${state.assessingAssetId === asset.id ? 'disabled' : ''}>${state.assessingAssetId === asset.id ? 'Refreshing quality…' : 'Refresh quality'}</button><button class="button secondary" type="button" data-asset-publishing-readiness="${escapeHtml(asset.id)}">Check publishing readiness</button><button class="button secondary" type="button" data-asset-platform-readiness="${escapeHtml(asset.id)}">Check Instagram readiness</button><a class="button secondary" href="/api/assets/${encodeURIComponent(asset.id)}/file" target="_blank" rel="noreferrer">Open media</a>${asset.review === 'approved' ? `<a class="button secondary" href="/api/assets/${encodeURIComponent(asset.id)}/package" target="_blank" rel="noreferrer">Export package</a>` : ''}</div>
     </article>`).join('')}</div>` : emptyState('No generated or imported assets are recorded yet. Assets will appear here after an import or generation job.')}
   </section>`;
 }
@@ -943,6 +952,18 @@ async function checkAssetPublishingReadiness(assetId) {
     state.assetPublishingReadiness[assetId] = report;
     renderView();
     setStatus(report.ready ? 'Asset is ready for the future publishing gate.' : 'Asset publishing readiness is blocked.', report.ready ? 'success' : 'error');
+  } catch (error) {
+    setStatus(error.message, 'error');
+  }
+}
+
+async function checkAssetPlatformReadiness(assetId) {
+  try {
+    const report = await get(`/api/assets/${encodeURIComponent(assetId)}/platform-readiness?platform=instagram`);
+    state.assetPlatformReadiness[assetId] = report;
+    renderView();
+    const platform = report.platform_readiness || {};
+    setStatus(platform.ready ? 'Asset is ready for the configured Instagram gate.' : 'Instagram readiness is blocked pending Phase 8 account and delivery requirements.', platform.ready ? 'success' : 'error');
   } catch (error) {
     setStatus(error.message, 'error');
   }
@@ -1437,6 +1458,11 @@ $('#workspace-view').addEventListener('click', (event) => {
   const publishingReadinessButton = event.target.closest('[data-asset-publishing-readiness]');
   if (publishingReadinessButton) {
     checkAssetPublishingReadiness(publishingReadinessButton.dataset.assetPublishingReadiness);
+    return;
+  }
+  const platformReadinessButton = event.target.closest('[data-asset-platform-readiness]');
+  if (platformReadinessButton) {
+    checkAssetPlatformReadiness(platformReadinessButton.dataset.assetPlatformReadiness);
     return;
   }
   const approveBriefButton = event.target.closest('[data-brief-approve]');

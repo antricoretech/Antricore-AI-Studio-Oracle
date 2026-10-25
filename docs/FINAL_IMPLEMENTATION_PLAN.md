@@ -904,15 +904,29 @@ model execution; model-backed scoring remains deferred to the final runtime
 gate. Asset quality now verifies PersonaVersion existence/state and available
 ContentPack lineage, while a read-only publishing-readiness report requires
 approved review evidence, rights, disclosure, frozen identity, passed quality,
-content class, and an `eligible` destination policy. It does not connect an
-external platform or publish content; platform account and policy checks remain
-Phase 8 work.
+content class, and an `eligible` destination policy. A local platform-policy
+catalog and read-only evaluator now prepare the Instagram handoff without
+network calls: feed-image and reel format contracts are explicit, and
+readiness reports the remaining professional-account, persona-account
+binding, external-permission, and publicly reachable media URL blockers.
+Adult/glamour content continues through the same Identity Core and review
+gates; its content class is preserved in the platform-readiness report rather
+than silently excluded. External account credentials, public-media delivery,
+OAuth scopes, and publish attempts remain Phase 8 work.
 
 Exit: every review decision records status, reason, reviewer, and timestamp; approved assets export with manifest and disclosure sidecar.
 
 ### Phase 8 — Publishing integration
 
-Add platform accounts, Persona-to-account binding, content calendar, captions, publish attempts, retries, audit logs, and platform responses.
+Add platform accounts, Persona-to-account binding, content calendar, captions,
+publish attempts, retries, audit logs, and platform responses. Start from the
+Phase 7 platform-policy contract rather than bypassing it: account binding,
+professional-account verification, external permission scopes, and public
+media delivery must resolve before an Instagram publish attempt can be
+created. The first implementation should use a provider interface with a
+local dry-run adapter, then add OAuth/token storage and a real Instagram
+adapter behind explicit configuration. No platform credential or outbound
+publish call belongs in the Phase 7 branch.
 
 Publishing requires:
 
