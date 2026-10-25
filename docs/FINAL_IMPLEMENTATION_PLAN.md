@@ -926,9 +926,11 @@ the Phase 7 platform-policy contract rather than bypassing it: account
 binding, professional-account verification, external permission scopes, and
 public media delivery must resolve before an Instagram publish attempt can be
 created. The next implementation should add a provider interface with a
-local dry-run adapter, then add OAuth/token storage and a real Instagram
-adapter behind explicit configuration. No platform credential or outbound
-publish call belongs in the current branch.
+local dry-run adapter; that provider boundary is now present and is the only
+enabled provider. It explicitly reports that OAuth, account verification, and
+publishing are unsupported. The next implementation may add OAuth/token
+storage and a real Instagram adapter behind explicit configuration, but no
+platform credential or outbound publish call belongs in the current branch.
 
 Publishing requires:
 

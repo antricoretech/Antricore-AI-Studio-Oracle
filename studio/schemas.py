@@ -63,6 +63,7 @@ class PublishingAccountIn(BaseModel):
 
 
 class PublishDryRunIn(BaseModel):
+    provider: str = Field(default="local_dry_run", min_length=2, max_length=60)
     account_id: str = Field(min_length=1, max_length=128)
     format: str | None = Field(default=None, max_length=40)
     content_artifact_id: str | None = Field(default=None, max_length=128)

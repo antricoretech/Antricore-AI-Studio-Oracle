@@ -47,6 +47,7 @@ from .media import read_limited, validate_image_bytes, validate_media_signature
 from .model_registry import get as get_model, rows as model_rows, workflow_model
 from .policies import AI_DISCLOSURE, normalize_content_class, normalize_destination_policy
 from .publishing_policies import catalog as publishing_policy_catalog, evaluate as evaluate_publishing_policy, infer_format
+from .publishing_providers import catalog as publishing_provider_catalog, get as get_publishing_provider
 from .preflight import resource_preflight, workflow_preflight
 from .provenance import manifest, media_metadata, quality_report, sha256_bytes
 from .identity_conditioning import method_catalog, scenario_catalog
@@ -2095,7 +2096,13 @@ def publishing_policies():
         "execution_status": "catalog_only",
         "external_calls": False,
         "policies": publishing_policy_catalog(),
+        "providers": publishing_provider_catalog(),
     }
+
+
+@app.get("/api/publishing/providers")
+def publishing_providers():
+    return {"external_calls": False, "providers": publishing_provider_catalog()}
 
 
 def _publishing_account_response(account: dict | None):
@@ -2190,12 +2197,11 @@ def publish_dry_run(aid: str, payload: PublishDryRunIn):
         else:
             caption_check["detail"] = "Caption artifact must belong to the persona, be a caption, and be approved with passed quality"
     checks = list(policy["checks"]) + [caption_check]
-    ready = all(check["status"] == "ready" for check in checks)
-    response = {
-        "dry_run": True, "external_calls": False, "ready": ready,
-        "status": "ready" if ready else "blocked", "checks": checks,
-        "platform": account["platform"], "format": format_name,
-    }
+    try:
+        provider = get_publishing_provider(payload.provider)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    response = provider.dry_run(platform=account["platform"], format_name=format_name, checks=checks, account_id=account["id"])
     existing = PublishingRepository.attempt_by_key(payload.idempotency_key)
     if existing:
         return {"replayed": True, "attempt": existing}
@@ -2203,8 +2209,8 @@ def publish_dry_run(aid: str, payload: PublishDryRunIn):
         attempt_id=uid(), persona_id=asset["persona_id"], persona_version_id=asset.get("persona_version_id"),
         asset_id=aid, content_artifact_id=payload.content_artifact_id, account_id=account["id"],
         platform=account["platform"], format_name=format_name, idempotency_key=payload.idempotency_key,
-        status="ready" if ready else "blocked", request={"asset_id": aid, "account_id": account["id"], "format": format_name, "content_artifact_id": payload.content_artifact_id},
-        response=response, error=None if ready else "Dry run is blocked by one or more publishing checks", created_at=now(),
+        status=response["status"], request={"asset_id": aid, "account_id": account["id"], "format": format_name, "content_artifact_id": payload.content_artifact_id},
+        response=response, error=None if response["ready"] else "Dry run is blocked by one or more publishing checks", created_at=now(),
     )
     return {"replayed": False, "attempt": attempt, "quality_status": quality.get("status")}
 

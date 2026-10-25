@@ -20,6 +20,17 @@ def test_publishing_account_binding_is_local_and_unverified(client):
     assert client.get(f"/api/personas/{persona['id']}/publishing-accounts").json()[0]['id'] == account['id']
 
 
+def test_publishing_provider_catalog_is_dry_run_only(client):
+    response = client.get('/api/publishing/providers')
+    assert response.status_code == 200
+    data = response.json()
+    assert data['external_calls'] is False
+    provider = data['providers'][0]
+    assert provider['id'] == 'local_dry_run'
+    assert provider['supports_oauth'] is False
+    assert provider['supports_publish'] is False
+
+
 def test_publishing_account_rejects_unsupported_instagram_account_type(client):
     persona = _persona(client)
     response = client.post(f"/api/personas/{persona['id']}/publishing-accounts", json={
@@ -52,9 +63,31 @@ def test_publish_dry_run_is_idempotent_and_has_no_external_side_effect(client):
     assert result.json()['attempt']['dry_run'] is True
     assert result.json()['attempt']['status'] == 'blocked'
     assert result.json()['attempt']['response']['external_calls'] is False
+    assert result.json()['attempt']['response']['provider'] == 'local_dry_run'
     replay = client.post(f'/api/assets/{aid}/publish-dry-run', json={
         'account_id': account['id'], 'idempotency_key': 'phase8-dry-run-001',
     })
     assert replay.status_code == 200
     assert replay.json()['replayed'] is True
     assert replay.json()['attempt']['id'] == result.json()['attempt']['id']
+
+
+def test_publish_dry_run_rejects_unknown_provider(client):
+    from io import BytesIO
+    from PIL import Image
+
+    persona = _persona(client)
+    account = client.post(f"/api/personas/{persona['id']}/publishing-accounts", json={
+        'platform': 'instagram', 'account_label': 'Provider test account', 'account_type': 'creator',
+    }).json()
+    buffer = BytesIO()
+    Image.new('RGB', (16, 16), 'white').save(buffer, format='PNG')
+    imported = client.post('/api/assets/import', data={
+        'persona_id': persona['id'], 'kind': 'image', 'prompt': 'Provider test image',
+        'content_class': 'identity', 'destination_policy': 'eligible',
+        'disclosure': 'Fictional adult character. AI-generated synthetic media.', 'rights_confirmed': 'true',
+    }, files={'file': ('provider.png', buffer.getvalue(), 'image/png')})
+    response = client.post(f"/api/assets/{imported.json()['id']}/publish-dry-run", json={
+        'provider': 'real_instagram', 'account_id': account['id'], 'idempotency_key': 'phase8-provider-001',
+    })
+    assert response.status_code == 400
