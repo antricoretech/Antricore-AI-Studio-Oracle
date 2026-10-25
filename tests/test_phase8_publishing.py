@@ -42,6 +42,26 @@ def test_publishing_provider_catalog_is_dry_run_only(client):
     assert data['providers'][1]['execution_status'] == 'disabled'
 
 
+def test_live_publish_gate_requires_explicit_environment_and_account_allowlist(client, monkeypatch):
+    for key, value in {
+        'STUDIO_ENABLE_INSTAGRAM_PROVIDER': '1',
+        'STUDIO_ENABLE_INSTAGRAM_TOKEN_EXCHANGE': '1',
+        'STUDIO_ENABLE_INSTAGRAM_ACCOUNT_VERIFICATION': '1',
+        'STUDIO_ENABLE_INSTAGRAM_PUBLISH': '1',
+        'STUDIO_INSTAGRAM_CLIENT_ID': 'test-client-id',
+        'STUDIO_INSTAGRAM_CLIENT_SECRET_REF': 'keyring/meta/client-secret',
+        'STUDIO_INSTAGRAM_REDIRECT_URI': 'http://127.0.0.1:8123/oauth/callback',
+    }.items():
+        monkeypatch.setenv(key, value)
+    provider = provider_module.get('meta_instagram')
+    assert provider.publish_enabled() is False
+    monkeypatch.setenv('STUDIO_INSTAGRAM_PUBLISH_ENV', 'staging')
+    monkeypatch.setenv('STUDIO_INSTAGRAM_ALLOWED_ACCOUNT_IDS', 'staging-account-123')
+    assert provider.publish_enabled() is True
+    assert provider.publish_account_allowed('staging-account-123') is True
+    assert provider.publish_account_allowed('other-account-456') is False
+
+
 def test_publishing_security_exposes_capability_only(client):
     response = client.get('/api/publishing/security')
     assert response.status_code == 200
@@ -429,6 +449,8 @@ def test_live_publish_boundary_uses_mocked_meta_transport_and_is_idempotent(clie
     monkeypatch.setenv('STUDIO_ENABLE_INSTAGRAM_TOKEN_EXCHANGE', '1')
     monkeypatch.setenv('STUDIO_ENABLE_INSTAGRAM_ACCOUNT_VERIFICATION', '1')
     monkeypatch.setenv('STUDIO_ENABLE_INSTAGRAM_PUBLISH', '1')
+    monkeypatch.setenv('STUDIO_INSTAGRAM_PUBLISH_ENV', 'staging')
+    monkeypatch.setenv('STUDIO_INSTAGRAM_ALLOWED_ACCOUNT_IDS', 'instagram-external-123')
     monkeypatch.setenv('STUDIO_ENABLE_PUBLIC_MEDIA_DELIVERY', '1')
     monkeypatch.setenv('STUDIO_PUBLIC_MEDIA_BASE_URL', 'https://media.example.test')
     monkeypatch.setenv('STUDIO_INSTAGRAM_CLIENT_ID', 'test-client-id')
@@ -498,6 +520,8 @@ def test_live_publish_timeout_is_a_retryable_audited_failure(client, monkeypatch
     monkeypatch.setenv('STUDIO_ENABLE_INSTAGRAM_TOKEN_EXCHANGE', '1')
     monkeypatch.setenv('STUDIO_ENABLE_INSTAGRAM_ACCOUNT_VERIFICATION', '1')
     monkeypatch.setenv('STUDIO_ENABLE_INSTAGRAM_PUBLISH', '1')
+    monkeypatch.setenv('STUDIO_INSTAGRAM_PUBLISH_ENV', 'staging')
+    monkeypatch.setenv('STUDIO_INSTAGRAM_ALLOWED_ACCOUNT_IDS', 'instagram-external-123')
     monkeypatch.setenv('STUDIO_ENABLE_PUBLIC_MEDIA_DELIVERY', '1')
     monkeypatch.setenv('STUDIO_PUBLIC_MEDIA_BASE_URL', 'https://media.example.test')
     monkeypatch.setenv('STUDIO_INSTAGRAM_CLIENT_ID', 'test-client-id')

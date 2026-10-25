@@ -959,7 +959,11 @@ publishing boundary now models image/reel container creation, bounded status
 polling, final publish, retry classification, idempotency, and audited
 non-dry-run attempts. Its transport is mocked in tests; live publishing is
 disabled unless `STUDIO_ENABLE_INSTAGRAM_PUBLISH=1` is explicitly enabled
-alongside provider, token-exchange, and account-verification gates. Before
+alongside provider, token-exchange, and account-verification gates. The
+staging safety gate additionally requires `STUDIO_INSTAGRAM_PUBLISH_ENV=staging`
+and a non-empty `STUDIO_INSTAGRAM_ALLOWED_ACCOUNT_IDS` list; the verified
+external account must match that allowlist before the adapter can send a
+request. Before
 that final live gate, revalidate current Meta endpoint, media-format,
 permission, rate-limit, and account eligibility requirements against the
 [official Instagram content-publishing documentation](https://developers.facebook.com/docs/instagram-platform/content-publishing).

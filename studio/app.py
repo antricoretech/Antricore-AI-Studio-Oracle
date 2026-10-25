@@ -2657,6 +2657,8 @@ def publish_asset(aid: str, payload: PublishDryRunIn):
         raise HTTPException(400, str(exc)) from exc
     if not bool(getattr(provider, "publish_enabled", lambda: False)()):
         raise HTTPException(409, "Instagram publishing is disabled by provider configuration")
+    if not bool(getattr(provider, "publish_account_allowed", lambda _external_account_id: False)(account.get("external_account_id") or "")):
+        raise HTTPException(409, "The Instagram account is not allowlisted for the configured publishing environment")
     token_ref = PublishingRepository.account_token_ref(account["id"])
     if not token_ref:
         raise HTTPException(409, "Publishing account has no keychain token bundle")

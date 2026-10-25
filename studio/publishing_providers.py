@@ -79,6 +79,8 @@ class MetaInstagramProvider:
         token_exchange_enabled = os.getenv("STUDIO_ENABLE_INSTAGRAM_TOKEN_EXCHANGE", "0").lower() in {"1", "true", "yes"}
         account_verification_enabled = os.getenv("STUDIO_ENABLE_INSTAGRAM_ACCOUNT_VERIFICATION", "0").lower() in {"1", "true", "yes"}
         publish_enabled = os.getenv("STUDIO_ENABLE_INSTAGRAM_PUBLISH", "0").lower() in {"1", "true", "yes"}
+        publish_environment = os.getenv("STUDIO_INSTAGRAM_PUBLISH_ENV", "disabled").strip().lower()
+        allowed_account_ids = tuple(filter(None, (item.strip() for item in os.getenv("STUDIO_INSTAGRAM_ALLOWED_ACCOUNT_IDS", "").split(","))))
         secret_ref = os.getenv("STUDIO_INSTAGRAM_CLIENT_SECRET_REF", "").strip()
         client_id = os.getenv("STUDIO_INSTAGRAM_CLIENT_ID", "").strip()
         redirect_uri = os.getenv("STUDIO_INSTAGRAM_REDIRECT_URI", "").strip()
@@ -89,7 +91,9 @@ class MetaInstagramProvider:
             "configured": configured,
             "token_exchange_enabled": token_exchange_enabled and configured,
             "account_verification_enabled": account_verification_enabled and configured and token_exchange_enabled,
-            "publish_enabled": publish_enabled and configured and token_exchange_enabled and account_verification_enabled,
+            "publish_environment": publish_environment,
+            "allowed_account_ids": allowed_account_ids,
+            "publish_enabled": publish_enabled and configured and token_exchange_enabled and account_verification_enabled and publish_environment in {"staging", "production"} and bool(allowed_account_ids),
             "client_id": client_id,
             "secret_ref": secret_ref,
             "client_secret_ref_present": bool(secret_ref),
@@ -120,6 +124,8 @@ class MetaInstagramProvider:
                 "token_exchange_enabled": config["token_exchange_enabled"],
                 "account_verification_enabled": config["account_verification_enabled"],
                 "publish_enabled": config["publish_enabled"],
+                "publish_environment": config["publish_environment"],
+                "allowed_account_count": len(config["allowed_account_ids"]),
             },
             "auth_modes": {
                 mode: {"required_scopes": list(details["scopes"])}
@@ -135,6 +141,10 @@ class MetaInstagramProvider:
 
     def publish_enabled(self) -> bool:
         return bool(self._config()["publish_enabled"])
+
+    def publish_account_allowed(self, external_account_id: str) -> bool:
+        config = self._config()
+        return bool(config["publish_enabled"] and external_account_id in config["allowed_account_ids"])
 
     def authorization_plan(self, *, auth_mode: str, redirect_uri: str, state: str, code_verifier: str,
                            requested_scopes: list[str]) -> dict:
@@ -313,9 +323,11 @@ class MetaInstagramProvider:
                 media_url: str, format_name: str, caption: str, post_fn=None, get_fn=None) -> dict:
         config = self._config()
         if not config["publish_enabled"]:
-            raise ProviderDisabled("Meta Instagram publishing is disabled by configuration")
+            raise ProviderDisabled("Meta Instagram publishing requires explicit environment and account allowlist configuration")
         if not external_account_id or not access_token or not media_url:
             raise ValueError("Verified account, access token, and public media URL are required")
+        if external_account_id not in config["allowed_account_ids"]:
+            raise ProviderDisabled("The Instagram account is not in the configured publishing allowlist")
         if format_name not in {"feed_image", "reel"}:
             raise ValueError("Unsupported Instagram publishing format")
         if not media_url.startswith(("https://", "http://")):
