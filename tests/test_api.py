@@ -1054,6 +1054,32 @@ def test_phase3_preflight_and_job_lineage(client, monkeypatch):
     assert jobs[0]['attempt'] == 1
 
 
+def test_generation_job_rejects_server_side_workflow_preflight_error(client, monkeypatch):
+    import json
+    import studio.app as backend
+    import studio.database as test_db
+
+    persona = client.post('/api/personas', json={
+        'name': 'Server Gate', 'age': 29,
+        'appearance': 'short dark hair and brown eyes',
+        'description': 'fictional adult editorial creator'
+    }).json()
+    workflow = test_db.WORKFLOWS / 'phase10_gate.json'
+    workflow.write_text(json.dumps({'1': {'class_type': 'SaveImage', 'inputs': {}}}))
+    monkeypatch.setattr(backend, 'workflow_preflight', lambda *args, **kwargs: [
+        {'id': 'model_capability', 'status': 'error', 'detail': 'Synthetic workflow preflight failure'}
+    ])
+
+    response = client.post('/api/jobs', json={
+        'persona_id': persona['id'], 'workflow_id': 'phase10_gate',
+        'prompt': 'A server-gated editorial portrait', 'rights_confirmed': True
+    })
+
+    assert response.status_code == 409
+    assert 'Synthetic workflow preflight failure' in response.json()['detail']
+    assert client.get('/api/jobs').json() == []
+
+
 def test_phase4_durable_dispatcher_picks_up_persisted_queue_row(client, monkeypatch):
     import asyncio
     import studio.app as backend
