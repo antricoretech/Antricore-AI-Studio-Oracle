@@ -4,6 +4,11 @@
 
 > IMPORTANT — “Free” never means “no license.” Apache-2.0, MIT and GPL-3.0 all have legally binding terms. You must respect required notices and third-party dependencies. You pay for your hardware, electricity, disk capacity and internet bandwidth if applicable. GitHub generally hosts **code**, while large **model weights** are distributed free from public Hugging Face repositories. This project does not bundle model weights.
 
+> **Production installation policy:** Do not install every model at once. Follow
+> [`docs/PRODUCTION_DEPENDENCY_SETUP_RUNBOOK.md`](docs/PRODUCTION_DEPENDENCY_SETUP_RUNBOOK.md)
+> and install one approved model at a time, validating it before adding the next
+> required training or fallback model.
+
 ---
 
 ## 🧠 Neural Models & Persona Generation Architecture
@@ -12,7 +17,14 @@
 
 AI Influencer Studio utilizes a multi-model neural pipeline tailored for ultra-consistent, photorealistic virtual influencer synthesis, multi-angle biometric identity freezing, and video animation.
 
-### 1. Primary Persona Synthesis Checkpoint: Juggernaut XL v10 (RunDiffusion NSFW Edition)
+### 1. Canonical primary image candidate: FLUX.2 Klein 4B
+* **Model ID**: `flux2-klein-4b`
+* **Local Model Path**: `models/flux2-klein-4b/`
+* **Role**: Canonical text-to-image and reference-image editing benchmark for the new Master Persona workflow.
+* **License**: Apache-2.0; verify the exact model-card terms and revision before installation.
+* **Production gate**: Benchmark MPS memory, speed, face/identity consistency, adult/glamour Identity Core anchors, and product-content quality before making it the default.
+
+### 2. Legacy SDXL compatibility and fallback: Juggernaut XL v10 (RunDiffusion NSFW Edition)
 * **Local Checkpoint Path**: `models/juggernaut-xl-v10/Juggernaut-X-RunDiffusion-NSFW.safetensors`
 * **Base Architecture**: Stable Diffusion XL (SDXL) Base 1.0 (Dual CLIP text encoders: OpenCLIP ViT-bigG/14 + OpenAI ViT-L/14, 77-token budgeting)
 * **Inference Precision**: `fp16` on Apple Silicon Metal Performance Shaders (MPS) or NVIDIA CUDA
@@ -36,7 +48,7 @@ AI Influencer Studio utilizes a multi-model neural pipeline tailored for ultra-c
 
 ---
 
-### 2. Facial Identity Anchor: IP-Adapter FaceID PlusV2 SDXL
+### 3. Facial Identity Anchor: IP-Adapter FaceID PlusV2 SDXL
 * **Local Weights Path**:
   * `models/ip-adapter-faceid/ip-adapter-faceid-plusv2_sdxl.bin`
   * `models/ip-adapter-faceid/ip-adapter-faceid-plusv2_sdxl_lora.safetensors`
@@ -45,32 +57,36 @@ AI Influencer Studio utilizes a multi-model neural pipeline tailored for ultra-c
 
 ---
 
-### 3. Alternative Checkpoints & Benchmark Engines
-* **CyberRealistic XL Play v10.0 FP16** (`models/cyberrealistic-xl/CyberRealisticXLPlay_V10.0_FP16.safetensors`): Specialized for softer daylight illumination and European/Mediterranean facial features.
-* **Pony Diffusion V6 XL** (`models/pony-diffusion-v6-xl/ponyDiffusionV6XL_v6StartWithThisOne.safetensors`): High-aesthetic artistic baseline testing.
-* **FLUX.1-dev Q4_K_S GGUF** (`models/flux-1-dev-gguf/flux1-dev-Q4_K_S.gguf`) with `scg-anatomy-female-v2` LoRA (`models/flux-lora/`): 12B flow-matching transformer for next-generation biometric benchmark rendering.
+### 4. Required later-stage training and fallback models
+* **FLUX.2 Klein Base 4B** (`models/flux2-klein-base-4b/`): Required later for approved identity-training, LoRA, and reference-adaptation workflows. It is not part of the first image-generation install.
+* **CyberRealistic XL Play v10.0 FP16** (`models/cyberrealistic-xl/CyberRealisticXLPlay_V10.0_FP16.safetensors`): Required later-stage independent SDXL fallback after comparison against Juggernaut. Do not substitute its checkpoint for Juggernaut’s fixed path.
+* **Z-Image Turbo** (`models/z-image-turbo/`): Optional speed/quality benchmark; install only if its measured MPS trade-off justifies a separate runtime path.
+* **Pony Diffusion V6 XL** (`models/pony-diffusion-v6-xl/ponyDiffusionV6XL_v6StartWithThisOne.safetensors`): Not a default production model; Fair AI Public License and monetized-inference restrictions require explicit review.
+* **FLUX.1-dev Q4_K_S GGUF** (`models/flux-1-dev-gguf/flux1-dev-Q4_K_S.gguf`): Excluded from commercial production because it is non-commercial unless a separate approved use case exists.
 
 ---
 
-### 4. Motion, Story & Video Engines
+### 5. Motion, Story & Video Engines
 * **Stable Video Diffusion XT (SVD-XT 1.1)** (`models/svd-xt/`): Converts frozen 13-pack master persona keyframes into cinematic 25-frame vertical reel clips without face distortion.
 * **LivePortrait Engine** (`LivePortrait/`): Landmark-guided neural facial animation for Story Studio talking head videos and dynamic speech synchronization.
 
 ---
 
-### 5. Local Models Directory Layout
+### 6. Local Models Directory Layout
 
 Place downloaded weights in the following structure:
 
 ```
 models/
+├── flux2-klein-4b/                                      # Stage A canonical primary candidate
+├── flux2-klein-base-4b/                                 # Later training/reference stage
 ├── juggernaut-xl-v10/
-│   └── Juggernaut-X-RunDiffusion-NSFW.safetensors   # (Primary Master Persona Checkpoint ~6.6 GB)
+│   └── Juggernaut-X-RunDiffusion-NSFW.safetensors   # (Stage C legacy fallback)
 ├── ip-adapter-faceid/
 │   ├── ip-adapter-faceid-plusv2_sdxl.bin           # (FaceID adapter weights)
 │   └── ip-adapter-faceid-plusv2_sdxl_lora.safetensors # (FaceID LoRA weights)
 ├── cyberrealistic-xl/
-│   └── CyberRealisticXLPlay_V10.0_FP16.safetensors  # (Alternative photorealism)
+│   └── CyberRealisticXLPlay_V10.0_FP16.safetensors  # (Stage D independent fallback)
 ├── pony-diffusion-v6-xl/
 │   ├── ponyDiffusionV6XL_v6StartWithThisOne.safetensors
 │   └── sdxl_vae.safetensors
@@ -84,8 +100,8 @@ models/
     └── vae/diffusion_pytorch_model.fp16.safetensors
 ```
 
-### 6. Hardware Acceleration
-* **Apple Silicon (M1/M2/M3/M4 Max/Ultra)**: Accelerated via PyTorch Metal Performance Shaders (`torch.backends.mps`) with FP16 zero-copy unified memory. Recommended: 24 GB+ unified memory.
+### 7. Hardware Acceleration
+* **Apple Silicon, including the declared M5 MacBook Air with 16 GB unified memory**: Accelerated via PyTorch Metal Performance Shaders (`torch.backends.mps`) with FP16 unified memory. The 16 GB target requires staged model installation, bounded concurrency, resolution checks, and measured peak-memory validation; do not assume every model will fit.
 * **NVIDIA RTX GPUs**: Accelerated via PyTorch CUDA with FP16 or BF16. Recommended: 16 GB–24 GB VRAM (RTX 3090, 4080, 4090, or A100/H100).
 
 ---
@@ -93,18 +109,19 @@ models/
 ## What is actually runnable?
 
 - ✅ Existing **FastAPI + SQLite dashboard**, persona reference library, manual review and ComfyUI API bridge.
+- ✅ **Canonical and legacy applications remain separate**: use `scripts/run-canonical.ps1` for the canonical workspace and `scripts/run-legacy.ps1` for the legacy shell/API. They use separate process surfaces and runtime roots.
 - ✅ Standalone **`studio.free_cli doctor`** (no GPU or downloads required).
 - ✅ Allowlisted **public model downloader** (requires internet, local disk, explicit `--yes`; no paid credits).
 - ✅ Local **FLUX.2 Klein 4B** text-to-image and 1+ reference-image editing through Diffusers (requires enough GPU/RAM + installed weights).
 - ✅ Local **Z-Image Turbo** optional text-to-image pipeline (hardware dependent).
 - ✅ Official **Wan2.2 TI2V-5B** image-to-video/text-to-video CLI wrapper after you clone, install and download the official model (reference CLI says ~24 GB VRAM for 720p with offload).
 - ✅ **Kokoro** local speech synthesis when optional dependencies are installed; **FFmpeg** local audio muxing.
-- ⚠️ **Persona LoRA training** uses an *external separately installed* Ostris AI Toolkit against FLUX.2 Klein 4B Base. The library is researched but there is **no turnkey LoRA trainer or trained persona included**.
+- ⚠️ **Persona LoRA training** requires the later-stage `flux2-klein-base-4b` model and an *external separately installed* Ostris AI Toolkit. The library is researched but there is **no turnkey LoRA trainer or trained persona included**.
 - ⚠️ **Talking-head lip sync** is *not integrated by default*. MuseTalk is a possible research option, but its complete pretrained third-party dependency license chain must be checked before commercial use.
 - ⚠️ **ComfyUI** is optional for the standalone local CLI but needed for the original dashboard's ComfyUI generation queue. The project does **not** ship ready-to-run model-specific ComfyUI JSON graphs; export a verified local workflow before using this route.
 - ❌ No online social publishing, social account access, cloud infrastructure, auto-LoRA identity scoring, fully automated face swaps, payment collection or GPU-tested end-to-end video rendering.
 
-## Get started: Windows 11 + NVIDIA GPU + VS Code
+## Get started: Windows development environment
 
 1. Install [Python 3.12](https://www.python.org/downloads/), [Git](https://git-scm.com/), VS Code with Python extension, and latest NVIDIA drivers. Install [FFmpeg](https://ffmpeg.org/) if combining video/audio.
 2. Extract the ZIP; in VS Code **File → Open Folder**, select this project and **Terminal → New Terminal**.
@@ -115,20 +132,27 @@ models/
 .\.venv\Scripts\python.exe -m studio.free_cli doctor
 ```
 
-4. Install a GPU-compatible PyTorch wheel following **https://pytorch.org/get-started/locally/**. Do not blindly install a CUDA version that does not match your driver. Then:
+4. Install a GPU-compatible PyTorch wheel following **https://pytorch.org/get-started/locally/**. Do not blindly install a CUDA version that does not match your driver. Then install the image runtime dependencies:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements-local-image.txt
+```
+
+5. Before downloading weights, choose the single model for the current stage in the [production setup runbook](docs/PRODUCTION_DEPENDENCY_SETUP_RUNBOOK.md). Download only that model after license, disk, and hardware checks pass. For example, Stage A may use:
+
+```powershell
 .\.venv\Scripts\python.exe -m studio.free_cli download --model flux2-klein-4b --yes
 ```
 
-5. Generate a fictional character portrait:
+Do not download `flux2-klein-base-4b`, `juggernaut-xl-v10`, `cyberrealistic-xl`, or other alternatives in the same setup step. Add required training and fallback models later, one at a time, after the preceding benchmark passes.
+
+6. Generate a fictional character portrait:
 
 ```powershell
 .\.venv\Scripts\python.exe -m studio.free_cli image --offline --prompt "Photorealistic editorial portrait of a fictional 27-year-old adult woman, dark brown wavy hair, warm natural daylight, candid photography, fully clothed" --output generated\master.png --cpu-offload
 ```
 
-6. After approving your master image, generate the **same fictional character with a different scene** using reference conditioning:
+7. After approving your master image, generate the **same fictional character with a different scene** using reference conditioning:
 
 ```powershell
 .\.venv\Scripts\python.exe -m studio.free_cli image --offline --reference generated\master.png --prompt "Use the person in the reference image as the same fictional adult character; documentary street photograph at a café, natural smile, different outfit, realistic lighting" --output generated\cafe.png --cpu-offload
@@ -203,6 +227,7 @@ module boundaries.
 
 ## Documentation
 
+- `docs/PRODUCTION_DEPENDENCY_SETUP_RUNBOOK.md` — production Mac M5/16 GB dependency, staged model installation, validation, and rollback sequence
 - `docs/LOCAL_FREE_SETUP.md` — hardware, installations, model downloads and exact commands
 - `scripts/bootstrap-cloud.sh` — repeatable Linux GPU VM bootstrap for the cloud deployment target
 - `docs/CLOUD_DEPLOYMENT.md` — complete cloud provisioning, model setup, pipeline, security and operations runbook
