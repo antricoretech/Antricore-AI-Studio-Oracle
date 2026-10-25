@@ -52,7 +52,7 @@ from .identity_conditioning import method_catalog, scenario_catalog
 from .repositories import ContentArtifactRepository, ContentBriefRepository, ContentPackRepository, CreatorProfileRepository, IdentityBenchmarkRepository, JobRepository, PersonaRepository, ReferencePackRepository, SeriesRepository
 from .readiness import evaluate as evaluate_readiness
 from .schemas import (
-    ContentArtifactIn, ContentArtifactReviewIn, ContentBriefIn, ContentPackIn, ContentPackReviewIn, CreatorProfileIn, IdentityBenchmarkIn, IdentityBenchmarkResultIn, JobIn, LinkIn, PersonaIn, ReviewIn, ReferencePackReviewIn, ReferencePackCanonicalIn, ReferencePackAssetLinkIn,
+    AssetAssessmentIn, ContentArtifactIn, ContentArtifactReviewIn, ContentBriefIn, ContentPackIn, ContentPackReviewIn, CreatorProfileIn, IdentityBenchmarkIn, IdentityBenchmarkResultIn, JobIn, LinkIn, PersonaIn, ReviewIn, ReferencePackReviewIn, ReferencePackCanonicalIn, ReferencePackAssetLinkIn,
     SeriesEpisodeIn, SeriesIn, SeriesQueueIn, VoiceIn, PhotoStudioPromptIn, PhotoStudioGenerateIn,
     OrchestratorCompilePersonaIn, OrchestratorCreatePersonaIn, OrchestratorRenderAnchorIn, OrchestratorLockAnchorIn,
     OrchestratorSynthesizeScenesIn, OrchestratorBatchGenerateIn
@@ -1885,6 +1885,53 @@ def asset_file(aid: str):
         raise HTTPException(404, "Asset media file is missing") from None
 
 
+_ASSET_ASSESSMENT_METRICS = {
+    "identity_score": ("identity_similarity", "Identity similarity"),
+    "anatomy_score": ("anatomy", "Anatomy integrity"),
+    "hands_score": ("hands", "Hands integrity"),
+    "facial_drift_score": ("facial_drift", "Facial drift"),
+    "temporal_stability_score": ("temporal_stability", "Temporal stability"),
+    "audio_timing_score": ("audio_timing", "Audio timing"),
+}
+
+
+def _apply_asset_assessment(asset: dict, quality: dict, assessment: dict | None = None):
+    stored = assessment
+    if stored is None:
+        try:
+            persisted = json.loads(asset.get("quality_json") or "{}")
+        except (TypeError, json.JSONDecodeError):
+            persisted = {}
+        stored = persisted.get("assessment") if isinstance(persisted, dict) else None
+    check_ids = {item[0] for item in _ASSET_ASSESSMENT_METRICS.values()} | {"human_quality_assessment"}
+    quality["checks"] = [item for item in quality.get("checks", []) if item.get("id") not in check_ids]
+    if not isinstance(stored, dict):
+        quality["checks"].append({
+            "id": "human_quality_assessment",
+            "status": "warning",
+            "detail": "No operator or model quality assessment has been recorded",
+        })
+        quality.pop("assessment", None)
+        return quality
+    scores = stored.get("scores") if isinstance(stored.get("scores"), dict) else {}
+    quality["assessment"] = stored
+    relevant = ["identity_score", "anatomy_score", "hands_score", "facial_drift_score"]
+    if asset.get("kind") == "video":
+        relevant.extend(("temporal_stability_score", "audio_timing_score"))
+    elif asset.get("kind") == "audio":
+        relevant.append("audio_timing_score")
+    for field in relevant:
+        check_id, label = _ASSET_ASSESSMENT_METRICS[field]
+        score = scores.get(field)
+        if score is None:
+            quality["checks"].append({"id": check_id, "status": "warning", "detail": f"{label} assessment is not recorded"})
+        elif score < 0.70:
+            quality["checks"].append({"id": check_id, "status": "error", "detail": f"{label} score {score:.2f} is below the 0.70 approval threshold"})
+        else:
+            quality["checks"].append({"id": check_id, "status": "ready", "detail": f"{label} score {score:.2f}"})
+    return quality
+
+
 def _asset_bundle(aid: str):
     asset = db.row("SELECT * FROM assets WHERE id=?", (aid,))
     if not asset:
@@ -1928,6 +1975,7 @@ def _asset_bundle(aid: str):
         "status": "ready" if rights_ok else "warning",
         "detail": "Rights confirmation recorded" if rights_ok else "Rights confirmation is required before approval or export",
     })
+    _apply_asset_assessment(asset, quality)
     statuses = [item["status"] for item in quality.get("checks", [])]
     quality["status"] = "error" if "error" in statuses else "warning" if "warning" in statuses else "ready"
     return asset, job, person, quality
@@ -1950,6 +1998,34 @@ def refresh_asset_quality(aid: str):
     _asset, _job, _person, quality = _asset_bundle(aid)
     db.write("UPDATE assets SET quality_json=? WHERE id=?", (json.dumps(quality, ensure_ascii=False), aid))
     return {"id": aid, "quality": quality}
+
+
+@app.post("/api/assets/{aid}/assessment")
+def assess_asset(aid: str, payload: AssetAssessmentIn):
+    asset, _job, _person, quality = _asset_bundle(aid)
+    values = payload.model_dump()
+    scores = {key: value for key, value in values.items() if key.endswith("_score") and value is not None}
+    if not scores:
+        raise HTTPException(400, "Record at least one quality score")
+    evaluator = (payload.evaluator or "local_operator").strip()[:120] or "local_operator"
+    assessment = {
+        "source": "operator",
+        "evaluator": evaluator,
+        "assessed_at": now(),
+        "scores": scores,
+        "notes": (payload.notes or "").strip()[:2000],
+    }
+    _apply_asset_assessment(asset, quality, assessment)
+    statuses = [item["status"] for item in quality.get("checks", [])]
+    quality["status"] = "error" if "error" in statuses else "warning" if "warning" in statuses else "ready"
+    review_reset = asset.get("review") == "approved"
+    db.write(
+        "UPDATE assets SET quality_json=?, review=CASE WHEN review='approved' THEN 'pending' ELSE review END WHERE id=?",
+        (json.dumps(quality, ensure_ascii=False), aid),
+    )
+    if review_reset:
+        ReferencePackRepository.invalidate_canonical_for_asset(aid)
+    return {"id": aid, "review": "pending" if review_reset else asset.get("review"), "quality": quality, "assessment": assessment}
 
 
 @app.get("/api/assets/{aid}/package")

@@ -895,7 +895,13 @@ quality checks remain later Phase 7 activities. Asset records now also carry
 explicit content class and destination policy metadata; adult/glamour classes
 flow through the same Identity Core-aware path, while `review_required` is kept
 distinct from `eligible` so publishing cannot treat local export readiness as
-platform approval.
+platform approval. The review surface also accepts bounded operator quality
+scores for identity similarity, anatomy, hands, facial drift, temporal
+stability, and audio timing. Scores below 0.70 create a hard quality failure;
+reassessment of an approved asset returns it to pending and invalidates any
+canonical selection. These are evaluator contracts and audit evidence, not
+model execution; model-backed scoring remains deferred to the final runtime
+gate.
 
 Exit: every review decision records status, reason, reviewer, and timestamp; approved assets export with manifest and disclosure sidecar.
 

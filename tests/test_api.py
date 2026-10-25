@@ -1387,6 +1387,47 @@ def test_phase7_strict_media_quality_blocks_unverified_container(client, monkeyp
     assert 'integrity' in approval.json()['detail'].lower()
 
 
+def test_phase7_operator_quality_assessment_persists_and_requires_rereview(client):
+    from studio.assets import register_media_asset
+
+    persona = client.post('/api/personas', json={
+        'name': 'Assessment Review', 'age': 29,
+        'appearance': 'long dark hair and hazel eyes',
+        'description': 'fictional adult glamour creator for review assessment'
+    }).json()
+    image = Image.new('RGB', (32, 32), 'beige')
+    buffer = BytesIO()
+    image.save(buffer, format='PNG')
+    asset = register_media_asset(
+        persona_id=persona['id'], persona_version_id=None, job_id=None,
+        kind='image', prompt='Quality assessment fixture', raw=buffer.getvalue(),
+        disclosure='Fictional adult character. AI-generated synthetic media.',
+        rights_confirmed=True, original_filename='assessment.png',
+        content_class='adult_glamour', destination_policy='review_required',
+        lineage={'source': 'test'},
+    )
+    passing = client.post(f"/api/assets/{asset['id']}/assessment", json={
+        'identity_score': 0.92, 'anatomy_score': 0.88, 'hands_score': 0.84,
+        'facial_drift_score': 0.91, 'evaluator': 'qa_operator', 'notes': 'All visible anatomy and identity checks passed.'
+    })
+    assert passing.status_code == 200
+    assert passing.json()['quality']['status'] == 'warning'
+    assert any(check['id'] == 'identity_similarity' and check['status'] == 'ready' for check in passing.json()['quality']['checks'])
+    approved = client.patch(f"/api/assets/{asset['id']}/review", json={'review': 'approved', 'reason': 'Assessment passed'})
+    assert approved.status_code == 200
+
+    failing = client.post(f"/api/assets/{asset['id']}/assessment", json={
+        'identity_score': 0.42, 'anatomy_score': 0.88, 'hands_score': 0.84,
+        'facial_drift_score': 0.91, 'evaluator': 'qa_operator', 'notes': 'Identity drift detected.'
+    })
+    assert failing.status_code == 200
+    assert failing.json()['review'] == 'pending'
+    assert failing.json()['quality']['status'] == 'error'
+    assert any(check['id'] == 'identity_similarity' and check['status'] == 'error' for check in failing.json()['quality']['checks'])
+    blocked = client.patch(f"/api/assets/{asset['id']}/review", json={'review': 'approved'})
+    assert blocked.status_code == 409
+
+
 def test_photo_studio_presets(client):
     res = client.get('/api/photo-studio/presets')
     assert res.status_code == 200

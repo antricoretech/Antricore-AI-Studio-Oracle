@@ -42,6 +42,17 @@ class ReviewIn(BaseModel):
     reviewer: str = Field(default="local_operator", max_length=120)
 
 
+class AssetAssessmentIn(BaseModel):
+    identity_score: float | None = Field(default=None, ge=0, le=1)
+    anatomy_score: float | None = Field(default=None, ge=0, le=1)
+    hands_score: float | None = Field(default=None, ge=0, le=1)
+    facial_drift_score: float | None = Field(default=None, ge=0, le=1)
+    temporal_stability_score: float | None = Field(default=None, ge=0, le=1)
+    audio_timing_score: float | None = Field(default=None, ge=0, le=1)
+    evaluator: str = Field(default="local_operator", max_length=120)
+    notes: str = Field(default="", max_length=2000)
+
+
 class ReferencePackReviewIn(BaseModel):
     review: str
     rights_confirmed: bool | None = None

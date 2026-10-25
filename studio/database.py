@@ -450,7 +450,7 @@ def initialize():
         CREATE INDEX IF NOT EXISTS idx_series_episodes_job ON series_episodes(job_id);
         """)
         con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_idempotency_key ON jobs(idempotency_key) WHERE idempotency_key IS NOT NULL")
-        con.execute("INSERT INTO schema_meta(key,value) VALUES('schema_version','20') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+        con.execute("INSERT INTO schema_meta(key,value) VALUES('schema_version','21') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
         # A durable queued row is safe to dispatch after restart. Only work
         # that may already have reached ComfyUI is interrupted and requires
         # prompt reconciliation or explicit operator retry.
