@@ -1,4 +1,5 @@
 import os
+import json
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
@@ -25,10 +26,162 @@ def initialize():
             identity_version INTEGER NOT NULL DEFAULT 1,
             locked_at TEXT
         );
+        CREATE TABLE IF NOT EXISTS persona_versions (
+            id TEXT PRIMARY KEY,
+            persona_id TEXT NOT NULL,
+            version_no INTEGER NOT NULL,
+            state TEXT NOT NULL DEFAULT 'draft',
+            snapshot_json TEXT NOT NULL DEFAULT '{}',
+            source TEXT NOT NULL DEFAULT 'created',
+            created_at TEXT NOT NULL,
+            frozen_at TEXT,
+            superseded_at TEXT,
+            UNIQUE(persona_id, version_no),
+            FOREIGN KEY(persona_id) REFERENCES personas(id)
+        );
+        CREATE TABLE IF NOT EXISTS creator_profiles (
+            id TEXT PRIMARY KEY,
+            persona_id TEXT NOT NULL,
+            persona_version_id TEXT NOT NULL UNIQUE,
+            status TEXT NOT NULL DEFAULT 'draft',
+            personality_json TEXT NOT NULL DEFAULT '{}',
+            audience_json TEXT NOT NULL DEFAULT '{}',
+            content_pillars_json TEXT NOT NULL DEFAULT '[]',
+            brand_json TEXT NOT NULL DEFAULT '{}',
+            voice_json TEXT NOT NULL DEFAULT '{}',
+            disclosure TEXT NOT NULL DEFAULT 'Fictional adult character. AI-generated synthetic media.',
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(persona_id) REFERENCES personas(id),
+            FOREIGN KEY(persona_version_id) REFERENCES persona_versions(id)
+        );
+        CREATE TABLE IF NOT EXISTS content_briefs (
+            id TEXT PRIMARY KEY,
+            persona_id TEXT NOT NULL,
+            persona_version_id TEXT NOT NULL,
+            creator_profile_id TEXT NOT NULL,
+            content_pack_id TEXT,
+            title TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'draft',
+            revision INTEGER NOT NULL DEFAULT 1,
+            format TEXT NOT NULL,
+            content_class TEXT NOT NULL DEFAULT 'identity',
+            pillar_key TEXT NOT NULL DEFAULT '',
+            audience_goal TEXT NOT NULL DEFAULT '',
+            emotional_objective TEXT NOT NULL DEFAULT '',
+            story_direction TEXT NOT NULL DEFAULT '',
+            visual_direction TEXT NOT NULL DEFAULT '',
+            motion_direction TEXT NOT NULL DEFAULT '',
+            caption_direction TEXT NOT NULL DEFAULT '',
+            script_direction TEXT NOT NULL DEFAULT '',
+            disclosure TEXT NOT NULL,
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(persona_id) REFERENCES personas(id),
+            FOREIGN KEY(persona_version_id) REFERENCES persona_versions(id),
+            FOREIGN KEY(creator_profile_id) REFERENCES creator_profiles(id),
+            FOREIGN KEY(content_pack_id) REFERENCES content_packs(id)
+        );
+        CREATE TABLE IF NOT EXISTS content_artifacts (
+            id TEXT PRIMARY KEY,
+            persona_id TEXT NOT NULL,
+            persona_version_id TEXT NOT NULL,
+            content_brief_id TEXT NOT NULL,
+            artifact_type TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'draft',
+            revision INTEGER NOT NULL DEFAULT 1,
+            content TEXT NOT NULL,
+            disclosure TEXT NOT NULL,
+            source TEXT NOT NULL DEFAULT 'deterministic_template',
+            quality_status TEXT NOT NULL DEFAULT 'pending',
+            quality_json TEXT NOT NULL DEFAULT '{}',
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(persona_id) REFERENCES personas(id),
+            FOREIGN KEY(persona_version_id) REFERENCES persona_versions(id),
+            FOREIGN KEY(content_brief_id) REFERENCES content_briefs(id) ON DELETE CASCADE
+        );
         CREATE TABLE IF NOT EXISTS reference_images (
             id TEXT PRIMARY KEY, persona_id TEXT NOT NULL,
             filename TEXT NOT NULL, label TEXT NOT NULL, created_at TEXT NOT NULL,
+            asset_id TEXT,
+            persona_version_id TEXT,
+            role TEXT NOT NULL DEFAULT 'supporting',
+            content_class TEXT NOT NULL DEFAULT 'identity',
+            review TEXT NOT NULL DEFAULT 'pending',
+            rights_confirmed INTEGER NOT NULL DEFAULT 0,
+            metadata_json TEXT NOT NULL DEFAULT '{}',
             FOREIGN KEY(persona_id) REFERENCES personas(id)
+        );
+        CREATE TABLE IF NOT EXISTS reference_packs (
+            id TEXT PRIMARY KEY,
+            persona_id TEXT NOT NULL,
+            persona_version_id TEXT,
+            pack_type TEXT NOT NULL,
+            name TEXT NOT NULL,
+            content_class TEXT NOT NULL DEFAULT 'identity',
+            identity_authority TEXT NOT NULL DEFAULT 'identity',
+            review TEXT NOT NULL DEFAULT 'pending',
+            canonical_eligible INTEGER NOT NULL DEFAULT 0,
+            canonical_selected INTEGER NOT NULL DEFAULT 0,
+            reviewed_at TEXT,
+            source TEXT NOT NULL DEFAULT 'operator',
+            created_at TEXT NOT NULL,
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            UNIQUE(persona_id, pack_type, persona_version_id),
+            FOREIGN KEY(persona_id) REFERENCES personas(id)
+        );
+        CREATE TABLE IF NOT EXISTS reference_pack_items (
+            id TEXT PRIMARY KEY,
+            pack_id TEXT NOT NULL,
+            asset_id TEXT,
+            filename TEXT,
+            source_url TEXT NOT NULL,
+            label TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'supporting_reference',
+            content_class TEXT NOT NULL DEFAULT 'identity',
+            review TEXT NOT NULL DEFAULT 'pending',
+            rights_confirmed INTEGER NOT NULL DEFAULT 0,
+            canonical_eligible INTEGER NOT NULL DEFAULT 0,
+            canonical_selected INTEGER NOT NULL DEFAULT 0,
+            reviewed_at TEXT,
+            created_at TEXT NOT NULL,
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            FOREIGN KEY(pack_id) REFERENCES reference_packs(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS content_packs (
+            id TEXT PRIMARY KEY,
+            persona_id TEXT NOT NULL,
+            persona_version_id TEXT NOT NULL,
+            reference_pack_id TEXT NOT NULL,
+            pack_type TEXT NOT NULL,
+            name TEXT NOT NULL,
+            content_class TEXT NOT NULL DEFAULT 'identity',
+            identity_authority TEXT NOT NULL DEFAULT 'identity',
+            identity_core INTEGER NOT NULL DEFAULT 0,
+            review TEXT NOT NULL DEFAULT 'pending',
+            created_at TEXT NOT NULL,
+            style_json TEXT NOT NULL DEFAULT '{}',
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            UNIQUE(persona_id, persona_version_id, pack_type, name),
+            FOREIGN KEY(persona_id) REFERENCES personas(id),
+            FOREIGN KEY(reference_pack_id) REFERENCES reference_packs(id)
+        );
+        CREATE TABLE IF NOT EXISTS content_pack_items (
+            id TEXT PRIMARY KEY,
+            content_pack_id TEXT NOT NULL,
+            reference_pack_item_id TEXT NOT NULL,
+            asset_id TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'canonical_anchor',
+            created_at TEXT NOT NULL,
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            UNIQUE(content_pack_id, reference_pack_item_id),
+            FOREIGN KEY(content_pack_id) REFERENCES content_packs(id) ON DELETE CASCADE,
+            FOREIGN KEY(reference_pack_item_id) REFERENCES reference_pack_items(id),
+            FOREIGN KEY(asset_id) REFERENCES assets(id)
         );
         CREATE TABLE IF NOT EXISTS jobs (
             id TEXT PRIMARY KEY, persona_id TEXT NOT NULL, workflow_id TEXT NOT NULL,
@@ -36,15 +189,115 @@ def initialize():
             error TEXT, comfy_prompt_id TEXT, created_at TEXT NOT NULL, finished_at TEXT,
             request_json TEXT NOT NULL DEFAULT '{}', updated_at TEXT,
             lineage_json TEXT NOT NULL DEFAULT '{}', attempt INTEGER NOT NULL DEFAULT 1,
-            cancel_requested INTEGER NOT NULL DEFAULT 0
+            cancel_requested INTEGER NOT NULL DEFAULT 0,
+            idempotency_key TEXT,
+            result_json TEXT NOT NULL DEFAULT '{}'
         );
         CREATE TABLE IF NOT EXISTS assets (
-            id TEXT PRIMARY KEY, persona_id TEXT NOT NULL, job_id TEXT,
+            id TEXT PRIMARY KEY, persona_id TEXT NOT NULL, persona_version_id TEXT, job_id TEXT,
             filename TEXT NOT NULL, kind TEXT NOT NULL, prompt TEXT NOT NULL,
             review TEXT NOT NULL DEFAULT 'pending', rights_confirmed INTEGER NOT NULL DEFAULT 0,
             disclosure TEXT NOT NULL DEFAULT 'Fictional adult character. AI-generated synthetic media.',
             created_at TEXT NOT NULL, sha256 TEXT, metadata_json TEXT NOT NULL DEFAULT '{}',
-            quality_json TEXT NOT NULL DEFAULT '{}'
+            quality_json TEXT NOT NULL DEFAULT '{}',
+            content_class TEXT NOT NULL DEFAULT 'identity',
+            destination_policy TEXT NOT NULL DEFAULT 'review_required',
+            reviewed_at TEXT,
+            reviewer TEXT,
+            review_reason TEXT
+        );
+        CREATE TABLE IF NOT EXISTS publishing_accounts (
+            id TEXT PRIMARY KEY,
+            persona_id TEXT NOT NULL,
+            platform TEXT NOT NULL,
+            account_label TEXT NOT NULL,
+            account_type TEXT NOT NULL DEFAULT 'professional',
+            handle TEXT,
+            external_account_id TEXT,
+            status TEXT NOT NULL DEFAULT 'unverified',
+            token_ref TEXT,
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(persona_id, platform, account_label),
+            FOREIGN KEY(persona_id) REFERENCES personas(id)
+        );
+        CREATE TABLE IF NOT EXISTS publish_attempts (
+            id TEXT PRIMARY KEY,
+            persona_id TEXT NOT NULL,
+            persona_version_id TEXT,
+            asset_id TEXT NOT NULL,
+            content_artifact_id TEXT,
+            account_id TEXT NOT NULL,
+            platform TEXT NOT NULL,
+            format TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL UNIQUE,
+            status TEXT NOT NULL DEFAULT 'planned',
+            dry_run INTEGER NOT NULL DEFAULT 1,
+            request_json TEXT NOT NULL DEFAULT '{}',
+            response_json TEXT NOT NULL DEFAULT '{}',
+            error TEXT,
+            attempt INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(persona_id) REFERENCES personas(id),
+            FOREIGN KEY(persona_version_id) REFERENCES persona_versions(id),
+            FOREIGN KEY(asset_id) REFERENCES assets(id),
+            FOREIGN KEY(content_artifact_id) REFERENCES content_artifacts(id),
+            FOREIGN KEY(account_id) REFERENCES publishing_accounts(id)
+        );
+        CREATE TABLE IF NOT EXISTS publishing_auth_sessions (
+            id TEXT PRIMARY KEY,
+            account_id TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            auth_mode TEXT NOT NULL DEFAULT 'instagram_login',
+            state_hash TEXT NOT NULL,
+            verifier_hash TEXT NOT NULL,
+            redirect_uri TEXT NOT NULL,
+            scopes_json TEXT NOT NULL DEFAULT '[]',
+            status TEXT NOT NULL DEFAULT 'planned',
+            expires_at TEXT NOT NULL,
+            error TEXT,
+            created_at TEXT NOT NULL,
+            consumed_at TEXT,
+            FOREIGN KEY(account_id) REFERENCES publishing_accounts(id)
+        );
+        CREATE TABLE IF NOT EXISTS identity_benchmarks (
+            id TEXT PRIMARY KEY,
+            persona_id TEXT NOT NULL,
+            persona_version_id TEXT NOT NULL,
+            anchor_asset_id TEXT NOT NULL,
+            anchor_reference_pack_id TEXT,
+            anchor_content_class TEXT NOT NULL DEFAULT 'identity',
+            base_model_id TEXT,
+            status TEXT NOT NULL DEFAULT 'planned',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            FOREIGN KEY(persona_id) REFERENCES personas(id),
+            FOREIGN KEY(persona_version_id) REFERENCES persona_versions(id),
+            FOREIGN KEY(anchor_asset_id) REFERENCES assets(id)
+        );
+        CREATE TABLE IF NOT EXISTS identity_benchmark_cases (
+            id TEXT PRIMARY KEY,
+            benchmark_id TEXT NOT NULL,
+            method TEXT NOT NULL,
+            scenario_id TEXT NOT NULL,
+            scenario_label TEXT NOT NULL,
+            content_class TEXT NOT NULL,
+            prompt TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'planned',
+            output_asset_id TEXT,
+            metrics_json TEXT NOT NULL DEFAULT '{}',
+            notes TEXT NOT NULL DEFAULT '',
+            error TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            started_at TEXT,
+            completed_at TEXT,
+            UNIQUE(benchmark_id, method, scenario_id),
+            FOREIGN KEY(benchmark_id) REFERENCES identity_benchmarks(id) ON DELETE CASCADE,
+            FOREIGN KEY(output_asset_id) REFERENCES assets(id)
         );
         CREATE TABLE IF NOT EXISTS links (
             code TEXT PRIMARY KEY, label TEXT NOT NULL,
@@ -55,6 +308,7 @@ def initialize():
             id TEXT PRIMARY KEY, persona_id TEXT NOT NULL, title TEXT NOT NULL,
             description TEXT NOT NULL, shared_prompt TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'planned', created_at TEXT NOT NULL,
+            persona_version_id TEXT,
             FOREIGN KEY(persona_id) REFERENCES personas(id)
         );
         CREATE TABLE IF NOT EXISTS series_episodes (
@@ -77,7 +331,56 @@ def initialize():
             con.execute("ALTER TABLE personas ADD COLUMN identity_version INTEGER NOT NULL DEFAULT 1")
         if "locked_at" not in columns:
             con.execute("ALTER TABLE personas ADD COLUMN locked_at TEXT")
+        series_columns = {row[1] for row in con.execute("PRAGMA table_info(series)").fetchall()}
+        if "persona_version_id" not in series_columns:
+            con.execute("ALTER TABLE series ADD COLUMN persona_version_id TEXT")
+        content_brief_columns = {row[1] for row in con.execute("PRAGMA table_info(content_briefs)").fetchall()}
+        if "revision" not in content_brief_columns:
+            con.execute("ALTER TABLE content_briefs ADD COLUMN revision INTEGER NOT NULL DEFAULT 1")
+        content_artifact_columns = {row[1] for row in con.execute("PRAGMA table_info(content_artifacts)").fetchall()}
+        if "source" not in content_artifact_columns:
+            con.execute("ALTER TABLE content_artifacts ADD COLUMN source TEXT NOT NULL DEFAULT 'deterministic_template'")
+        if "quality_status" not in content_artifact_columns:
+            con.execute("ALTER TABLE content_artifacts ADD COLUMN quality_status TEXT NOT NULL DEFAULT 'pending'")
+        if "quality_json" not in content_artifact_columns:
+            con.execute("ALTER TABLE content_artifacts ADD COLUMN quality_json TEXT NOT NULL DEFAULT '{}'")
         asset_columns = {row[1] for row in con.execute("PRAGMA table_info(assets)").fetchall()}
+        if "reviewed_at" not in asset_columns:
+            con.execute("ALTER TABLE assets ADD COLUMN reviewed_at TEXT")
+        if "reviewer" not in asset_columns:
+            con.execute("ALTER TABLE assets ADD COLUMN reviewer TEXT")
+        if "review_reason" not in asset_columns:
+            con.execute("ALTER TABLE assets ADD COLUMN review_reason TEXT")
+        reference_columns = {row[1] for row in con.execute("PRAGMA table_info(reference_images)").fetchall()}
+        if "asset_id" not in reference_columns:
+            con.execute("ALTER TABLE reference_images ADD COLUMN asset_id TEXT")
+        if "persona_version_id" not in reference_columns:
+            con.execute("ALTER TABLE reference_images ADD COLUMN persona_version_id TEXT")
+        if "role" not in reference_columns:
+            con.execute("ALTER TABLE reference_images ADD COLUMN role TEXT NOT NULL DEFAULT 'supporting'")
+        if "content_class" not in reference_columns:
+            con.execute("ALTER TABLE reference_images ADD COLUMN content_class TEXT NOT NULL DEFAULT 'identity'")
+        if "review" not in reference_columns:
+            con.execute("ALTER TABLE reference_images ADD COLUMN review TEXT NOT NULL DEFAULT 'pending'")
+        if "rights_confirmed" not in reference_columns:
+            con.execute("ALTER TABLE reference_images ADD COLUMN rights_confirmed INTEGER NOT NULL DEFAULT 0")
+        if "metadata_json" not in reference_columns:
+            con.execute("ALTER TABLE reference_images ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}'")
+        pack_columns = {row[1] for row in con.execute("PRAGMA table_info(reference_packs)").fetchall()}
+        if "canonical_selected" not in pack_columns:
+            con.execute("ALTER TABLE reference_packs ADD COLUMN canonical_selected INTEGER NOT NULL DEFAULT 0")
+        if "reviewed_at" not in pack_columns:
+            con.execute("ALTER TABLE reference_packs ADD COLUMN reviewed_at TEXT")
+        pack_item_columns = {row[1] for row in con.execute("PRAGMA table_info(reference_pack_items)").fetchall()}
+        if "asset_id" not in pack_item_columns:
+            con.execute("ALTER TABLE reference_pack_items ADD COLUMN asset_id TEXT")
+        if "canonical_selected" not in pack_item_columns:
+            con.execute("ALTER TABLE reference_pack_items ADD COLUMN canonical_selected INTEGER NOT NULL DEFAULT 0")
+        if "reviewed_at" not in pack_item_columns:
+            con.execute("ALTER TABLE reference_pack_items ADD COLUMN reviewed_at TEXT")
+        asset_columns = {row[1] for row in con.execute("PRAGMA table_info(assets)").fetchall()}
+        if "persona_version_id" not in asset_columns:
+            con.execute("ALTER TABLE assets ADD COLUMN persona_version_id TEXT")
         if "disclosure" not in asset_columns:
             con.execute("ALTER TABLE assets ADD COLUMN disclosure TEXT NOT NULL DEFAULT 'Fictional adult character. AI-generated synthetic media.'")
         if "sha256" not in asset_columns:
@@ -86,6 +389,13 @@ def initialize():
             con.execute("ALTER TABLE assets ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}'")
         if "quality_json" not in asset_columns:
             con.execute("ALTER TABLE assets ADD COLUMN quality_json TEXT NOT NULL DEFAULT '{}'")
+        if "content_class" not in asset_columns:
+            con.execute("ALTER TABLE assets ADD COLUMN content_class TEXT NOT NULL DEFAULT 'identity'")
+        if "destination_policy" not in asset_columns:
+            con.execute("ALTER TABLE assets ADD COLUMN destination_policy TEXT NOT NULL DEFAULT 'review_required'")
+        auth_session_columns = {row[1] for row in con.execute("PRAGMA table_info(publishing_auth_sessions)").fetchall()}
+        if "auth_mode" not in auth_session_columns:
+            con.execute("ALTER TABLE publishing_auth_sessions ADD COLUMN auth_mode TEXT NOT NULL DEFAULT 'instagram_login'")
         job_columns = {row[1] for row in con.execute("PRAGMA table_info(jobs)").fetchall()}
         if "request_json" not in job_columns:
             con.execute("ALTER TABLE jobs ADD COLUMN request_json TEXT NOT NULL DEFAULT '{}'")
@@ -97,19 +407,119 @@ def initialize():
             con.execute("ALTER TABLE jobs ADD COLUMN attempt INTEGER NOT NULL DEFAULT 1")
         if "cancel_requested" not in job_columns:
             con.execute("ALTER TABLE jobs ADD COLUMN cancel_requested INTEGER NOT NULL DEFAULT 0")
+        if "idempotency_key" not in job_columns:
+            con.execute("ALTER TABLE jobs ADD COLUMN idempotency_key TEXT")
+        if "result_json" not in job_columns:
+            con.execute("ALTER TABLE jobs ADD COLUMN result_json TEXT NOT NULL DEFAULT '{}'")
+        if "worker_id" not in job_columns:
+            con.execute("ALTER TABLE jobs ADD COLUMN worker_id TEXT")
+        if "started_at" not in job_columns:
+            con.execute("ALTER TABLE jobs ADD COLUMN started_at TEXT")
+        if "heartbeat_at" not in job_columns:
+            con.execute("ALTER TABLE jobs ADD COLUMN heartbeat_at TEXT")
+        if "lease_expires_at" not in job_columns:
+            con.execute("ALTER TABLE jobs ADD COLUMN lease_expires_at TEXT")
+        if "next_retry_at" not in job_columns:
+            con.execute("ALTER TABLE jobs ADD COLUMN next_retry_at TEXT")
+        if "progress_stage" not in job_columns:
+            con.execute("ALTER TABLE jobs ADD COLUMN progress_stage TEXT NOT NULL DEFAULT 'queued'")
+        if "progress_percent" not in job_columns:
+            con.execute("ALTER TABLE jobs ADD COLUMN progress_percent INTEGER NOT NULL DEFAULT 0")
+        if "progress_detail" not in job_columns:
+            con.execute("ALTER TABLE jobs ADD COLUMN progress_detail TEXT")
+        if "progress_json" not in job_columns:
+            con.execute("ALTER TABLE jobs ADD COLUMN progress_json TEXT NOT NULL DEFAULT '{}'")
+        # Give pre-progress jobs a truthful terminal snapshot instead of the
+        # migration default of queued/0.
+        con.execute(
+            "UPDATE jobs SET progress_stage=CASE status "
+            "WHEN 'completed' THEN 'completed' WHEN 'failed' THEN 'failed' "
+            "WHEN 'cancelled' THEN 'cancelled' WHEN 'interrupted' THEN 'interrupted' "
+            "WHEN 'running' THEN 'running' WHEN 'submitted' THEN 'submitted' ELSE 'queued' END, "
+            "progress_percent=CASE status WHEN 'completed' THEN 100 WHEN 'failed' THEN 100 "
+            "WHEN 'cancelled' THEN 100 WHEN 'interrupted' THEN 0 ELSE progress_percent END "
+            "WHERE progress_stage='queued' AND status<>'queued'"
+        )
+        # Backfill one deterministic version for legacy personas before the
+        # repository starts creating new canonical PersonaVersion records.
+        legacy_personas = con.execute(
+            "SELECT id, name, age, description, appearance, disclosure, created_at, characteristics_json, identity_locked, identity_version, locked_at FROM personas"
+        ).fetchall()
+        for persona in legacy_personas:
+            exists = con.execute(
+                "SELECT 1 FROM persona_versions WHERE persona_id=? LIMIT 1", (persona[0],)
+            ).fetchone()
+            if exists:
+                continue
+            version_no = int(persona[9] or 1)
+            state = "frozen" if persona[8] else "draft"
+            try:
+                characteristics = json.loads(persona[7] or "{}")
+            except (TypeError, json.JSONDecodeError):
+                characteristics = {}
+            snapshot = {
+                "name": persona[1],
+                "age": persona[2],
+                "description": persona[3],
+                "appearance": persona[4],
+                "disclosure": persona[5],
+                "characteristics": characteristics,
+            }
+            con.execute(
+                "INSERT INTO persona_versions (id, persona_id, version_no, state, snapshot_json, source, created_at, frozen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (f"{persona[0]}-v{version_no}", persona[0], version_no, state,
+                 json.dumps(snapshot, ensure_ascii=False, sort_keys=True), "legacy_backfill",
+                 persona[6], persona[10] if state == "frozen" else None),
+            )
         # Foreign-key and queue lookups are the hot paths for the control plane.
         con.executescript("""
         CREATE INDEX IF NOT EXISTS idx_reference_images_persona ON reference_images(persona_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_reference_images_version ON reference_images(persona_version_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_reference_images_role ON reference_images(persona_id, role, review);
+        CREATE INDEX IF NOT EXISTS idx_reference_packs_persona ON reference_packs(persona_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_reference_packs_version ON reference_packs(persona_version_id, pack_type);
+        CREATE INDEX IF NOT EXISTS idx_reference_pack_items_pack ON reference_pack_items(pack_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_reference_pack_items_asset ON reference_pack_items(asset_id);
+        CREATE INDEX IF NOT EXISTS idx_content_packs_persona_version ON content_packs(persona_id, persona_version_id, review);
+        CREATE INDEX IF NOT EXISTS idx_content_pack_items_pack ON content_pack_items(content_pack_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_content_pack_items_asset ON content_pack_items(asset_id);
+        CREATE INDEX IF NOT EXISTS idx_persona_versions_persona ON persona_versions(persona_id, version_no);
+        CREATE INDEX IF NOT EXISTS idx_persona_versions_state ON persona_versions(state, created_at);
+        CREATE INDEX IF NOT EXISTS idx_creator_profiles_persona ON creator_profiles(persona_id, updated_at);
+        CREATE INDEX IF NOT EXISTS idx_creator_profiles_status ON creator_profiles(status, updated_at);
+        CREATE INDEX IF NOT EXISTS idx_content_briefs_persona ON content_briefs(persona_id, updated_at);
+        CREATE INDEX IF NOT EXISTS idx_content_briefs_version ON content_briefs(persona_version_id, status);
+        CREATE INDEX IF NOT EXISTS idx_content_briefs_status ON content_briefs(status, updated_at);
+        CREATE INDEX IF NOT EXISTS idx_content_artifacts_persona ON content_artifacts(persona_id, updated_at);
+        CREATE INDEX IF NOT EXISTS idx_content_artifacts_brief ON content_artifacts(content_brief_id, artifact_type, status);
+        CREATE INDEX IF NOT EXISTS idx_content_artifacts_status ON content_artifacts(status, updated_at);
         CREATE INDEX IF NOT EXISTS idx_jobs_status_created ON jobs(status, created_at);
+        CREATE INDEX IF NOT EXISTS idx_jobs_dispatch ON jobs(status, next_retry_at, created_at);
         CREATE INDEX IF NOT EXISTS idx_jobs_persona_created ON jobs(persona_id, created_at);
         CREATE INDEX IF NOT EXISTS idx_assets_persona_created ON assets(persona_id, created_at);
         CREATE INDEX IF NOT EXISTS idx_assets_review_kind ON assets(review, kind);
         CREATE INDEX IF NOT EXISTS idx_assets_sha256 ON assets(sha256);
+        CREATE INDEX IF NOT EXISTS idx_assets_persona_version ON assets(persona_id, persona_version_id, kind, review);
+        CREATE INDEX IF NOT EXISTS idx_publishing_accounts_persona ON publishing_accounts(persona_id, platform, status);
+        CREATE INDEX IF NOT EXISTS idx_publish_attempts_asset ON publish_attempts(asset_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_publish_attempts_account ON publish_attempts(account_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_publish_attempts_status ON publish_attempts(status, created_at);
+        CREATE INDEX IF NOT EXISTS idx_publishing_auth_sessions_account ON publishing_auth_sessions(account_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_publishing_auth_sessions_status ON publishing_auth_sessions(status, expires_at);
+        CREATE INDEX IF NOT EXISTS idx_identity_benchmarks_persona ON identity_benchmarks(persona_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_identity_benchmarks_version ON identity_benchmarks(persona_version_id, status);
+        CREATE INDEX IF NOT EXISTS idx_identity_benchmark_cases_benchmark ON identity_benchmark_cases(benchmark_id, status);
+        CREATE INDEX IF NOT EXISTS idx_identity_benchmark_cases_asset ON identity_benchmark_cases(output_asset_id);
         CREATE INDEX IF NOT EXISTS idx_series_persona_created ON series(persona_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_series_persona_version ON series(persona_version_id);
         CREATE INDEX IF NOT EXISTS idx_series_episodes_job ON series_episodes(job_id);
         """)
-        con.execute("INSERT INTO schema_meta(key,value) VALUES('schema_version','4') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
-        con.execute("UPDATE jobs SET status='interrupted', error='App restarted during job; retry from Studio', updated_at=? WHERE status IN ('running','submitted','queued','cancelling')", (datetime_now(),))
+        con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_idempotency_key ON jobs(idempotency_key) WHERE idempotency_key IS NOT NULL")
+        con.execute("INSERT INTO schema_meta(key,value) VALUES('schema_version','24') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+        # A durable queued row is safe to dispatch after restart. Only work
+        # that may already have reached ComfyUI is interrupted and requires
+        # prompt reconciliation or explicit operator retry.
+        con.execute("UPDATE jobs SET status='interrupted', error='App restarted during job; retry from Studio', updated_at=?, worker_id=NULL, heartbeat_at=NULL, lease_expires_at=NULL WHERE status IN ('running','submitted','cancelling')", (datetime_now(),))
 
 
 @contextmanager
@@ -140,7 +550,7 @@ def row(sql: str, args=()):
 
 def write(sql: str, args=()):
     with connection() as con:
-        con.execute(sql, args)
+        return con.execute(sql, args).rowcount
 
 
 def write_many(statements):

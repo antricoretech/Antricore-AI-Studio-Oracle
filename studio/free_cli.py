@@ -18,9 +18,21 @@ from .policies import AI_DISCLOSURE, DEFAULT_NEGATIVE_PROMPT
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / 'config' / 'approved_models.json'
-REGISTRY = json.loads(CONFIG.read_text(encoding='utf8'))
+ALL_MODELS = json.loads(CONFIG.read_text(encoding='utf8'))
+FREE_LICENSES = {
+    'Apache-2.0',
+    'Fair AI Public License 1.0-SD',
+    'CreativeML OpenRAIL++-M',
+    'Stability AI Community License',
+}
+# Keep restricted-license model metadata in the approved-model catalog, but do
+# not expose it through the freely available download/generation CLI.
+REGISTRY = {
+    key: item for key, item in ALL_MODELS.items()
+    if item.get('license') in FREE_LICENSES
+}
 MODEL_ROOT = ROOT / 'models'
-OUTPUT_ROOT = ROOT / 'generated'
+OUTPUT_ROOT = Path(os.getenv('STUDIO_GENERATED_DIR') or (ROOT / 'generated')).resolve()
 
 
 def identity_prompt_from_brief(brief) -> str:
@@ -97,6 +109,79 @@ def local_model(key: str) -> Path:
     if key not in REGISTRY:
         raise ValueError(f'Unapproved model: {key}')
     return MODEL_ROOT / key
+
+
+def register_output(args):
+    """Import an existing CLI output into the canonical Asset boundary."""
+
+    from . import database as db
+    from .assets import register_media_asset
+    from .media import extension_for, validate_image_bytes, validate_media_signature
+    from .settings import get_settings
+
+    db.initialize()
+    source = Path(args.file).expanduser().resolve()
+    if not source.is_file():
+        raise FileNotFoundError(f'Output file not found: {source}')
+    extension_for(args.kind, source.name)
+    if source.stat().st_size > get_settings().asset_max_bytes:
+        raise ValueError(f'Output exceeds the {get_settings().asset_max_bytes // (1024 * 1024)} MB asset limit')
+    raw = source.read_bytes()
+    if args.kind == 'image':
+        validate_image_bytes(raw)
+    else:
+        validate_media_signature(raw, args.kind, strict=get_settings().strict_media_validation)
+
+    persona = db.row('SELECT id FROM personas WHERE id=?', (args.persona_id,))
+    if not persona:
+        raise ValueError('CLI registration requires a canonical Persona')
+    version = db.row(
+        'SELECT id FROM persona_versions WHERE persona_id=? ORDER BY version_no DESC LIMIT 1',
+        (args.persona_id,),
+    )
+    asset = register_media_asset(
+        persona_id=args.persona_id,
+        persona_version_id=version['id'] if version else None,
+        job_id=None,
+        kind=args.kind,
+        prompt=args.prompt,
+        raw=raw,
+        disclosure=args.disclosure,
+        rights_confirmed=args.rights_confirmed,
+        original_filename=source.name,
+        lineage={
+            'execution_mode': 'free_cli_register',
+            'source_filename': source.name,
+            'source_kind': args.kind,
+        },
+    )
+    result = {
+        'id': asset['id'],
+        'persona_id': asset['persona_id'],
+        'persona_version_id': asset['persona_version_id'],
+        'kind': asset['kind'],
+        'review': asset['review'],
+        'rights_confirmed': bool(asset['rights_confirmed']),
+        'url': f"/api/assets/{asset['id']}/file",
+    }
+    print(json.dumps(result, indent=2))
+    return result
+
+
+def _maybe_register_cli_output(args, path: str | Path, kind: str, prompt: str, stage: str):
+    """Opt-in bridge for direct CLI commands that produced a local file."""
+
+    persona_id = getattr(args, 'persona_id', None)
+    if not persona_id:
+        return None
+    return register_output(SimpleNamespace(
+        persona_id=persona_id,
+        file=str(path),
+        kind=kind,
+        prompt=prompt or f'Free CLI {stage} output',
+        disclosure=getattr(args, 'disclosure', AI_DISCLOSURE),
+        rights_confirmed=False,
+    ))
 
 
 def verify_image(path: str) -> Path:
@@ -256,6 +341,7 @@ def make_image(args):
     output.parent.mkdir(parents=True,exist_ok=True)
     result.save(output)
     print(f'Saved {output}')
+    _maybe_register_cli_output(args, output, 'image', args.prompt, 'image')
 
 
 def download_model(args):
@@ -500,12 +586,13 @@ def video_command(args):
 
 
 def video(args):
+    output_path = None
     if args.mode == 'liveportrait':
-        return make_video_liveportrait(args)
+        output_path = make_video_liveportrait(args)
     elif args.mode == 'svd-xt':
-        return make_video_svd(args)
+        output_path = make_video_svd(args)
     elif args.mode == 'wan21-t2v-1.3b':
-        return make_video_wan21(args)
+        output_path = make_video_wan21(args)
     elif args.mode == 'wan22-ti2v-5b':
         cmd=video_command(args)
         print('Running official Wan2.2 CLI with local weights, no Dashscope prompt extension.')
@@ -513,9 +600,13 @@ def video(args):
             print(json.dumps(cmd,indent=2))
         else:
             subprocess.run(cmd,check=True,cwd=ROOT/'external'/'Wan22')
-            print(f'Saved video: {Path(args.output).resolve()}')
+            output_path = str(Path(args.output).resolve())
+            print(f'Saved video: {output_path}')
     else:
         raise ValueError(f"Unknown video mode: {args.mode}")
+    if output_path:
+        _maybe_register_cli_output(args, output_path, 'video', getattr(args, 'prompt', ''), 'video')
+    return output_path
 
 
 def voice(args):
@@ -531,6 +622,8 @@ def voice(args):
     dest.parent.mkdir(parents=True,exist_ok=True)
     sf.write(dest,np.concatenate(parts),24000)
     print(f'Saved WAV: {dest}')
+    _maybe_register_cli_output(args, dest, 'audio', args.text, 'voice')
+    return str(dest)
 
 
 def mux(args):
@@ -544,6 +637,8 @@ def mux(args):
     cmd=['ffmpeg','-y','-i',str(video_file),'-i',str(audio_file),'-map','0:v:0','-map','1:a:0','-c:v','copy','-c:a','aac','-shortest',str(output)]
     subprocess.run(cmd,check=True)
     print(f'Saved {output}')
+    _maybe_register_cli_output(args, output, 'video', getattr(args, 'prompt', 'Assembled video with narration'), 'mux')
+    return str(output)
 
 
 def pipeline(args):
@@ -571,18 +666,23 @@ def pipeline(args):
         width=args.width, height=args.height, seed=args.seed,
         steps=args.steps, guidance=args.guidance, cpu_offload=args.cpu_offload,
         offline=args.offline, output=str(master), negative_prompt=args.negative_prompt,
+        persona_id=getattr(args, 'persona_id', None), disclosure=getattr(args, 'disclosure', AI_DISCLOSURE),
     )
     make_image(image_args)
 
     video_args = SimpleNamespace(
         mode=args.mode, python=args.python, output=str(video_file), size=args.size,
         prompt=video_prompt, reference=str(master), dry_run=False,
+        persona_id=getattr(args, 'persona_id', None), disclosure=getattr(args, 'disclosure', AI_DISCLOSURE),
     )
     video(video_args)
 
     if args.narration:
-        voice(SimpleNamespace(text=args.narration, voice=args.voice, lang=args.lang, output=str(audio_file)))
-        mux(SimpleNamespace(video=str(video_file), audio=str(audio_file), output=str(final_file)))
+        voice(SimpleNamespace(text=args.narration, voice=args.voice, lang=args.lang, output=str(audio_file),
+                              persona_id=getattr(args, 'persona_id', None), disclosure=getattr(args, 'disclosure', AI_DISCLOSURE)))
+        mux(SimpleNamespace(video=str(video_file), audio=str(audio_file), output=str(final_file),
+                            persona_id=getattr(args, 'persona_id', None), disclosure=getattr(args, 'disclosure', AI_DISCLOSURE),
+                            prompt=video_prompt))
     else:
         # Keep the advertised --output contract even when the optional audio
         # stage is skipped. This gives review/import one stable final path.
@@ -635,6 +735,7 @@ def cli(argv=None):
     im.add_argument('--width',type=int,default=768);im.add_argument('--height',type=int,default=1152)
     im.add_argument('--seed',type=int,default=42);im.add_argument('--steps',type=int,default=4);im.add_argument('--guidance',type=float,default=1.0)
     im.add_argument('--cpu-offload',action='store_true');im.add_argument('--offline',action='store_true')
+    im.add_argument('--persona-id', help='Optional canonical Persona ID; register the output after generation')
     im.add_argument('--output',default=str(OUTPUT_ROOT/'portrait.png'))
     vid=sub.add_parser('video')
     vid.add_argument('--mode',choices=['liveportrait','svd-xt','wan21-t2v-1.3b','wan22-ti2v-5b'],default='liveportrait')
@@ -648,11 +749,20 @@ def cli(argv=None):
     vid.add_argument('--offline',action='store_true')
     vid.add_argument('--size',choices=['1280*704','704*1280','1024*576','576*1024'],default='1024*576')
     vid.add_argument('--python',help='Python executable in the Wan2.2 separate venv')
+    vid.add_argument('--persona-id', help='Optional canonical Persona ID; register the output after generation')
     vid.add_argument('--output',default=str(OUTPUT_ROOT/'glamour_motion.mp4'))
     vid.add_argument('--dry-run',action='store_true')
     vc=sub.add_parser('voice');vc.add_argument('--text',required=True);vc.add_argument('--voice',default='af_heart')
-    vc.add_argument('--lang',default='a');vc.add_argument('--output',default=str(OUTPUT_ROOT/'voice.wav'))
+    vc.add_argument('--lang',default='a');vc.add_argument('--persona-id', help='Optional canonical Persona ID; register the output after generation');vc.add_argument('--output',default=str(OUTPUT_ROOT/'voice.wav'))
     mx=sub.add_parser('mux');mx.add_argument('--video',required=True);mx.add_argument('--audio',required=True);mx.add_argument('--output',default=str(OUTPUT_ROOT/'narrated_reel.mp4'))
+    mx.add_argument('--persona-id', help='Optional canonical Persona ID; register the assembled output after muxing')
+    rg=sub.add_parser('register', help='Register an existing local output in the canonical Asset store')
+    rg.add_argument('--persona-id', required=True, help='Canonical Persona ID; legacy persona IDs are not accepted')
+    rg.add_argument('--file', required=True, help='Existing local image, video, or audio output')
+    rg.add_argument('--kind', choices=['image', 'video', 'audio'], required=True)
+    rg.add_argument('--prompt', required=True, help='Prompt or creative direction used for the output')
+    rg.add_argument('--disclosure', default=AI_DISCLOSURE)
+    rg.add_argument('--rights-confirmed', action='store_true', help='Explicitly confirm rights for this imported output')
     pp=sub.add_parser('pipeline', help='Run local image, video, optional voice and mux stages')
     pp.add_argument('--prompt', required=True, help='Master-image prompt for the fictional adult character')
     pp.add_argument('--negative-prompt', default=DEFAULT_NEGATIVE_PROMPT)
@@ -677,6 +787,7 @@ def cli(argv=None):
     pp.add_argument('--audio', default=str(OUTPUT_ROOT/'narration.wav'))
     pp.add_argument('--output', default=str(OUTPUT_ROOT/'reel_with_voice.mp4'))
     pp.add_argument('--disclosure', default=AI_DISCLOSURE)
+    pp.add_argument('--persona-id', help='Optional canonical Persona ID; register generated outputs after each stage')
     pp.add_argument('--dry-run', action='store_true')
     br = sub.add_parser('brief', help='Validate and run a ChatGPT-authored generation brief')
     br.add_argument('--file', required=True, help='Path to generation brief JSON')
@@ -688,7 +799,7 @@ def cli(argv=None):
     try:
         return {'doctor':doctor,'download':lambda:download_model(args),'image':lambda:make_image(args),
                 'video':lambda:video(args),'voice':lambda:voice(args),'mux':lambda:mux(args),
-                'pipeline':lambda:pipeline(args),'brief':lambda:run_brief(args)}[args.cmd]()
+                'register':lambda:register_output(args),'pipeline':lambda:pipeline(args),'brief':lambda:run_brief(args)}[args.cmd]()
     except (RuntimeError,ValueError,FileNotFoundError) as e:
         parser.exit(2,f'Error: {e}\n')
 

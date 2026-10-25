@@ -1,3 +1,4 @@
+import asyncio
 import json
 from pathlib import Path
 
@@ -67,3 +68,24 @@ async def test_mock_comfy_api_flow():
         files = output_files(outputs)
         assert files[0]["filename"] == "out.png"
         assert await client.download(files[0]) == b"image-bytes"
+
+
+@pytest.mark.asyncio
+async def test_comfy_interrupt_and_cooperative_wait_cancellation():
+    calls = []
+
+    def handle(request):
+        calls.append(request.url.path)
+        if request.url.path == "/interrupt":
+            return httpx.Response(200, json={})
+        if request.url.path == "/history/cancel-me":
+            return httpx.Response(200, json={"cancel-me": {"status": {}}})
+        return httpx.Response(404)
+
+    async with ComfyClient(transport=httpx.MockTransport(handle)) as client:
+        await client.interrupt()
+        with pytest.raises(asyncio.CancelledError):
+            await client.wait("cancel-me", cancel_check=lambda: True)
+
+    assert "/interrupt" in calls
+    assert "/history/cancel-me" not in calls

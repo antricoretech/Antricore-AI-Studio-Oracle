@@ -7,7 +7,7 @@ import secrets
 from pydantic import BaseModel, Field
 
 from .brief import PersonaCharacteristics
-from .policies import DEFAULT_NEGATIVE_PROMPT
+from .policies import AI_DISCLOSURE, DEFAULT_NEGATIVE_PROMPT
 
 
 class PersonaIn(BaseModel):
@@ -29,6 +29,7 @@ class JobIn(BaseModel):
     reference_id: str | None = None
     source_asset_id: str | None = None
     audio_asset_id: str | None = None
+    content_pack_id: str | None = None
     width: int = Field(default=768, ge=256, le=2048)
     height: int = Field(default=1152, ge=256, le=2048)
     seed: int = Field(default_factory=lambda: secrets.randbelow(2147483647), ge=0, le=9223372036854775807)
@@ -37,6 +38,143 @@ class JobIn(BaseModel):
 
 class ReviewIn(BaseModel):
     review: str
+    reason: str = Field(default="", max_length=1000)
+    reviewer: str = Field(default="local_operator", max_length=120)
+
+
+class AssetAssessmentIn(BaseModel):
+    identity_score: float | None = Field(default=None, ge=0, le=1)
+    anatomy_score: float | None = Field(default=None, ge=0, le=1)
+    hands_score: float | None = Field(default=None, ge=0, le=1)
+    facial_drift_score: float | None = Field(default=None, ge=0, le=1)
+    temporal_stability_score: float | None = Field(default=None, ge=0, le=1)
+    audio_timing_score: float | None = Field(default=None, ge=0, le=1)
+    evaluator: str = Field(default="local_operator", max_length=120)
+    notes: str = Field(default="", max_length=2000)
+
+
+class PublishingAccountIn(BaseModel):
+    platform: str = Field(default="instagram", min_length=2, max_length=40)
+    account_label: str = Field(min_length=2, max_length=120)
+    account_type: str = Field(default="professional", min_length=2, max_length=40)
+    handle: str | None = Field(default=None, max_length=120)
+    external_account_id: str | None = Field(default=None, max_length=160)
+    metadata: dict = Field(default_factory=dict)
+
+
+class PublishDryRunIn(BaseModel):
+    provider: str = Field(default="local_dry_run", min_length=2, max_length=60)
+    account_id: str = Field(min_length=1, max_length=128)
+    format: str | None = Field(default=None, max_length=40)
+    content_artifact_id: str | None = Field(default=None, max_length=128)
+    idempotency_key: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+class PublishingAuthorizationPlanIn(BaseModel):
+    provider: str = Field(default="local_dry_run", min_length=2, max_length=60)
+    auth_mode: str = Field(default="instagram_login", min_length=2, max_length=40)
+    redirect_uri: str = Field(min_length=8, max_length=1000)
+    scopes: list[str] = Field(default_factory=list, max_length=20)
+
+
+class ReferencePackReviewIn(BaseModel):
+    review: str
+    rights_confirmed: bool | None = None
+
+
+class ReferencePackCanonicalIn(BaseModel):
+    selected: bool = True
+    item_ids: list[str] = Field(default_factory=list, max_length=100)
+
+
+class ReferencePackAssetLinkIn(BaseModel):
+    asset_id: str = Field(min_length=1, max_length=128)
+
+
+class ContentPackIn(BaseModel):
+    persona_version_id: str | None = None
+    reference_pack_id: str
+    pack_type: str = Field(min_length=2, max_length=80)
+    name: str = Field(min_length=2, max_length=120)
+    content_class: str = Field(default="identity", min_length=2, max_length=80)
+    identity_authority: str = Field(default="identity", max_length=40)
+    identity_core: bool = False
+    style: dict = Field(default_factory=dict)
+    metadata: dict = Field(default_factory=dict)
+    reference_item_ids: list[str] = Field(default_factory=list, max_length=100)
+
+
+class ContentPackReviewIn(BaseModel):
+    review: str
+
+
+class ContentPillarIn(BaseModel):
+    key: str = Field(default="", max_length=80)
+    name: str = Field(min_length=2, max_length=120)
+    description: str = Field(default="", max_length=500)
+    formats: list[str] = Field(default_factory=list, max_length=12)
+    content_classes: list[str] = Field(default_factory=lambda: ["identity"], max_length=12)
+    identity_authority: str = Field(default="style", max_length=40)
+    identity_core: bool = False
+    audience_goal: str = Field(default="", max_length=300)
+    style_directives: dict = Field(default_factory=dict)
+    metadata: dict = Field(default_factory=dict)
+
+
+class CreatorProfileIn(BaseModel):
+    persona_version_id: str | None = None
+    personality: dict = Field(default_factory=dict)
+    audience: dict = Field(default_factory=dict)
+    content_pillars: list[ContentPillarIn] = Field(default_factory=list, max_length=20)
+    brand: dict = Field(default_factory=dict)
+    voice: dict = Field(default_factory=dict)
+    disclosure: str = Field(default=AI_DISCLOSURE, min_length=20, max_length=300)
+    metadata: dict = Field(default_factory=dict)
+
+
+class ContentBriefIn(BaseModel):
+    persona_version_id: str | None = None
+    creator_profile_id: str | None = None
+    content_pack_id: str | None = None
+    title: str = Field(min_length=2, max_length=160)
+    format: str = Field(min_length=2, max_length=40)
+    content_class: str = Field(default="identity", min_length=2, max_length=80)
+    pillar_key: str = Field(default="", max_length=80)
+    audience_goal: str = Field(default="", max_length=500)
+    emotional_objective: str = Field(default="", max_length=500)
+    story_direction: str = Field(default="", max_length=2000)
+    visual_direction: str = Field(default="", max_length=2000)
+    motion_direction: str = Field(default="", max_length=2000)
+    caption_direction: str = Field(default="", max_length=1200)
+    script_direction: str = Field(default="", max_length=2000)
+    disclosure: str = Field(default=AI_DISCLOSURE, min_length=20, max_length=300)
+    metadata: dict = Field(default_factory=dict)
+
+
+class ContentArtifactIn(BaseModel):
+    artifact_type: str = Field(min_length=2, max_length=20)
+    content: str = Field(default="", max_length=5000)
+    metadata: dict = Field(default_factory=dict)
+
+
+class ContentArtifactReviewIn(BaseModel):
+    review: str
+
+
+class IdentityBenchmarkIn(BaseModel):
+    persona_version_id: str | None = None
+    base_model_id: str | None = Field(default=None, max_length=160)
+    methods: list[str] = Field(default_factory=list, max_length=10)
+    scenario_ids: list[str] = Field(default_factory=list, max_length=20)
+    metadata: dict = Field(default_factory=dict)
+
+
+class IdentityBenchmarkResultIn(BaseModel):
+    status: str = "completed"
+    metrics: dict = Field(default_factory=dict)
+    notes: str = Field(default="", max_length=2000)
+    error: str | None = Field(default=None, max_length=1500)
+    output_asset_id: str | None = None
 
 
 class VoiceIn(BaseModel):
@@ -70,6 +208,7 @@ class SeriesQueueIn(BaseModel):
     reference_id: str | None = None
     source_asset_id: str | None = None
     audio_asset_id: str | None = None
+    content_pack_id: str | None = None
     width: int = Field(default=704, ge=256, le=2048)
     height: int = Field(default=1280, ge=256, le=2048)
     seed: int | None = Field(default=None, ge=0, le=9223372036854775807)

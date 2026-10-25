@@ -9,6 +9,7 @@ from pathlib import Path
 
 from PIL import Image
 
+from .media import validate_media_signature
 from .policies import AI_DISCLOSURE
 
 
@@ -27,7 +28,7 @@ def media_metadata(raw: bytes, kind: str, filename: str) -> dict:
     return metadata
 
 
-def quality_report(path: Path, kind: str, disclosure: str, *, lineage: dict | None = None, expected_sha256: str | None = None) -> dict:
+def quality_report(path: Path, kind: str, disclosure: str, *, lineage: dict | None = None, expected_sha256: str | None = None, strict_media: bool = False) -> dict:
     checks = []
     try:
         raw = path.read_bytes()
@@ -44,6 +45,25 @@ def quality_report(path: Path, kind: str, disclosure: str, *, lineage: dict | No
             checks.append({"id": "decode", "status": "ready", "detail": "Image container decoded successfully"})
         except Exception as exc:
             checks.append({"id": "decode", "status": "error", "detail": f"Image decode failed: {str(exc)[:140]}"})
+    else:
+        allowed_extensions = {
+            "video": {".mp4", ".webm", ".gif"},
+            "audio": {".wav", ".mp3", ".flac"},
+        }.get(kind, set())
+        suffix = path.suffix.lower()
+        if suffix not in allowed_extensions:
+            checks.append({"id": "extension", "status": "error", "detail": f"{kind} asset uses unsupported extension {suffix or '(none)'}"})
+        else:
+            try:
+                validate_media_signature(raw, kind, strict=True)
+            except ValueError as exc:
+                checks.append({
+                    "id": "container",
+                    "status": "error" if strict_media else "warning",
+                    "detail": f"{kind.title()} container signature could not be verified: {str(exc)[:140]}",
+                })
+            else:
+                checks.append({"id": "container", "status": "ready", "detail": f"{kind.title()} container signature verified"})
     if len((disclosure or "").strip()) < 20:
         checks.append({"id": "disclosure", "status": "warning", "detail": "Add a clear synthetic-media disclosure before export"})
     else:
@@ -71,7 +91,11 @@ def manifest(asset: dict, *, job: dict | None = None, persona: dict | None = Non
         "asset": {
             "id": asset.get("id"), "filename": asset.get("filename"), "kind": asset.get("kind"),
             "sha256": asset.get("sha256"), "metadata": parse(asset.get("metadata_json")),
-            "review": asset.get("review"), "disclosure": asset.get("disclosure") or AI_DISCLOSURE,
+            "review": asset.get("review"), "reviewed_at": asset.get("reviewed_at"),
+            "reviewer": asset.get("reviewer"), "review_reason": asset.get("review_reason"),
+            "content_class": asset.get("content_class") or "identity",
+            "destination_policy": asset.get("destination_policy") or "review_required",
+            "disclosure": asset.get("disclosure") or AI_DISCLOSURE,
         },
         "persona": {
             "id": (persona or {}).get("id", asset.get("persona_id")),

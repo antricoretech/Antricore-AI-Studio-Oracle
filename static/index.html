@@ -55,6 +55,8 @@
       </button>
     </nav>
 
+    <a class="btn-glass canonical-workspace-link" data-canonical-workspace-link href="/workspace">Open Canonical Workspace</a>
+
     <!-- Header Right Hardware Telemetry Pill (Option 1 GPU Gauge) -->
     <div class="header-telemetry">
       <div class="telemetry-chip" id="header-vram-chip">
@@ -90,6 +92,7 @@
             <strong id="vault-active-anchor-lbl">Maya Bhutia</strong>
           </div>
           <button class="btn-new-persona" id="btn-quick-new-persona">+ New Persona</button>
+          <a class="btn-glass canonical-surface-link" data-canonical-target="personas" href="/workspace#personas">Canonical Identity</a>
           <button class="btn-delete-persona" id="btn-delete-active-persona" title="Archive and delete this persona">🗑 Delete Persona</button>
         </div>
       </div>
@@ -654,7 +657,8 @@
           <h2>PHOTOSHOOT ORCHESTRATOR / <span>UNRESTRICTED</span></h2>
           <p>Local SDXL Direct Inference · Juggernaut XL v10 (RunDiffusion NSFW Edition)</p>
         </div>
-        <div style="display: flex; gap: 0.5rem;">
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+          <a class="btn-glass canonical-surface-link" data-canonical-target="production" href="/workspace#production">Canonical Production</a>
           <span class="telemetry-chip" style="background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.3); color: var(--emerald);">
             ● Juggernaut XL v10 Loaded
           </span>
@@ -816,7 +820,10 @@
             📅 Content Calendar & Inspector (Option 2)
           </button>
         </div>
-        <span style="font-size: 0.85rem; color: var(--text-muted);">Active Anchor: <strong id="story-active-persona-lbl" style="color: var(--gold-light);">Maya Bhutia</strong></span>
+        <div style="display: flex; gap: 0.75rem; align-items: center;">
+          <span style="font-size: 0.85rem; color: var(--text-muted);">Active Anchor: <strong id="story-active-persona-lbl" style="color: var(--gold-light);">Maya Bhutia</strong></span>
+          <a class="btn-glass canonical-surface-link" data-canonical-target="content-packs" href="/workspace#content-packs">Canonical ContentPacks</a>
+        </div>
       </div>
 
       <!-- --------------------------------------------------------------------------
@@ -1094,6 +1101,7 @@
           <p>Approved Master Turnaround Sets & Editorial Renders with Deep Metadata</p>
         </div>
         <div style="display: flex; gap: 0.65rem; align-items: center;">
+          <a class="btn-glass canonical-surface-link" data-canonical-target="assets" href="/workspace#assets">Canonical Asset Review</a>
           <button class="btn-glass" id="btn-gallery-toggle-archive" style="color: var(--gold-light); border-color: rgba(212, 175, 55, 0.4);">
             📦 View Archive (<span id="archive-count-badge">0</span>)
           </button>
@@ -1196,6 +1204,7 @@
           <p>Apple Metal Performance Shaders (MPS) Unified Memory & Model Health</p>
         </div>
         <div>
+          <a class="btn-glass canonical-surface-link" data-canonical-target="overview" href="/workspace#overview">Canonical Overview</a>
           <button class="btn-glass" id="btn-purge-vram">🧹 Purge VRAM Cache</button>
         </div>
       </div>
@@ -1299,6 +1308,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=53"></script>
+  <script type="module" src="/static/app.js?v=57"></script>
 </body>
 </html>

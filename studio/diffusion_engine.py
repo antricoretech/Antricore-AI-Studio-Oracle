@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import Optional, Dict, Any, Tuple
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
-RENDERS_DIR = ROOT_DIR / "generated" / "renders"
+GENERATED_ROOT = Path(os.getenv("STUDIO_GENERATED_DIR") or (ROOT_DIR / "generated")).resolve()
+RENDERS_DIR = GENERATED_ROOT / "renders"
 RENDERS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Aspect ratio map for SDXL
@@ -70,6 +71,43 @@ def get_pipeline(model_id: str = "juggernaut-xl-v10"):
         print(f"[Diffusion Engine] Model {model_id} ready on {device}!")
         return _current_pipe
 
+
+def _register_render_asset(*, persona_id: str, persona_name: str, prompt: str,
+                           raw: bytes, original_filename: str, model_id: str,
+                           seed: int, aspect_ratio: str, width: int, height: int) -> dict:
+    """Register a standalone render through the canonical media boundary."""
+
+    from . import database as db
+    from .assets import register_media_asset
+
+    persona = db.row("SELECT id FROM personas WHERE id=?", (persona_id,))
+    if not persona:
+        raise ValueError("Standalone diffusion registration requires a canonical Persona")
+    version = db.row(
+        "SELECT id FROM persona_versions WHERE persona_id=? ORDER BY version_no DESC LIMIT 1",
+        (persona_id,),
+    )
+    return register_media_asset(
+        persona_id=persona_id,
+        persona_version_id=version["id"] if version else None,
+        job_id=None,
+        kind="image",
+        prompt=prompt,
+        raw=raw,
+        rights_confirmed=False,
+        original_filename=original_filename,
+        lineage={
+            "execution_mode": "standalone_diffusion",
+            "model": model_id,
+            "persona_name": persona_name,
+            "seed": seed,
+            "aspect_ratio": aspect_ratio,
+            "width": width,
+            "height": height,
+        },
+    )
+
+
 def generate_render(
     prompt: str,
     negative_prompt: Optional[str] = None,
@@ -79,7 +117,8 @@ def generate_render(
     persona_name: str = "Creator",
     seed: Optional[int] = None,
     steps: int = 20,
-    guidance_scale: float = 5.0
+    guidance_scale: float = 5.0,
+    register_asset: bool = True,
 ) -> Dict[str, Any]:
     """
     Executes real neural diffusion inference on Apple MPS using Juggernaut XL v10 / CyberRealistic XL.
@@ -120,16 +159,24 @@ def generate_render(
     rel_url = f"/generated/renders/{filename}"
     print(f"[Diffusion Engine] Saved render in {elapsed}s to {rel_url}")
 
-    # Register into SQLite database assets table
-    try:
-        from . import database as db
-        aid = f"render-{timestamp}-{actual_seed}"
-        db.write(
-            "INSERT INTO assets (id, persona_id, filename, kind, prompt, review, rights_confirmed, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (aid, persona_id, filename, "image", prompt, "approved", 1, time.strftime("%Y-%m-%d %H:%M:%S"))
-        )
-    except Exception as db_err:
-        print(f"[Diffusion Engine] Database write notice: {db_err}")
+    asset = None
+    if register_asset:
+        try:
+            asset = _register_render_asset(
+                persona_id=persona_id,
+                persona_name=persona_name,
+                prompt=prompt,
+                raw=out_path.read_bytes(),
+                original_filename=filename,
+                model_id=model_id,
+                seed=actual_seed,
+                aspect_ratio=aspect_ratio,
+                width=width,
+                height=height,
+            )
+            print(f"[Diffusion Engine] Registered canonical pending asset {asset['id']}")
+        except Exception as db_err:
+            print(f"[Diffusion Engine] Canonical asset registration notice: {db_err}")
 
     return {
         "status": "completed",
@@ -142,5 +189,7 @@ def generate_render(
         "model": model_id,
         "persona_id": persona_id,
         "persona_name": persona_name,
-        "filename": filename
+        "filename": filename,
+        "asset_id": asset["id"] if asset else None,
+        "asset_url": f"/api/assets/{asset['id']}/file" if asset else None,
     }
