@@ -68,6 +68,15 @@ const state = {
   assetPlatformReadiness: {},
   publishingPolicies: null,
   publishingAccounts: [],
+  publishingAssets: [],
+  publishingArtifacts: [],
+  selectedPublishingAssetId: '',
+  selectedPublishingAccountId: '',
+  selectedPublishingArtifactId: '',
+  publishingReadiness: null,
+  publishingResult: null,
+  publishingBusy: false,
+  verifyingPublishingAccountId: '',
   creatingPublishingAccount: false,
   workflows: [],
   preflight: null,
@@ -653,10 +662,46 @@ function renderIdentityBenchmarks() {
   return `<section class="panel" aria-labelledby="benchmark-heading"><div class="section-heading"><div><p class="eyebrow">Phase 5 · model-deferred</p><h2 id="benchmark-heading">Identity-conditioning benchmarks</h2></div>${badge(state.benchmarkCatalog.execution_status || 'deferred_final_gate')}</div><p class="helper">Create a reproducible comparison plan against the active frozen PersonaVersion. Adult/glamour remains part of the same Identity Core anchor system. Model installation and execution are intentionally deferred.</p><div class="readiness-grid benchmark-readiness"><div class="readiness-item"><div><strong>PersonaVersion</strong><span>${escapeHtml(persona?.current_version?.id || 'not available')}</span></div>${frozen ? badge('ready') : badge('freeze required')}</div><div class="readiness-item"><div><strong>Canonical anchor</strong><span>Resolved by the server from approved, rights-confirmed media</span></div>${badge('server gated')}</div><div class="readiness-item"><div><strong>Runtime/model gate</strong><span>Results can be recorded later on the target Mac</span></div>${badge('deferred')}</div></div>${!frozen ? `<div class="callout readiness-callout"><p><strong>Freeze this PersonaVersion before creating a benchmark.</strong></p><p class="helper">Review canonical ReferencePack anchors first, then return here.</p><div class="entity-actions"><button class="button secondary" type="button" data-view="personas">Open Master Persona</button><button class="button secondary" type="button" data-view="references">Review anchors</button></div></div>` : ''}<form id="identity-benchmark-create-form" class="benchmark-plan-form" aria-labelledby="benchmark-plan-heading"><div class="section-heading"><div><p class="eyebrow">Benchmark plan</p><h3 id="benchmark-plan-heading">Select methods and scenarios</h3></div>${badge(`${methods.length} methods`)}</div><div class="field"><label>Base model identifier <span class="field-hint">optional until final gate</span><input name="base_model_id" maxlength="160" placeholder="pending-final-gate"></label></div><fieldset class="benchmark-options"><legend>Identity methods</legend><div class="benchmark-option-grid">${methods.map((method) => `<label class="benchmark-option"><input type="checkbox" name="methods" value="${escapeHtml(method.id)}" checked><span><strong>${escapeHtml(method.label)}</strong><small>${escapeHtml(method.category)} · ${escapeHtml(method.execution_status)}</small></span></label>`).join('')}</div></fieldset><fieldset class="benchmark-options"><legend>Scenarios</legend><div class="benchmark-option-grid">${scenarios.map((scenario) => `<label class="benchmark-option"><input type="checkbox" name="scenario_ids" value="${escapeHtml(scenario.id)}" checked><span><strong>${escapeHtml(scenario.label)}</strong><small>${escapeHtml(scenario.content_class)}</small></span></label>`).join('')}</div></fieldset><p id="identity-benchmark-form-error" class="form-error" role="alert" hidden></p><div class="form-actions"><button class="button primary" type="submit" ${frozen && !state.creatingBenchmark ? '' : 'disabled'}>${state.creatingBenchmark ? 'Creating plan…' : 'Create benchmark plan'}</button></div></form>${state.benchmarks.length ? `<div class="benchmark-list">${state.benchmarks.map((benchmark) => `<article class="benchmark-card"><div class="section-heading"><div><p class="eyebrow">Benchmark plan</p><h3>${escapeHtml(benchmark.id)}</h3><p class="helper">PersonaVersion ${escapeHtml(benchmark.persona_version_id)} · ${escapeHtml(benchmark.anchor_content_class)} anchor · ${escapeHtml(benchmark.base_model_id || 'model not selected')}</p></div>${badge(benchmark.status)}</div><div class="entity-meta">${badge(`${benchmark.cases.length} cases`)}${badge(`anchor ${benchmark.anchor_asset_id}`)}${benchmark.status === 'completed' ? badge('review summary ready') : badge('no automatic selection')}</div>${renderBenchmarkSummary(benchmark.summary)}<div class="benchmark-cases"><div class="section-heading"><div><p class="eyebrow">Case results</p><h3>Record measured outcomes</h3></div></div>${benchmark.cases.map((item) => renderBenchmarkCase(benchmark, item)).join('')}</div></article>`).join('')}</div>` : emptyState('No identity benchmark plans exist for this PersonaVersion yet. Create one after the canonical anchor is ready.')}</section>`;
 }
 
-function renderPublishing() {
+function renderPublishingLegacy() {
   const persona = activePersona();
   const accounts = state.publishingAccounts || [];
   return `<section class="panel" aria-labelledby="publishing-heading"><div class="section-heading"><div><p class="eyebrow">Phase 8 · local contract</p><h2 id="publishing-heading">Publishing readiness</h2></div>${badge(state.publishingPolicies?.execution_status || 'catalog_only')}</div><div class="callout"><p><strong>External publishing remains disabled.</strong></p><p class="helper">This phase records persona-owned account bindings and dry-run evidence only. Provider: local dry-run provider. No OAuth token, outbound request, or publish action is performed.</p></div><div class="card-list" style="margin-top: 16px"><div class="entity-card"><div><h3>Identity lineage</h3><p>${persona ? 'Active PersonaVersion is available for downstream checks.' : 'Select a Master Persona first.'}</p></div>${persona ? badge('ready') : badge('pending')}</div><div class="entity-card"><div><h3>Media approval</h3><p>Only approved assets may advance to publishing.</p></div>${badge('required')}</div><div class="entity-card"><div><h3>Platform account mapping</h3><p>Account records are local, secret-free, and remain unverified until Phase 8 provider verification is added.</p></div>${badge(accounts.length ? `${accounts.length} configured` : 'planned')}</div></div>${persona ? `<section class="subpanel" aria-labelledby="account-binding-heading"><div class="section-heading"><div><p class="eyebrow">Persona-owned mapping</p><h3 id="account-binding-heading">Publishing accounts</h3></div>${badge(`${accounts.length} account${accounts.length === 1 ? '' : 's'}`)}</div><form id="publishing-account-form" class="content-artifact-form"><div class="form-grid"><label>Platform<select name="platform"><option value="instagram">Instagram</option></select></label><label>Account label<input name="account_label" minlength="2" maxlength="120" required placeholder="Main creator account"></label><label>Account type<select name="account_type"><option value="professional">Professional</option><option value="creator">Creator</option><option value="business">Business</option></select></label><label>Handle <span class="field-hint">optional</span><input name="handle" maxlength="120" placeholder="@persona"></label><label>External account ID <span class="field-hint">optional placeholder</span><input name="external_account_id" maxlength="160" placeholder="configured later"></label></div><p class="helper">Do not enter passwords or access tokens. New records stay unverified and cannot publish.</p><p id="publishing-account-form-error" class="form-error" role="alert" hidden></p><div class="form-actions"><button class="button primary" type="submit" ${state.creatingPublishingAccount ? 'disabled' : ''}>${state.creatingPublishingAccount ? 'Saving…' : 'Save local account binding'}</button></div></form>${accounts.length ? `<div class="entity-list">${accounts.map((account) => `<article class="entity-card"><div><h4>${escapeHtml(account.account_label)}</h4><p class="helper">${escapeHtml(account.platform)} · ${escapeHtml(account.account_type)}${account.handle ? ` · ${escapeHtml(account.handle)}` : ''}</p></div>${badge(account.status)}</article>`).join('')}</div>` : emptyState('No persona-owned publishing account is configured yet.')}</section>` : `<div class="callout readiness-callout"><p><strong>Select a Master Persona first.</strong></p><p class="helper">Account bindings must belong to one canonical persona.</p></div>`}</section>`;
+}
+
+function publishingProviderCatalog() {
+  return state.publishingPolicies?.providers || [];
+}
+
+function publishingMetaProvider() {
+  return publishingProviderCatalog().find((provider) => provider.id === 'meta_instagram') || {};
+}
+
+function renderPublishingChecks(checks) {
+  if (!Array.isArray(checks) || !checks.length) return '<p class="helper">No readiness checks have been returned yet.</p>';
+  return `<div class="artifact-quality-checks" aria-label="Instagram publishing readiness checks">${checks.map((check) => `<div class="artifact-quality-check"><span>${escapeHtml(check.id || 'check')}</span>${badge(check.status || 'unknown')}<small>${escapeHtml(check.detail || '')}</small></div>`).join('')}</div>`;
+}
+
+function renderPublishing() {
+  const persona = activePersona();
+  const accounts = state.publishingAccounts || [];
+  const assets = state.publishingAssets || [];
+  const artifacts = (state.publishingArtifacts || []).filter((artifact) => artifact.artifact_type === 'caption');
+  const provider = publishingMetaProvider();
+  const selectedAsset = assets.find((asset) => asset.id === state.selectedPublishingAssetId);
+  const selectedAccount = accounts.find((account) => account.id === state.selectedPublishingAccountId);
+  const selectedArtifact = artifacts.find((artifact) => artifact.id === state.selectedPublishingArtifactId);
+  const format = selectedAsset?.kind === 'video' ? 'reel' : 'feed_image';
+  const platformReadiness = state.publishingReadiness?.platform_readiness || state.publishingReadiness;
+  const resultAttempt = state.publishingResult?.attempt;
+  const resultResponse = resultAttempt?.response || {};
+  const resultMedia = resultResponse.media || {};
+  const resultChecks = resultResponse.checks || state.publishingResult?.checks || [];
+  const readinessPanel = state.publishingReadiness ? `<div class="callout ${platformReadiness?.ready ? '' : 'stale-callout'}" aria-live="polite"><p><strong>Instagram readiness:</strong> ${badge(platformReadiness?.status || 'blocked')}</p>${renderPublishingChecks(platformReadiness?.checks || [])}</div>` : '';
+  const resultPanel = state.publishingResult ? `<div class="callout ${state.publishingResult.error ? 'stale-callout' : ''}" aria-live="polite"><p><strong>${state.publishingResult.error ? 'Publishing action failed' : (resultResponse.execution_status === 'published' ? 'Published' : 'Dry-run recorded')}</strong></p><p class="helper">${escapeHtml(state.publishingResult.error || resultResponse.status || 'No status returned.')}</p>${resultAttempt ? `<div class="entity-meta">${badge(resultAttempt.status)}${badge(resultAttempt.dry_run ? 'dry-run' : 'external attempt')}${resultMedia.media_id ? badge(`media ${resultMedia.media_id}`) : ''}</div>` : ''}${resultChecks.length ? renderPublishingChecks(resultChecks) : ''}</div>` : '';
+  const accountOptions = accounts.map((account) => `<option value="${escapeHtml(account.id)}" ${account.id === state.selectedPublishingAccountId ? 'selected' : ''}>${escapeHtml(account.account_label)} · ${escapeHtml(account.status)}</option>`).join('');
+  const assetOptions = assets.map((asset) => `<option value="${escapeHtml(asset.id)}" ${asset.id === state.selectedPublishingAssetId ? 'selected' : ''}>${escapeHtml(asset.filename || asset.id)} · ${escapeHtml(asset.kind)} · ${escapeHtml(asset.content_class || 'identity')}</option>`).join('');
+  const artifactOptions = artifacts.map((artifact) => `<option value="${escapeHtml(artifact.id)}" ${artifact.id === state.selectedPublishingArtifactId ? 'selected' : ''}>${escapeHtml((artifact.content || '').slice(0, 80))} · approved</option>`).join('');
+  return `<section class="panel" aria-labelledby="publishing-heading"><div class="section-heading"><div><p class="eyebrow">Phase 8 · operator workflow</p><h2 id="publishing-heading">Publishing readiness</h2></div>${badge(provider.supports_publish ? 'live gate configured' : 'dry-run boundary')}</div><div class="callout"><p><strong>Review locally, then choose the delivery action.</strong></p><p class="helper">Dry-run records readiness evidence without external calls. Live publishing appears only when the Meta provider is explicitly configured and all server-side account, asset, caption, policy, and public-media checks pass. Adult/glamour content remains an Identity Core style anchor, but Instagram eligibility is evaluated separately.</p></div>${persona ? `<section class="subpanel" aria-labelledby="publishing-action-heading"><div class="section-heading"><div><p class="eyebrow">Approved output handoff</p><h3 id="publishing-action-heading">Prepare a publish attempt</h3></div>${badge(`${assets.length} approved candidate${assets.length === 1 ? '' : 's'}`)}</div><form id="publishing-workflow-form" class="content-artifact-form"><div class="form-grid"><label>Instagram account<select name="account_id" required ${accounts.length ? '' : 'disabled'}><option value="">${accounts.length ? 'Select an account' : 'No account binding available'}</option>${accountOptions}</select></label><label>Asset<select name="asset_id" required ${assets.length ? '' : 'disabled'}><option value="">${assets.length ? 'Select approved media' : 'No approved media available'}</option>${assetOptions}</select></label><label>Approved caption<select name="content_artifact_id" required ${artifacts.length ? '' : 'disabled'}><option value="">${artifacts.length ? 'Select approved caption' : 'No approved caption available'}</option>${artifactOptions}</select></label><label>Format<select name="format" required><option value="feed_image" ${format === 'feed_image' ? 'selected' : ''}>Feed image</option><option value="reel" ${format === 'reel' ? 'selected' : ''}>Reel</option></select></label></div><p class="helper">${escapeHtml(selectedAccount?.account_label || 'No account selected')} · ${escapeHtml(selectedAsset?.content_class || 'No asset selected')} · ${selectedArtifact ? 'approved caption selected' : 'no approved caption selected'}. Tokens are never entered or displayed here.</p><label class="checkbox-row"><input type="checkbox" name="confirm_external"><span>I understand that the live action can contact Instagram and create a public post.</span></label><p id="publishing-workflow-form-error" class="form-error" role="alert" hidden></p><div class="form-actions"><button class="button secondary" type="button" data-publishing-readiness ${state.publishingBusy ? 'disabled' : ''}>${state.publishingBusy ? 'Checking…' : 'Check readiness'}</button><button class="button secondary" type="button" data-publishing-dry-run ${state.publishingBusy ? 'disabled' : ''}>${state.publishingBusy ? 'Working…' : 'Record dry-run'}</button><button class="button secondary" type="submit" name="publish_action" value="live" ${state.publishingBusy || !provider.supports_publish ? 'disabled' : ''}>${state.publishingBusy ? 'Publishing…' : 'Publish to Instagram'}</button></div></form>${selectedAsset ? `<div class="entity-actions"><button class="button secondary" type="button" data-publishing-prepare-media="${escapeHtml(selectedAsset.id)}" ${state.publishingBusy ? 'disabled' : ''}>Prepare public media URL</button></div>` : ''}${readinessPanel}${resultPanel}</section>` : `<div class="callout readiness-callout"><p><strong>Select a Master Persona first.</strong></p><p class="helper">Account bindings, assets, and captions must belong to one canonical persona.</p></div>`}<section class="subpanel" aria-labelledby="account-binding-heading"><div class="section-heading"><div><p class="eyebrow">Persona-owned mapping</p><h3 id="account-binding-heading">Publishing accounts</h3></div>${badge(`${accounts.length} account${accounts.length === 1 ? '' : 's'}`)}</div>${persona ? `<form id="publishing-account-form" class="content-artifact-form"><div class="form-grid"><label>Platform<select name="platform"><option value="instagram">Instagram</option></select></label><label>Account label<input name="account_label" minlength="2" maxlength="120" required placeholder="Main creator account"></label><label>Account type<select name="account_type"><option value="professional">Professional</option><option value="creator">Creator</option><option value="business">Business</option></select></label><label>Handle <span class="field-hint">optional</span><input name="handle" maxlength="120" placeholder="@persona"></label><label>External account ID <span class="field-hint">optional placeholder</span><input name="external_account_id" maxlength="160" placeholder="configured later"></label></div><p class="helper">Do not enter passwords or access tokens. New records stay unverified until provider verification is intentionally started.</p><p id="publishing-account-form-error" class="form-error" role="alert" hidden></p><div class="form-actions"><button class="button primary" type="submit" ${state.creatingPublishingAccount ? 'disabled' : ''}>${state.creatingPublishingAccount ? 'Saving…' : 'Save local account binding'}</button></div></form>` : ''}${accounts.length ? `<div class="entity-list">${accounts.map((account) => `<article class="entity-card"><div><h4>${escapeHtml(account.account_label)}</h4><p class="helper">${escapeHtml(account.platform)} · ${escapeHtml(account.account_type)}${account.handle ? ` · ${escapeHtml(account.handle)}` : ''}${account.external_account_id ? ` · ${escapeHtml(account.external_account_id)}` : ''}</p></div><div class="entity-actions">${badge(account.status)}${account.status === 'authorized' || account.status === 'verified' ? `<button class="button secondary" type="button" data-publishing-verify="${escapeHtml(account.id)}" ${state.verifyingPublishingAccountId === account.id ? 'disabled' : ''}>${state.verifyingPublishingAccountId === account.id ? 'Verifying…' : 'Verify account'}</button>` : ''}</div></article>`).join('')}</div>` : emptyState('No persona-owned publishing account is configured yet.')}</section></section>`;
 }
 
 function renderView() {
@@ -706,9 +751,18 @@ async function loadViewData() {
       state.assetReferenceLinks = Array.isArray(results[1]) ? results[1] : results[1]?.packs || [];
     }
     if (state.view === 'personas') state.versions = results[0] || [];
-    if (state.view === 'publishing') {
+    if (state.view === 'publishing' && state.activePersonaId) {
       state.publishingPolicies = results[0] || null;
       state.publishingAccounts = Array.isArray(results[1]) ? results[1] : [];
+      const [publishingAssets, publishingArtifacts] = await Promise.all([
+        get('/api/assets', { signal }),
+        get(`/api/personas/${encodeURIComponent(state.activePersonaId)}/content-artifacts`, { signal }),
+      ]);
+      state.publishingAssets = (Array.isArray(publishingAssets) ? publishingAssets : []).filter((asset) => asset.persona_id === state.activePersonaId && asset.review === 'approved' && ['image', 'video'].includes(asset.kind));
+      state.publishingArtifacts = (Array.isArray(publishingArtifacts) ? publishingArtifacts : []).filter((artifact) => artifact.persona_id === state.activePersonaId && artifact.status === 'approved');
+      if (!state.publishingAssets.some((asset) => asset.id === state.selectedPublishingAssetId)) state.selectedPublishingAssetId = state.publishingAssets[0]?.id || '';
+      if (!state.publishingAccounts.some((account) => account.id === state.selectedPublishingAccountId)) state.selectedPublishingAccountId = state.publishingAccounts[0]?.id || '';
+      if (!state.publishingArtifacts.some((artifact) => artifact.id === state.selectedPublishingArtifactId && artifact.artifact_type === 'caption')) state.selectedPublishingArtifactId = state.publishingArtifacts.find((artifact) => artifact.artifact_type === 'caption')?.id || '';
     }
     renderView();
     $('#workspace-view').setAttribute('aria-busy', 'false');
@@ -999,6 +1053,133 @@ async function checkAssetPlatformReadiness(assetId) {
     const platform = report.platform_readiness || {};
     setStatus(platform.ready ? 'Asset is ready for the configured Instagram gate.' : 'Instagram readiness is blocked pending Phase 8 account and delivery requirements.', platform.ready ? 'success' : 'error');
   } catch (error) {
+    setStatus(error.message, 'error');
+  }
+}
+
+function syncPublishingSelection(form) {
+  state.selectedPublishingAccountId = form.elements.account_id?.value || '';
+  state.selectedPublishingAssetId = form.elements.asset_id?.value || '';
+  state.selectedPublishingArtifactId = form.elements.content_artifact_id?.value || '';
+}
+
+function publishingFormValues() {
+  const form = $('#publishing-workflow-form');
+  if (!form) return null;
+  syncPublishingSelection(form);
+  return {
+    form,
+    accountId: form.elements.account_id.value,
+    assetId: form.elements.asset_id.value,
+    contentArtifactId: form.elements.content_artifact_id.value,
+    format: form.elements.format.value,
+  };
+}
+
+async function checkPublishingWorkflowReadiness() {
+  const values = publishingFormValues();
+  if (!values?.accountId || !values.assetId || !values.format) {
+    setStatus('Select an account, approved asset, and format before checking readiness.', 'error');
+    return;
+  }
+  state.publishingBusy = true;
+  renderView();
+  try {
+    state.publishingReadiness = await get(`/api/assets/${encodeURIComponent(values.assetId)}/platform-readiness?platform=instagram&format=${encodeURIComponent(values.format)}&account_id=${encodeURIComponent(values.accountId)}`);
+    state.publishingBusy = false;
+    renderView();
+    const platform = state.publishingReadiness.platform_readiness || {};
+    setStatus(platform.ready ? 'Instagram readiness passed.' : 'Instagram readiness is blocked; resolve the listed checks.', platform.ready ? 'success' : 'error');
+  } catch (error) {
+    state.publishingBusy = false;
+    renderView();
+    setStatus(error.message, 'error');
+  }
+}
+
+async function recordPublishingDryRun() {
+  const values = publishingFormValues();
+  if (!values?.accountId || !values.assetId || !values.format || !values.contentArtifactId) {
+    setStatus('Select an account, approved asset, format, and approved caption before recording a dry-run.', 'error');
+    return;
+  }
+  state.publishingBusy = true;
+  renderView();
+  try {
+    state.publishingResult = await post(`/api/assets/${encodeURIComponent(values.assetId)}/publish-dry-run`, {
+      provider: 'local_dry_run', account_id: values.accountId, format: values.format,
+      content_artifact_id: values.contentArtifactId,
+      idempotency_key: `ui-dry-run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    });
+    state.publishingBusy = false;
+    renderView();
+    setStatus('Local publishing dry-run recorded; no external call was made.', 'success');
+  } catch (error) {
+    state.publishingBusy = false;
+    state.publishingResult = { error: error.message, checks: error.payload?.detail?.checks || [] };
+    renderView();
+    setStatus(error.message, 'error');
+  }
+}
+
+async function publishWorkflow(event) {
+  event.preventDefault();
+  const values = publishingFormValues();
+  if (!values || !values.form.reportValidity()) return;
+  const provider = publishingMetaProvider();
+  if (!provider.supports_publish) {
+    setStatus('Live Instagram publishing is disabled by provider configuration.', 'error');
+    return;
+  }
+  if (!values.form.elements.confirm_external.checked) {
+    setStatus('Confirm the external publishing action before continuing.', 'error');
+    return;
+  }
+  state.publishingBusy = true;
+  renderView();
+  try {
+    state.publishingResult = await post(`/api/assets/${encodeURIComponent(values.assetId)}/publish`, {
+      provider: 'meta_instagram', account_id: values.accountId, format: values.format,
+      content_artifact_id: values.contentArtifactId,
+      idempotency_key: `ui-publish-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    });
+    state.publishingBusy = false;
+    renderView();
+    setStatus('Instagram publish completed and was recorded in the audit trail.', 'success');
+  } catch (error) {
+    state.publishingBusy = false;
+    state.publishingResult = { error: error.message, checks: error.payload?.detail?.checks || [] };
+    renderView();
+    setStatus(error.message, 'error');
+  }
+}
+
+async function preparePublishingMedia(assetId) {
+  state.publishingBusy = true;
+  renderView();
+  try {
+    await post(`/api/assets/${encodeURIComponent(assetId)}/public-media`, {});
+    state.publishingBusy = false;
+    setStatus('Public media URL prepared locally; reachability is still a deployment responsibility.', 'success');
+    await loadViewData();
+  } catch (error) {
+    state.publishingBusy = false;
+    renderView();
+    setStatus(error.message, 'error');
+  }
+}
+
+async function verifyPublishingAccount(accountId) {
+  state.verifyingPublishingAccountId = accountId;
+  renderView();
+  try {
+    await post(`/api/publishing-accounts/${encodeURIComponent(accountId)}/verify`, {});
+    state.verifyingPublishingAccountId = '';
+    setStatus('Publishing account verification completed.', 'success');
+    await loadViewData();
+  } catch (error) {
+    state.verifyingPublishingAccountId = '';
+    renderView();
     setStatus(error.message, 'error');
   }
 }
@@ -1499,6 +1680,26 @@ $('#workspace-view').addEventListener('click', (event) => {
     checkAssetPlatformReadiness(platformReadinessButton.dataset.assetPlatformReadiness);
     return;
   }
+  const workflowReadinessButton = event.target.closest('[data-publishing-readiness]');
+  if (workflowReadinessButton) {
+    checkPublishingWorkflowReadiness();
+    return;
+  }
+  const dryRunButton = event.target.closest('[data-publishing-dry-run]');
+  if (dryRunButton) {
+    recordPublishingDryRun();
+    return;
+  }
+  const prepareMediaButton = event.target.closest('[data-publishing-prepare-media]');
+  if (prepareMediaButton) {
+    preparePublishingMedia(prepareMediaButton.dataset.publishingPrepareMedia);
+    return;
+  }
+  const verifyAccountButton = event.target.closest('[data-publishing-verify]');
+  if (verifyAccountButton) {
+    verifyPublishingAccount(verifyAccountButton.dataset.publishingVerify);
+    return;
+  }
   const approveBriefButton = event.target.closest('[data-brief-approve]');
   if (approveBriefButton) {
     approveContentBrief(approveBriefButton.dataset.briefApprove);
@@ -1543,6 +1744,10 @@ $('#workspace-view').addEventListener('submit', (event) => {
   }
   if (event.target.id === 'publishing-account-form') {
     createPublishingAccount(event);
+    return;
+  }
+  if (event.target.id === 'publishing-workflow-form') {
+    publishWorkflow(event);
     return;
   }
   if (event.target.matches('[data-identity-benchmark-result]')) {

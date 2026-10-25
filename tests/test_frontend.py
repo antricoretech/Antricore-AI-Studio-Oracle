@@ -63,7 +63,13 @@ def test_frontend_is_module_split_and_static_modules_are_served():
         assert '/platform-readiness?platform=instagram' in workspace_js.text
         assert 'publishing-account-form' in workspace_js.text
         assert '/publishing-accounts' in workspace_js.text
-        assert 'publish-dry-run' not in workspace_js.text
+        assert 'publishing-workflow-form' in workspace_js.text
+        assert 'publish-dry-run' in workspace_js.text
+        assert 'Record dry-run' in workspace_js.text
+        assert 'Publish to Instagram' in workspace_js.text
+        assert 'confirm_external' in workspace_js.text
+        assert 'Prepare public media URL' in workspace_js.text
+        assert 'Verify account' in workspace_js.text
         assert 'local dry-run provider' in workspace_js.text.lower()
         for module in ('core.js', 'api.js', 'navigation.js', 'photostudio.js'):
             response = client.get('/static/modules/' + module)

@@ -964,6 +964,13 @@ that final live gate, revalidate current Meta endpoint, media-format,
 permission, rate-limit, and account eligibility requirements against the
 [official Instagram content-publishing documentation](https://developers.facebook.com/docs/instagram-platform/content-publishing).
 
+The canonical workspace now exposes an operator workflow for this boundary:
+select a persona-owned account, approved asset, and approved caption; check
+Instagram readiness; prepare the public-media URL; record a local dry-run;
+and, only when the provider advertises the explicit live capability, confirm
+and invoke the live publish endpoint. Account verification is an explicit
+operator action, and the interface never accepts or displays access tokens.
+
 Publishing requires:
 
 ~~~text
