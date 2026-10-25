@@ -48,7 +48,7 @@ from .media import read_limited, validate_image_bytes, validate_media_signature
 from .model_registry import get as get_model, rows as model_rows, workflow_model
 from .policies import AI_DISCLOSURE, normalize_content_class, normalize_destination_policy
 from .publishing_policies import catalog as publishing_policy_catalog, evaluate as evaluate_publishing_policy, infer_format
-from .publishing_providers import ProviderDisabled, catalog as publishing_provider_catalog, get as get_publishing_provider
+from .publishing_providers import PublishError, ProviderDisabled, catalog as publishing_provider_catalog, get as get_publishing_provider
 from .secrets import SecretStoreUnavailable, catalog as secret_storage_catalog, get_store
 from .preflight import resource_preflight, workflow_preflight
 from .provenance import manifest, media_metadata, quality_report, sha256_bytes
@@ -2611,6 +2611,91 @@ def publish_dry_run(aid: str, payload: PublishDryRunIn):
         response=response, error=None if response["ready"] else "Dry run is blocked by one or more publishing checks", created_at=now(),
     )
     return {"replayed": False, "attempt": attempt, "quality_status": quality.get("status")}
+
+
+@app.post("/api/assets/{aid}/publish")
+def publish_asset(aid: str, payload: PublishDryRunIn):
+    asset, _job, _person, quality = _asset_bundle(aid)
+    account = PublishingRepository.account(payload.account_id, asset.get("persona_id"))
+    if not account:
+        raise HTTPException(404, "Publishing account is not bound to this persona")
+    existing = PublishingRepository.attempt_by_key(payload.idempotency_key)
+    if existing:
+        return {"replayed": True, "attempt": existing}
+    if account.get("platform") != "instagram" or account.get("status") != "verified":
+        raise HTTPException(409, "A verified Instagram account is required before publishing")
+    format_name = payload.format or infer_format(account["platform"], asset.get("kind") or "")
+    if not format_name:
+        raise HTTPException(400, "A supported publishing format is required for this asset kind")
+    base = asset_publishing_readiness(aid)
+    account_metadata = account.get("metadata") or {}
+    public_media = _asset_public_media(asset)
+    try:
+        policy = evaluate_publishing_policy(
+            account["platform"], format_name, asset_kind=asset.get("kind") or "",
+            base_ready=base["ready"], destination_policy=asset.get("destination_policy") or "review_required",
+            public_media_url=bool(public_media.get("status") == "ready" and public_media.get("url")),
+            account_bound=True,
+            permissions_configured=bool(account_metadata.get("scope")),
+            professional_account=account.get("account_type") in {"professional", "business", "creator"},
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    caption_check = {"id": "approved_caption", "status": "blocked", "detail": "An approved caption ContentArtifact is required before publishing"}
+    caption = ""
+    if payload.content_artifact_id:
+        artifact = db.row("SELECT id, persona_id, artifact_type, status, quality_status, content FROM content_artifacts WHERE id=?", (payload.content_artifact_id,))
+        if artifact and artifact["persona_id"] == asset.get("persona_id") and artifact["artifact_type"] == "caption" and artifact["status"] == "approved" and artifact["quality_status"] == "passed":
+            caption = artifact.get("content") or ""
+            caption_check = {"id": "approved_caption", "status": "ready", "detail": "Approved caption ContentArtifact is bound to the same persona"}
+    checks = list(policy["checks"]) + [caption_check]
+    if any(check.get("status") != "ready" for check in checks):
+        raise HTTPException(409, {"message": "Publishing readiness is blocked", "checks": checks})
+    try:
+        provider = get_publishing_provider(payload.provider)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if not bool(getattr(provider, "publish_enabled", lambda: False)()):
+        raise HTTPException(409, "Instagram publishing is disabled by provider configuration")
+    token_ref = PublishingRepository.account_token_ref(account["id"])
+    if not token_ref:
+        raise HTTPException(409, "Publishing account has no keychain token bundle")
+    try:
+        bundle = json.loads(get_store().get(token_ref) or "")
+        if not isinstance(bundle, dict) or not bundle.get("access_token"):
+            raise ValueError("Token bundle has no access token")
+        published = provider.publish(
+            auth_mode=account_metadata.get("auth_mode", "instagram_login"),
+            external_account_id=account.get("external_account_id") or "",
+            access_token=bundle["access_token"], media_url=public_media["url"],
+            format_name=format_name, caption=caption,
+        )
+        response = {
+            "provider": payload.provider.strip().lower(), "execution_status": "published",
+            "external_calls": True, "status": "published", "ready": True, "media": published,
+        }
+        attempt = PublishingRepository.create_attempt(
+            attempt_id=uid(), persona_id=asset["persona_id"], persona_version_id=asset.get("persona_version_id"),
+            asset_id=aid, content_artifact_id=payload.content_artifact_id, account_id=account["id"],
+            platform=account["platform"], format_name=format_name, idempotency_key=payload.idempotency_key,
+            status="published", request={"asset_id": aid, "account_id": account["id"], "format": format_name, "content_artifact_id": payload.content_artifact_id},
+            response=response, error=None, created_at=now(), dry_run=False,
+        )
+        return {"replayed": False, "attempt": attempt, "quality_status": quality.get("status")}
+    except (SecretStoreUnavailable, ValueError, RuntimeError, json.JSONDecodeError, PublishError) as exc:
+        retryable = bool(getattr(exc, "retryable", False))
+        response = {
+            "provider": payload.provider.strip().lower(), "execution_status": "failed",
+            "external_calls": True, "status": "failed", "ready": False, "retryable": retryable,
+        }
+        PublishingRepository.create_attempt(
+            attempt_id=uid(), persona_id=asset["persona_id"], persona_version_id=asset.get("persona_version_id"),
+            asset_id=aid, content_artifact_id=payload.content_artifact_id, account_id=account["id"],
+            platform=account["platform"], format_name=format_name, idempotency_key=payload.idempotency_key,
+            status="failed", request={"asset_id": aid, "account_id": account["id"], "format": format_name, "content_artifact_id": payload.content_artifact_id},
+            response=response, error="publish_failed", created_at=now(), dry_run=False,
+        )
+        raise HTTPException(502, "Instagram publishing failed") from exc
 
 
 @app.post("/api/assets/{aid}/assessment")

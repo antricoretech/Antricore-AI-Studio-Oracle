@@ -1371,11 +1371,12 @@ class PublishingRepository:
     def create_attempt(*, attempt_id: str, persona_id: str, persona_version_id: str | None,
                        asset_id: str, content_artifact_id: str | None, account_id: str,
                        platform: str, format_name: str, idempotency_key: str, status: str,
-                       request: dict, response: dict, error: str | None, created_at: str):
+                       request: dict, response: dict, error: str | None, created_at: str,
+                       dry_run: bool = True):
         db.write(
             "INSERT INTO publish_attempts (id,persona_id,persona_version_id,asset_id,content_artifact_id,account_id,platform,format,idempotency_key,status,dry_run,request_json,response_json,error,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (attempt_id, persona_id, persona_version_id, asset_id, content_artifact_id, account_id,
-             platform, format_name, idempotency_key, status, 1, json.dumps(request, ensure_ascii=False),
+             (attempt_id, persona_id, persona_version_id, asset_id, content_artifact_id, account_id,
+              platform, format_name, idempotency_key, status, int(dry_run), json.dumps(request, ensure_ascii=False),
              json.dumps(response, ensure_ascii=False), error, created_at, created_at),
         )
         return PublishingRepository.attempt(attempt_id)

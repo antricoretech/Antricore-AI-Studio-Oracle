@@ -1,3 +1,6 @@
+import json
+import uuid
+
 import studio.database as db
 from studio import app as app_module
 from studio import publishing_providers as provider_module
@@ -370,3 +373,162 @@ def test_publish_dry_run_rejects_unknown_provider(client):
         'provider': 'real_instagram', 'account_id': account['id'], 'idempotency_key': 'phase8-provider-001',
     })
     assert response.status_code == 400
+
+
+def _create_publishable_asset(client, persona_id):
+    from io import BytesIO
+    from PIL import Image
+
+    assert client.post(f"/api/personas/{persona_id}/freeze").status_code == 200
+    buffer = BytesIO()
+    Image.new('RGB', (32, 32), 'ivory').save(buffer, format='PNG')
+    imported = client.post('/api/assets/import', data={
+        'persona_id': persona_id, 'kind': 'image', 'prompt': 'Live publish image',
+        'content_class': 'adult_glamour', 'destination_policy': 'eligible',
+        'disclosure': 'Fictional adult character. AI-generated synthetic media.', 'rights_confirmed': 'true',
+    }, files={'file': ('publish.png', buffer.getvalue(), 'image/png')})
+    assert imported.status_code == 201
+    aid = imported.json()['id']
+    assert client.post(f'/api/assets/{aid}/assessment', json={
+        'identity_score': 0.95, 'anatomy_score': 0.9, 'hands_score': 0.9,
+        'facial_drift_score': 0.95, 'evaluator': 'qa_operator',
+    }).status_code == 200
+    assert client.patch(f'/api/assets/{aid}/review', json={'review': 'approved', 'reason': 'Ready for delivery'}).status_code == 200
+    assert client.post(f'/api/assets/{aid}/public-media').status_code == 200
+    return aid
+
+
+def _create_approved_caption(persona_id):
+    version = db.row('SELECT id FROM persona_versions WHERE persona_id=? ORDER BY version_no DESC LIMIT 1', (persona_id,))
+    version_id = version['id']
+    profile_id = uuid.uuid4().hex
+    brief_id = uuid.uuid4().hex
+    artifact_id = uuid.uuid4().hex
+    timestamp = '2026-10-25T00:00:00+00:00'
+    disclosure = 'Fictional adult character. AI-generated synthetic media.'
+    db.write(
+        'INSERT INTO creator_profiles (id,persona_id,persona_version_id,status,personality_json,audience_json,content_pillars_json,brand_json,voice_json,disclosure,metadata_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+        (profile_id, persona_id, version_id, 'approved', '{}', '{}', json.dumps([{
+            'key': 'adult_glamour', 'name': 'Adult glamour', 'content_classes': ['adult_glamour'],
+            'identity_core': True, 'identity_authority': 'identity_and_style',
+        }]), '{}', '{}', disclosure, '{}', timestamp, timestamp),
+    )
+    db.write(
+        'INSERT INTO content_briefs (id,persona_id,persona_version_id,creator_profile_id,title,status,format,content_class,pillar_key,audience_goal,emotional_objective,story_direction,visual_direction,motion_direction,caption_direction,script_direction,disclosure,metadata_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+        (brief_id, persona_id, version_id, profile_id, 'Publish caption brief', 'approved', 'feed_image', 'adult_glamour', 'adult_glamour', '', '', '', 'Approved visual direction', '', '', '', disclosure, '{}', timestamp, timestamp),
+    )
+    db.write(
+        'INSERT INTO content_artifacts (id,persona_id,persona_version_id,content_brief_id,artifact_type,status,revision,content,disclosure,source,quality_status,quality_json,metadata_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+        (artifact_id, persona_id, version_id, brief_id, 'caption', 'approved', 1, 'A polished caption for the verified creator.', disclosure, 'operator', 'passed', json.dumps({'status': 'passed'}), '{}', timestamp, timestamp),
+    )
+    return artifact_id
+
+
+def test_live_publish_boundary_uses_mocked_meta_transport_and_is_idempotent(client, monkeypatch):
+    monkeypatch.setenv('STUDIO_ENABLE_INSTAGRAM_PROVIDER', '1')
+    monkeypatch.setenv('STUDIO_ENABLE_INSTAGRAM_TOKEN_EXCHANGE', '1')
+    monkeypatch.setenv('STUDIO_ENABLE_INSTAGRAM_ACCOUNT_VERIFICATION', '1')
+    monkeypatch.setenv('STUDIO_ENABLE_INSTAGRAM_PUBLISH', '1')
+    monkeypatch.setenv('STUDIO_ENABLE_PUBLIC_MEDIA_DELIVERY', '1')
+    monkeypatch.setenv('STUDIO_PUBLIC_MEDIA_BASE_URL', 'https://media.example.test')
+    monkeypatch.setenv('STUDIO_INSTAGRAM_CLIENT_ID', 'test-client-id')
+    monkeypatch.setenv('STUDIO_INSTAGRAM_CLIENT_SECRET_REF', 'keyring/meta/client-secret')
+    monkeypatch.setenv('STUDIO_INSTAGRAM_REDIRECT_URI', 'http://127.0.0.1:8123/oauth/callback')
+    monkeypatch.setenv('STUDIO_INSTAGRAM_POLL_DELAY_SECONDS', '0')
+    store = InMemorySecretStore()
+    store.put('keyring/meta/client-secret', 'client-secret')
+    monkeypatch.setattr(app_module, 'get_store', lambda: store)
+    monkeypatch.setattr(provider_module, 'get_store', lambda: store)
+    provider = provider_module.get('meta_instagram')
+    monkeypatch.setattr(provider, '_post_form', lambda _url, _form: {
+        'access_token': 'access-token-value', 'refresh_token': 'refresh-token-value',
+        'expires_in': 3600, 'token_type': 'bearer',
+        'scope': 'instagram_business_basic,instagram_business_content_publish',
+    })
+    monkeypatch.setattr(provider, '_get_json', lambda _url, _query: {
+        'id': 'instagram-external-123', 'username': 'verified_creator', 'account_type': 'creator',
+    })
+    persona = _persona(client)
+    account = client.post(f"/api/personas/{persona['id']}/publishing-accounts", json={
+        'platform': 'instagram', 'account_label': 'Live boundary account', 'account_type': 'creator',
+    }).json()
+    plan = client.post(f"/api/publishing-accounts/{account['id']}/authorization-plan", json={
+        'provider': 'meta_instagram', 'redirect_uri': 'http://127.0.0.1:8123/oauth/callback',
+    }).json()
+    assert client.get('/oauth/callback', params={'state': plan['state'], 'code': 'authorization-code'}).status_code == 200
+    assert client.post(f"/api/publishing-accounts/{account['id']}/verify").status_code == 200
+    aid = _create_publishable_asset(client, persona['id'])
+    artifact_id = _create_approved_caption(persona['id'])
+    calls = []
+
+    def post_form(url, form):
+        calls.append((url, dict(form)))
+        if url.endswith('/media'):
+            return {'id': 'container-123'}
+        assert url.endswith('/media_publish')
+        return {'id': 'published-media-123'}
+
+    monkeypatch.setattr(provider, '_post_form', post_form)
+    monkeypatch.setattr(provider, '_get_json', lambda url, query: {'status_code': 'FINISHED'})
+    response = client.post(f'/api/assets/{aid}/publish', json={
+        'provider': 'meta_instagram', 'account_id': account['id'],
+        'content_artifact_id': artifact_id, 'idempotency_key': 'phase8-live-001',
+    })
+    assert response.status_code == 200
+    attempt = response.json()['attempt']
+    assert attempt['dry_run'] is False
+    assert attempt['status'] == 'published'
+    assert attempt['response']['media']['media_id'] == 'published-media-123'
+    assert attempt['response']['media']['poll_attempts'] == 1
+    assert len(calls) == 2
+    assert any('access-token-value' in json.dumps(form) for _url, form in calls)
+    assert 'access-token-value' not in response.text
+    replay = client.post(f'/api/assets/{aid}/publish', json={
+        'provider': 'meta_instagram', 'account_id': account['id'],
+        'content_artifact_id': artifact_id, 'idempotency_key': 'phase8-live-001',
+    })
+    assert replay.status_code == 200
+    assert replay.json()['replayed'] is True
+    assert len(calls) == 2
+    assert store.get(f"publishing/account/{account['id']}/tokens")
+
+
+def test_live_publish_timeout_is_a_retryable_audited_failure(client, monkeypatch):
+    monkeypatch.setenv('STUDIO_ENABLE_INSTAGRAM_PROVIDER', '1')
+    monkeypatch.setenv('STUDIO_ENABLE_INSTAGRAM_TOKEN_EXCHANGE', '1')
+    monkeypatch.setenv('STUDIO_ENABLE_INSTAGRAM_ACCOUNT_VERIFICATION', '1')
+    monkeypatch.setenv('STUDIO_ENABLE_INSTAGRAM_PUBLISH', '1')
+    monkeypatch.setenv('STUDIO_ENABLE_PUBLIC_MEDIA_DELIVERY', '1')
+    monkeypatch.setenv('STUDIO_PUBLIC_MEDIA_BASE_URL', 'https://media.example.test')
+    monkeypatch.setenv('STUDIO_INSTAGRAM_CLIENT_ID', 'test-client-id')
+    monkeypatch.setenv('STUDIO_INSTAGRAM_CLIENT_SECRET_REF', 'keyring/meta/client-secret')
+    monkeypatch.setenv('STUDIO_INSTAGRAM_REDIRECT_URI', 'http://127.0.0.1:8123/oauth/callback')
+    monkeypatch.setenv('STUDIO_INSTAGRAM_MAX_POLL_ATTEMPTS', '2')
+    monkeypatch.setenv('STUDIO_INSTAGRAM_POLL_DELAY_SECONDS', '0')
+    store = InMemorySecretStore()
+    store.put('keyring/meta/client-secret', 'client-secret')
+    monkeypatch.setattr(app_module, 'get_store', lambda: store)
+    monkeypatch.setattr(provider_module, 'get_store', lambda: store)
+    provider = provider_module.get('meta_instagram')
+    monkeypatch.setattr(provider, '_post_form', lambda _url, _form: {'access_token': 'access-token-value', 'expires_in': 3600, 'scope': 'instagram_business_basic,instagram_business_content_publish'} if 'oauth' in _url else {'id': 'container-timeout'})
+    monkeypatch.setattr(provider, '_get_json', lambda _url, _query: {'id': 'instagram-external-123', 'username': 'verified_creator', 'account_type': 'creator'} if 'graph.instagram.com' in _url else {'status_code': 'IN_PROGRESS'})
+    persona = _persona(client)
+    account = client.post(f"/api/personas/{persona['id']}/publishing-accounts", json={
+        'platform': 'instagram', 'account_label': 'Timeout account', 'account_type': 'creator',
+    }).json()
+    plan = client.post(f"/api/publishing-accounts/{account['id']}/authorization-plan", json={
+        'provider': 'meta_instagram', 'redirect_uri': 'http://127.0.0.1:8123/oauth/callback',
+    }).json()
+    assert client.get('/oauth/callback', params={'state': plan['state'], 'code': 'authorization-code'}).status_code == 200
+    assert client.post(f"/api/publishing-accounts/{account['id']}/verify").status_code == 200
+    aid = _create_publishable_asset(client, persona['id'])
+    artifact_id = _create_approved_caption(persona['id'])
+    response = client.post(f'/api/assets/{aid}/publish', json={
+        'provider': 'meta_instagram', 'account_id': account['id'],
+        'content_artifact_id': artifact_id, 'idempotency_key': 'phase8-live-timeout-001',
+    })
+    assert response.status_code == 502
+    attempt = db.row('SELECT * FROM publish_attempts WHERE idempotency_key=?', ('phase8-live-timeout-001',))
+    assert attempt['status'] == 'failed'
+    assert attempt['dry_run'] == 0
+    assert json.loads(attempt['response_json'])['retryable'] is True

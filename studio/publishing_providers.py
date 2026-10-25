@@ -11,7 +11,8 @@ import base64
 import hashlib
 import json
 import os
-from urllib.parse import urlencode
+import time
+from urllib.parse import quote, urlencode
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -20,6 +21,12 @@ from .secrets import SecretStoreUnavailable, catalog as secret_storage_catalog, 
 
 class ProviderDisabled(RuntimeError):
     pass
+
+
+class PublishError(RuntimeError):
+    def __init__(self, message: str, *, retryable: bool = False):
+        super().__init__(message)
+        self.retryable = retryable
 
 
 class LocalDryRunProvider:
@@ -71,6 +78,7 @@ class MetaInstagramProvider:
         enabled = os.getenv("STUDIO_ENABLE_INSTAGRAM_PROVIDER", "0").lower() in {"1", "true", "yes"}
         token_exchange_enabled = os.getenv("STUDIO_ENABLE_INSTAGRAM_TOKEN_EXCHANGE", "0").lower() in {"1", "true", "yes"}
         account_verification_enabled = os.getenv("STUDIO_ENABLE_INSTAGRAM_ACCOUNT_VERIFICATION", "0").lower() in {"1", "true", "yes"}
+        publish_enabled = os.getenv("STUDIO_ENABLE_INSTAGRAM_PUBLISH", "0").lower() in {"1", "true", "yes"}
         secret_ref = os.getenv("STUDIO_INSTAGRAM_CLIENT_SECRET_REF", "").strip()
         client_id = os.getenv("STUDIO_INSTAGRAM_CLIENT_ID", "").strip()
         redirect_uri = os.getenv("STUDIO_INSTAGRAM_REDIRECT_URI", "").strip()
@@ -81,6 +89,7 @@ class MetaInstagramProvider:
             "configured": configured,
             "token_exchange_enabled": token_exchange_enabled and configured,
             "account_verification_enabled": account_verification_enabled and configured and token_exchange_enabled,
+            "publish_enabled": publish_enabled and configured and token_exchange_enabled and account_verification_enabled,
             "client_id": client_id,
             "secret_ref": secret_ref,
             "client_secret_ref_present": bool(secret_ref),
@@ -94,13 +103,13 @@ class MetaInstagramProvider:
             "id": self.name,
             "label": "Meta Instagram provider",
             "execution_status": "configured" if config["configured"] else "disabled",
-            "implementation_status": "token_exchange_boundary" if config["token_exchange_enabled"] else "authorization_plan_only",
+            "implementation_status": "publish_boundary" if config["publish_enabled"] else "token_exchange_boundary" if config["token_exchange_enabled"] else "authorization_plan_only",
             "external_calls": False,
             "supports_oauth": config["configured"],
             "supports_token_exchange": config["token_exchange_enabled"],
             "supports_token_refresh": config["token_exchange_enabled"],
             "supports_account_verification": config["account_verification_enabled"],
-            "supports_publish": False,
+            "supports_publish": config["publish_enabled"],
             "configuration": {
                 "enabled": config["enabled"],
                 "configured": config["configured"],
@@ -110,6 +119,7 @@ class MetaInstagramProvider:
                 "secret_storage_ready": config["secret_storage_ready"],
                 "token_exchange_enabled": config["token_exchange_enabled"],
                 "account_verification_enabled": config["account_verification_enabled"],
+                "publish_enabled": config["publish_enabled"],
             },
             "auth_modes": {
                 mode: {"required_scopes": list(details["scopes"])}
@@ -122,6 +132,9 @@ class MetaInstagramProvider:
 
     def account_verification_enabled(self) -> bool:
         return bool(self._config()["account_verification_enabled"])
+
+    def publish_enabled(self) -> bool:
+        return bool(self._config()["publish_enabled"])
 
     def authorization_plan(self, *, auth_mode: str, redirect_uri: str, state: str, code_verifier: str,
                            requested_scopes: list[str]) -> dict:
@@ -291,6 +304,84 @@ class MetaInstagramProvider:
         account_type = str(payload.get("account_type") or payload.get("user_type") or "").strip().lower()
         handle = str(payload.get("username") or "").strip() or None
         return {"external_account_id": external_id[:160], "handle": handle[:120] if handle else None, "account_type": account_type[:40]}
+
+    def _graph_base(self) -> str:
+        version = os.getenv("STUDIO_META_API_VERSION", "v25.0")
+        return os.getenv("STUDIO_INSTAGRAM_GRAPH_BASE_URL", f"https://graph.facebook.com/{version}").rstrip("/")
+
+    def publish(self, *, auth_mode: str, external_account_id: str, access_token: str,
+                media_url: str, format_name: str, caption: str, post_fn=None, get_fn=None) -> dict:
+        config = self._config()
+        if not config["publish_enabled"]:
+            raise ProviderDisabled("Meta Instagram publishing is disabled by configuration")
+        if not external_account_id or not access_token or not media_url:
+            raise ValueError("Verified account, access token, and public media URL are required")
+        if format_name not in {"feed_image", "reel"}:
+            raise ValueError("Unsupported Instagram publishing format")
+        if not media_url.startswith(("https://", "http://")):
+            raise ValueError("Public media URL must be absolute")
+        if len(caption) > 2200:
+            raise ValueError("Instagram caption exceeds the 2200-character limit")
+        post = post_fn or self._post_form
+        get = get_fn or self._get_json
+        account_path = quote(external_account_id, safe="")
+        media_endpoint = f"{self._graph_base()}/{account_path}/media"
+        form = {"access_token": access_token, "caption": caption}
+        form.update({"image_url": media_url} if format_name == "feed_image" else {"media_type": "REELS", "video_url": media_url})
+        try:
+            container = post(media_endpoint, form)
+        except PublishError:
+            raise
+        except (RuntimeError, OSError, TimeoutError) as exc:
+            raise PublishError("Instagram media container request failed", retryable=True) from exc
+        container_id = container.get("id") if isinstance(container, dict) else None
+        if not isinstance(container_id, str) or not container_id:
+            raise PublishError("Instagram media container was not created", retryable=True)
+        try:
+            configured_attempts = int(os.getenv("STUDIO_INSTAGRAM_MAX_POLL_ATTEMPTS", "6"))
+        except ValueError:
+            configured_attempts = 6
+        try:
+            configured_delay = float(os.getenv("STUDIO_INSTAGRAM_POLL_DELAY_SECONDS", "2"))
+        except ValueError:
+            configured_delay = 2.0
+        poll_attempts = max(1, min(configured_attempts, 20))
+        poll_delay = max(0.0, min(configured_delay, 30.0))
+        container_status = ""
+        completed_polls = 0
+        for attempt in range(1, poll_attempts + 1):
+            try:
+                status_payload = get(
+                    f"{self._graph_base()}/{quote(container_id, safe='')}",
+                    {"access_token": access_token, "fields": "status_code,status"},
+                )
+            except PublishError:
+                raise
+            except (RuntimeError, OSError, TimeoutError) as exc:
+                raise PublishError("Instagram media container status request failed", retryable=True) from exc
+            completed_polls = attempt
+            container_status = str(status_payload.get("status_code") or status_payload.get("status") or "").upper()
+            if container_status in {"FINISHED", "READY", "PUBLISHED"}:
+                break
+            if container_status in {"ERROR", "EXPIRED", "FAILED"}:
+                raise PublishError("Instagram media container processing failed", retryable=False)
+            if attempt < poll_attempts:
+                time.sleep(poll_delay)
+        else:
+            raise PublishError("Instagram media container processing timed out", retryable=True)
+        try:
+            published = post(
+                f"{self._graph_base()}/{account_path}/media_publish",
+                {"access_token": access_token, "creation_id": container_id},
+            )
+        except PublishError:
+            raise
+        except (RuntimeError, OSError, TimeoutError) as exc:
+            raise PublishError("Instagram media publish request failed", retryable=True) from exc
+        media_id = published.get("id") if isinstance(published, dict) else None
+        if not isinstance(media_id, str) or not media_id:
+            raise PublishError("Instagram media publish did not return a media id", retryable=True)
+        return {"container_id": container_id, "container_status": container_status, "media_id": media_id, "poll_attempts": completed_polls}
 
     def dry_run(self, *, platform: str, format_name: str, checks: list[dict], account_id: str) -> dict:
         return {

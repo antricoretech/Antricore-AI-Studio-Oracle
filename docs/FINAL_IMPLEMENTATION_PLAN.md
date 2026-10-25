@@ -954,8 +954,15 @@ SQLite and marks the account `authorized` or `verified` only after the
 corresponding successful operation. A configured HTTPS public-media base URL
 can prepare a canonical asset delivery URL after local review gates pass; the
 app records that network reachability is not independently verified. The
-default path still ends at `callback_received`; live Meta calls remain opt-in
-and the publish adapter remains disabled.
+default path still ends at `callback_received`. A separately gated Meta
+publishing boundary now models image/reel container creation, bounded status
+polling, final publish, retry classification, idempotency, and audited
+non-dry-run attempts. Its transport is mocked in tests; live publishing is
+disabled unless `STUDIO_ENABLE_INSTAGRAM_PUBLISH=1` is explicitly enabled
+alongside provider, token-exchange, and account-verification gates. Before
+that final live gate, revalidate current Meta endpoint, media-format,
+permission, rate-limit, and account eligibility requirements against the
+[official Instagram content-publishing documentation](https://developers.facebook.com/docs/instagram-platform/content-publishing).
 
 Publishing requires:
 
