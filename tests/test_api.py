@@ -647,6 +647,34 @@ def test_legacy_photoshoot_render_uses_canonical_job_and_asset(client, monkeypat
     assert len([item for item in client.get('/api/assets').json() if item['id'] == result['asset_id']]) == 1
 
 
+def test_legacy_photoshoot_render_failure_marks_job_failed_without_static_asset(client, monkeypatch):
+    import studio.diffusion_engine as diffusion_engine
+
+    persona = client.post('/api/personas', json={
+        'name': 'Generation Failure', 'age': 30,
+        'appearance': 'dark hair and hazel eyes',
+        'description': 'fictional adult editorial creator'
+    }).json()
+
+    def failed_generate_render(**kwargs):
+        raise RuntimeError('approved checkpoint is unavailable')
+
+    monkeypatch.setattr(diffusion_engine, 'generate_render', failed_generate_render)
+    response = client.post('/api/v2/orchestrator/generate', json={
+        'persona_id': persona['id'],
+        'prompt': 'Editorial portrait in a studio',
+        'model': 'juggernaut-xl-v10',
+    }, headers={'Idempotency-Key': 'legacy-render-failure-1'})
+
+    assert response.status_code == 503
+    assert 'approved checkpoint is unavailable' in response.json()['detail']
+    jobs = [job for job in client.get('/api/jobs').json() if job['id']]
+    assert len(jobs) == 1
+    assert jobs[0]['status'] == 'failed'
+    assert 'approved checkpoint is unavailable' in jobs[0]['error']
+    assert not any(item.get('job_id') == jobs[0]['id'] for item in client.get('/api/assets').json())
+
+
 def test_legacy_vault_worker_registers_each_pack_under_parent_job(client, monkeypatch, tmp_path):
     import studio.api_v2 as api_v2
     import studio.diffusion_engine as diffusion_engine
@@ -1052,6 +1080,35 @@ def test_phase3_preflight_and_job_lineage(client, monkeypatch):
     assert jobs[0]['lineage']['persona_id'] == persona['id']
     assert jobs[0]['lineage']['workflow_id'] == 'phase3_image'
     assert jobs[0]['attempt'] == 1
+
+
+def test_generation_job_rejects_server_side_workflow_preflight_error(client, monkeypatch):
+    import json
+    import studio.app as backend
+    import studio.database as test_db
+
+    persona = client.post('/api/personas', json={
+        'name': 'Server Gate', 'age': 29,
+        'appearance': 'short dark hair and brown eyes',
+        'description': 'fictional adult editorial creator'
+    }).json()
+    workflow = test_db.WORKFLOWS / 'phase10_gate.json'
+    workflow.write_text(json.dumps({'1': {'class_type': 'SaveImage', 'inputs': {}}}))
+    monkeypatch.setattr(backend, 'resource_preflight', lambda **kwargs: [
+        {'id': 'resource_disk', 'status': 'ready', 'detail': 'Synthetic resource readiness'}
+    ])
+    monkeypatch.setattr(backend, 'workflow_preflight', lambda *args, **kwargs: [
+        {'id': 'model_capability', 'status': 'error', 'detail': 'Synthetic workflow preflight failure'}
+    ])
+
+    response = client.post('/api/jobs', json={
+        'persona_id': persona['id'], 'workflow_id': 'phase10_gate',
+        'prompt': 'A server-gated editorial portrait', 'rights_confirmed': True
+    })
+
+    assert response.status_code == 409
+    assert 'Synthetic workflow preflight failure' in response.json()['detail']
+    assert client.get('/api/jobs').json() == []
 
 
 def test_phase4_durable_dispatcher_picks_up_persisted_queue_row(client, monkeypatch):

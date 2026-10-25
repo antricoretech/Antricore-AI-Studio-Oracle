@@ -3768,7 +3768,7 @@ def get_gallery_assets(persona_id: Optional[str] = None):
 
                 "format": "single" if idx % 2 == 0 else "carousel",
 
-                "aspect_ratio": "4:5" if idx % 2 == 0 else "9:16",
+                "aspect_ratio": "2:3",
 
                 "clean_url": cat.get("url"),
 
@@ -3812,7 +3812,7 @@ def get_gallery_assets(persona_id: Optional[str] = None):
 
                 "format": "single",
 
-                "aspect_ratio": "4:5" if idx % 2 == 0 else "9:16",
+                "aspect_ratio": "2:3",
 
                 "clean_url": adult.get("url"),
 
@@ -3833,6 +3833,7 @@ def get_gallery_assets(persona_id: Optional[str] = None):
                 "prompt": f"8k raw photo, intimate boudoir photography of {pname}, {adult.get('title')}",
 
                 "negative_prompt": "deformed, bad anatomy, bad hands",
+                "provenance_status": "unverified_legacy_catalog",
 
                 "created_at": "2026-10-19 01:00"
 
@@ -3856,7 +3857,7 @@ def get_gallery_assets(persona_id: Optional[str] = None):
 
             "format": "single",
 
-            "aspect_ratio": "4:5",
+            "aspect_ratio": "2:3",
 
             "clean_url": "/generated/master_persona_mehar/mehar_intimate_01_embrace.png",
 
@@ -3894,7 +3895,7 @@ def get_gallery_assets(persona_id: Optional[str] = None):
 
             "format": "single",
 
-            "aspect_ratio": "4:5",
+            "aspect_ratio": "2:3",
 
             "clean_url": "/generated/master_persona_mehar/mehar_intimate_02_silk_bed.png",
 
@@ -3928,11 +3929,11 @@ def get_gallery_assets(persona_id: Optional[str] = None):
 
             "persona_name": "Mehar Sahu",
 
-            "category": "High Fashion",
+            "category": "Adult Boudoir",
 
             "format": "single",
 
-            "aspect_ratio": "4:5",
+            "aspect_ratio": "2:3",
 
             "clean_url": "/generated/master_persona_mehar/mehar_intimate_03_window_night.png",
 
@@ -3953,6 +3954,7 @@ def get_gallery_assets(persona_id: Optional[str] = None):
             "prompt": "8k raw photo, romantic standing embrace of 21yo Mehar Sahu in luxury penthouse overlooking sparkling Mumbai night skyline, partner embracing from behind, metallic gold evening dress, 50mm lens",
 
             "negative_prompt": "deformed, bad anatomy, blurry, low quality",
+            "provenance_status": "unverified_legacy_catalog",
 
             "created_at": "2026-10-19 01:38"
 
@@ -4648,77 +4650,8 @@ def generate_photoshoot_render(payload: PhotoshootRenderIn, idempotency_key: str
     except Exception as exc:
 
         print(f"[Photoshoot Render Error] Neural inference error: {exc}")
-
-        # Graceful fallback: return representative high-res visual for this photoshoot
-
-        selected_img = target_p.get("avatar") if target_p else "/generated/master_persona_maya/maya_06_baseline_fashion.png"
-
-        if target_p and target_p.get("category_baselines"):
-
-            p_lower = payload.prompt.lower()
-
-            cats = target_p["category_baselines"]
-
-            if "swim" in p_lower or "resort" in p_lower or "pool" in p_lower or "bikini" in p_lower:
-
-                selected_img = cats[-1]["url"]
-
-            elif "gym" in p_lower or "fitness" in p_lower or "athletic" in p_lower or "yoga" in p_lower:
-
-                selected_img = cats[1]["url"] if len(cats) > 1 else cats[0]["url"]
-
-            elif "casual" in p_lower or "cafe" in p_lower or "street" in p_lower:
-
-                selected_img = cats[2]["url"] if len(cats) > 2 else cats[0]["url"]
-
-            elif ("boudoir" in p_lower or "intimate" in p_lower or "nude" in p_lower or "lingerie" in p_lower) and target_p.get("adult_baselines"):
-
-                selected_img = target_p["adult_baselines"][0]["url"]
-
-            else:
-
-                selected_img = cats[0]["url"]
-
-
-
-        fallback_path = None
-        if selected_img.startswith("/generated/"):
-            generated_root = (ROOT / "generated").resolve()
-            candidate = (generated_root / selected_img.removeprefix("/generated/")).resolve()
-            if generated_root in candidate.parents and candidate.is_file():
-                fallback_path = candidate
-        if not fallback_path:
-            _v2_job_failed(job_id, exc)
-            raise HTTPException(503, f"Photoshoot render unavailable: {str(exc)[:250]}") from exc
-        asset = register_media_asset(
-            persona_id=target_pid,
-            persona_version_id=version["id"] if version else None,
-            job_id=job_id,
-            kind="image",
-            prompt=payload.prompt,
-            raw=fallback_path.read_bytes(),
-            disclosure=canonical_persona.get("disclosure"),
-            rights_confirmed=True,
-            original_filename=fallback_path.name,
-            lineage={"job_id": job_id, "execution_mode": "legacy_photoshoot_fallback", "fallback_reason": str(exc)[:250]},
-        )
-
-
-
-        result = {
-            "status": "completed",
-            "id": asset["id"],
-            "asset_id": asset["id"],
-            "job_id": job_id,
-            "image_url": f"/api/assets/{asset['id']}/file",
-            "aspect_ratio": payload.aspect_ratio,
-            "seed": int(time.time()) % 100000,
-            "elapsed_seconds": 2.1,
-            "model": payload.model,
-            "persona_id": target_pid,
-            "persona_name": p_name,
-            "fallback": True,
-            "notice": f"Rendered with persona anchor fallback: {str(exc)[:120]}"
-        }
-        _v2_job_completed(job_id, result)
-        return result
+        _v2_job_failed(job_id, exc)
+        raise HTTPException(
+            503,
+            f"Photoshoot render unavailable: {str(exc)[:250]}",
+        ) from exc

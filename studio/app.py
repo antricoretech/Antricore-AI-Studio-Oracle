@@ -1583,6 +1583,14 @@ async def create_job(payload: JobIn, idempotency_key: str | None = Header(defaul
     resource_errors = [item["detail"] for item in resource_checks if item.get("status") == "error"]
     if resource_errors:
         raise HTTPException(409, "Resource preflight failed: " + "; ".join(resource_errors)[:1200])
+    generation_checks = workflow_preflight(
+        payload.workflow_id,
+        width=payload.width,
+        height=payload.height,
+    )
+    generation_errors = [item["detail"] for item in generation_checks if item.get("status") == "error"]
+    if generation_errors:
+        raise HTTPException(409, "Generation preflight failed: " + "; ".join(generation_errors)[:1200])
     if payload.reference_id and not db.row("SELECT id FROM reference_images WHERE id=? AND persona_id=?", (payload.reference_id, payload.persona_id)):
         raise HTTPException(400, "Invalid reference for selected persona")
     if payload.source_asset_id:
