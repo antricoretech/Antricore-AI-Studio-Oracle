@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import Optional, Dict, Any, Tuple
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
-RENDERS_DIR = ROOT_DIR / "generated" / "renders"
+GENERATED_ROOT = Path(os.getenv("STUDIO_GENERATED_DIR") or (ROOT_DIR / "generated")).resolve()
+RENDERS_DIR = GENERATED_ROOT / "renders"
 RENDERS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Aspect ratio map for SDXL

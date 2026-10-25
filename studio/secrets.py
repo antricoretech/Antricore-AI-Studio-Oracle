@@ -58,7 +58,7 @@ class KeyringSecretStore:
         try:
             self._keyring.delete_password(self._service_name, _validate_reference(reference))
         except Exception as exc:
-            if exc.__class__.__name__ not in {"PasswordDeleteError", "CredentialNotFoundError"}:
+            if exc.__class__.__name__ not in {"PasswordDeleteError", "CredentialNotFoundError", "NoKeyringError"}:
                 raise
 
 

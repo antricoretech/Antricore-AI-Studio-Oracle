@@ -18,9 +18,21 @@ from .policies import AI_DISCLOSURE, DEFAULT_NEGATIVE_PROMPT
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / 'config' / 'approved_models.json'
-REGISTRY = json.loads(CONFIG.read_text(encoding='utf8'))
+ALL_MODELS = json.loads(CONFIG.read_text(encoding='utf8'))
+FREE_LICENSES = {
+    'Apache-2.0',
+    'Fair AI Public License 1.0-SD',
+    'CreativeML OpenRAIL++-M',
+    'Stability AI Community License',
+}
+# Keep restricted-license model metadata in the approved-model catalog, but do
+# not expose it through the freely available download/generation CLI.
+REGISTRY = {
+    key: item for key, item in ALL_MODELS.items()
+    if item.get('license') in FREE_LICENSES
+}
 MODEL_ROOT = ROOT / 'models'
-OUTPUT_ROOT = ROOT / 'generated'
+OUTPUT_ROOT = Path(os.getenv('STUDIO_GENERATED_DIR') or (ROOT / 'generated')).resolve()
 
 
 def identity_prompt_from_brief(brief) -> str:

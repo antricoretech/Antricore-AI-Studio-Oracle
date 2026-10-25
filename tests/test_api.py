@@ -1031,6 +1031,7 @@ def test_phase3_preflight_and_job_lineage(client, monkeypatch):
     import studio.preflight as resource_checks
 
     monkeypatch.setattr(resource_checks.shutil, 'disk_usage', lambda path: shutil._ntuple_diskusage(500 * 1024 ** 3, 450 * 1024 ** 3, 50 * 1024 ** 3))
+    monkeypatch.setattr(resource_checks, '_memory_snapshot', lambda: (16 * 1024 ** 3, 12 * 1024 ** 3))
 
     persona = client.post('/api/personas', json={
         'name': 'Phase Three', 'age': 29,

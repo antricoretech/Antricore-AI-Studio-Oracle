@@ -15,7 +15,7 @@ jobs:
           python-version: '3.12'
           cache: pip
       - name: Install test dependencies
-        run: python -m pip install -r requirements-dev.txt
+        run: python -m pip install -r requirements-dev.txt -r requirements-publishing.txt
       - name: Validate JSON configuration
         run: |
           python -m json.tool config/approved_models.json >/dev/null
@@ -24,4 +24,4 @@ jobs:
       - name: Compile Python
         run: python -m compileall -q studio tests scripts
       - name: Run tests
-        run: python -m pytest -q
+        run: python -m pytest -q tests
