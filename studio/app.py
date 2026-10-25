@@ -2117,6 +2117,46 @@ def publishing_security():
     }
 
 
+@app.get("/api/publishing/staging-readiness")
+def publishing_staging_readiness(account_id: str | None = None):
+    """Return a local-only preflight for the explicitly configured staging gate."""
+    providers = publishing_provider_catalog()
+    provider = next((item for item in providers if item.get("id") == "meta_instagram"), {})
+    configuration = provider.get("configuration") or {}
+    public_media_enabled = os.getenv("STUDIO_ENABLE_PUBLIC_MEDIA_DELIVERY", "0").lower() in {"1", "true", "yes"}
+    public_media_base = os.getenv("STUDIO_PUBLIC_MEDIA_BASE_URL", "").strip()
+    public_media_url_ready = public_media_enabled and urlparse(public_media_base).scheme == "https" and bool(urlparse(public_media_base).netloc)
+    checks = [
+        {"id": "provider_configured", "status": "ready" if configuration.get("configured") else "blocked", "detail": "Meta provider credentials and callback configuration are present" if configuration.get("configured") else "Meta provider configuration is incomplete"},
+        {"id": "token_exchange", "status": "ready" if configuration.get("token_exchange_enabled") else "blocked", "detail": "Keychain-backed token exchange is enabled" if configuration.get("token_exchange_enabled") else "Enable the token-exchange gate before staging"},
+        {"id": "account_verification", "status": "ready" if configuration.get("account_verification_enabled") else "blocked", "detail": "Provider account verification is enabled" if configuration.get("account_verification_enabled") else "Enable account verification before staging"},
+        {"id": "publish_environment", "status": "ready" if configuration.get("publish_environment") == "staging" else "blocked", "detail": "Publishing environment is explicitly set to staging" if configuration.get("publish_environment") == "staging" else "Set STUDIO_INSTAGRAM_PUBLISH_ENV=staging"},
+        {"id": "account_allowlist", "status": "ready" if configuration.get("allowed_account_count", 0) > 0 else "blocked", "detail": "At least one external account is allowlisted" if configuration.get("allowed_account_count", 0) > 0 else "Set STUDIO_INSTAGRAM_ALLOWED_ACCOUNT_IDS to a staging account ID"},
+        {"id": "public_media_config", "status": "ready" if public_media_url_ready else "blocked", "detail": "HTTPS public-media delivery is configured" if public_media_url_ready else "Configure public media delivery with an HTTPS base URL"},
+    ]
+    if account_id:
+        account = PublishingRepository.account(account_id)
+        external_id = account.get("external_account_id") if account else ""
+        account_ready = bool(account and account.get("platform") == "instagram" and account.get("status") == "verified")
+        allowlisted = bool(external_id and get_publishing_provider("meta_instagram").publish_account_allowed(external_id))
+        checks.extend([
+            {"id": "staging_account", "status": "ready" if account_ready else "blocked", "detail": "Selected account is a verified Instagram account" if account_ready else "Select a verified Instagram account"},
+            {"id": "staging_account_allowlist", "status": "ready" if allowlisted else "blocked", "detail": "Selected account matches the staging allowlist" if allowlisted else "Selected account is not in the staging allowlist"},
+        ])
+    else:
+        checks.append({"id": "staging_account", "status": "blocked", "detail": "Select the verified staging account for the final preflight"})
+    ready = all(item["status"] == "ready" for item in checks)
+    return {
+        "provider": provider,
+        "environment": configuration.get("publish_environment", "disabled"),
+        "account_id_supplied": bool(account_id),
+        "ready": ready,
+        "status": "ready" if ready else "blocked",
+        "external_calls": False,
+        "checks": checks,
+    }
+
+
 def _publishing_account_response(account: dict | None):
     return account or {}
 

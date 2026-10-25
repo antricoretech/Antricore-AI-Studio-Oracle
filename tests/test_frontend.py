@@ -64,6 +64,8 @@ def test_frontend_is_module_split_and_static_modules_are_served():
         assert 'publishing-account-form' in workspace_js.text
         assert '/publishing-accounts' in workspace_js.text
         assert 'publishing-workflow-form' in workspace_js.text
+        assert 'staging-readiness' in workspace_js.text
+        assert 'Run staging preflight' in workspace_js.text
         assert 'publish-dry-run' in workspace_js.text
         assert 'Record dry-run' in workspace_js.text
         assert 'Publish to Instagram' in workspace_js.text

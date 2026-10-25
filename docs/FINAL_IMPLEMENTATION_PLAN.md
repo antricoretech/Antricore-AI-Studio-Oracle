@@ -974,6 +974,9 @@ Instagram readiness; prepare the public-media URL; record a local dry-run;
 and, only when the provider advertises the explicit live capability, confirm
 and invoke the live publish endpoint. Account verification is an explicit
 operator action, and the interface never accepts or displays access tokens.
+The local `/api/publishing/staging-readiness` preflight reports configuration,
+environment, allowlist, HTTPS media, and selected-account checks without
+contacting Meta; the workspace exposes it as an explicit operator action.
 
 Publishing requires:
 

@@ -62,6 +62,33 @@ def test_live_publish_gate_requires_explicit_environment_and_account_allowlist(c
     assert provider.publish_account_allowed('other-account-456') is False
 
 
+def test_staging_preflight_is_local_and_requires_selected_verified_account(client, monkeypatch):
+    for key, value in {
+        'STUDIO_ENABLE_INSTAGRAM_PROVIDER': '1',
+        'STUDIO_ENABLE_INSTAGRAM_TOKEN_EXCHANGE': '1',
+        'STUDIO_ENABLE_INSTAGRAM_ACCOUNT_VERIFICATION': '1',
+        'STUDIO_ENABLE_INSTAGRAM_PUBLISH': '1',
+        'STUDIO_INSTAGRAM_PUBLISH_ENV': 'staging',
+        'STUDIO_INSTAGRAM_ALLOWED_ACCOUNT_IDS': 'staging-account-123',
+        'STUDIO_ENABLE_PUBLIC_MEDIA_DELIVERY': '1',
+        'STUDIO_PUBLIC_MEDIA_BASE_URL': 'https://media.example.test',
+        'STUDIO_INSTAGRAM_CLIENT_ID': 'test-client-id',
+        'STUDIO_INSTAGRAM_CLIENT_SECRET_REF': 'keyring/meta/client-secret',
+        'STUDIO_INSTAGRAM_REDIRECT_URI': 'http://127.0.0.1:8123/oauth/callback',
+    }.items():
+        monkeypatch.setenv(key, value)
+    response = client.get('/api/publishing/staging-readiness')
+    assert response.status_code == 200
+    data = response.json()
+    assert data['external_calls'] is False
+    assert data['ready'] is False
+    assert any(check['id'] == 'staging_account' and check['status'] == 'blocked' for check in data['checks'])
+    assert 'client-secret' not in response.text
+    selected = client.get('/api/publishing/staging-readiness?account_id=missing-account')
+    assert selected.status_code == 200
+    assert selected.json()['ready'] is False
+
+
 def test_publishing_security_exposes_capability_only(client):
     response = client.get('/api/publishing/security')
     assert response.status_code == 200
