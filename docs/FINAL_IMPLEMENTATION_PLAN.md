@@ -891,8 +891,11 @@ content style. Video/audio assets now also receive extension and container
 signature checks. Compatibility mode records legacy or lightweight fixtures as
 warnings, while `STUDIO_STRICT_MEDIA=1` promotes an unverified container to an
 error and blocks approval/export. Model-backed identity/anatomy/video/audio
-quality checks, content-class checks, and destination-policy evaluation remain
-later Phase 7 activities.
+quality checks remain later Phase 7 activities. Asset records now also carry
+explicit content class and destination policy metadata; adult/glamour classes
+flow through the same Identity Core-aware path, while `review_required` is kept
+distinct from `eligible` so publishing cannot treat local export readiness as
+platform approval.
 
 Exit: every review decision records status, reason, reviewer, and timestamp; approved assets export with manifest and disclosure sidecar.
 

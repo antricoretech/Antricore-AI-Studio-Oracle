@@ -45,7 +45,7 @@ from .comfy import ComfyClient, output_files, render_graph, validate_graph
 from .engines import get as get_engine, rows as engine_rows
 from .media import read_limited, validate_image_bytes, validate_media_signature
 from .model_registry import get as get_model, rows as model_rows, workflow_model
-from .policies import AI_DISCLOSURE
+from .policies import AI_DISCLOSURE, normalize_content_class, normalize_destination_policy
 from .preflight import resource_preflight, workflow_preflight
 from .provenance import manifest, media_metadata, quality_report, sha256_bytes
 from .identity_conditioning import method_catalog, scenario_catalog
@@ -1245,6 +1245,8 @@ async def add_reference(pid: str, file: UploadFile = File(...), label: str = For
         rights_confirmed=True,
         original_filename=file.filename,
         lineage={"source": "operator_upload"},
+        content_class=content_class,
+        destination_policy="review_required",
     )
     aid = asset["id"]
     filename = asset["filename"]
@@ -1359,6 +1361,10 @@ async def _finalize_comfy_outputs(job_id: str, payload: JobIn, person: dict, per
             continue
         _update_job_progress(job_id, "registering_assets", 80 + int((index / max(1, len(children))) * 15), f"Registering output {index + 1} of {len(children)}", children)
         disclosure = person.get("disclosure") or AI_DISCLOSURE
+        content_pack = db.row(
+            "SELECT content_class FROM content_packs WHERE id=? AND persona_id=?",
+            (payload.content_pack_id, person["id"]),
+        ) if payload.content_pack_id else None
         asset = register_media_asset(
             persona_id=person["id"],
             persona_version_id=persona_version["id"] if persona_version else None,
@@ -1370,6 +1376,8 @@ async def _finalize_comfy_outputs(job_id: str, payload: JobIn, person: dict, per
             rights_confirmed=payload.rights_confirmed,
             original_filename=item["filename"],
             lineage={"job_id": job_id, "workflow_id": payload.workflow_id, "comfy_prompt_id": db.row("SELECT comfy_prompt_id FROM jobs WHERE id=?", (job_id,)).get("comfy_prompt_id")},
+            content_class=(content_pack or {}).get("content_class") or "identity",
+            destination_policy="review_required",
         )
         asset_ids.append(asset["id"])
         children[index]["state"] = "completed"
@@ -1820,6 +1828,8 @@ async def import_asset(
     prompt: str = Form("Imported local pipeline output"),
     disclosure: str = Form(AI_DISCLOSURE),
     rights_confirmed: bool = Form(False),
+    content_class: str = Form("identity"),
+    destination_policy: str = Form("review_required"),
 ):
     person = must_persona(persona_id)
     if not rights_confirmed:
@@ -1830,6 +1840,11 @@ async def import_asset(
         raise HTTPException(400, "Describe the imported scene or pipeline output")
     if len(disclosure.strip()) < 20:
         raise HTTPException(400, "Include a clear AI-generated disclosure")
+    normalized_content_class = normalize_content_class(content_class)
+    try:
+        normalized_destination_policy = normalize_destination_policy(destination_policy)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     try:
         raw = await read_limited(file, get_settings().asset_max_bytes)
         validate_import_suffix(kind, file.filename or "")
@@ -1853,6 +1868,8 @@ async def import_asset(
         rights_confirmed=True,
         original_filename=file.filename,
         lineage={"source": "local_import"},
+        content_class=normalized_content_class,
+        destination_policy=normalized_destination_policy,
     )
     return {"id": asset["id"], "kind": kind, "review": asset["review"], "url": f"/api/assets/{asset['id']}/file"}
 
@@ -1882,6 +1899,29 @@ def _asset_bundle(aid: str):
                              lineage={"job_id": asset.get("job_id")} if asset.get("job_id") else None,
                              expected_sha256=asset.get("sha256"),
                              strict_media=get_settings().strict_media_validation)
+    content_class = normalize_content_class(asset.get("content_class"))
+    quality["checks"].append({
+        "id": "content_class",
+        "status": "ready" if content_class else "warning",
+        "detail": f"Content class recorded: {content_class}" if content_class else "Record a content class before destination review",
+    })
+    try:
+        destination_policy = normalize_destination_policy(asset.get("destination_policy"))
+    except ValueError:
+        destination_policy = "review_required"
+        quality["checks"].append({
+            "id": "destination_policy",
+            "status": "error",
+            "detail": "Asset has an unsupported destination policy",
+        })
+    else:
+        policy_status = "ready" if destination_policy in {"local_only", "eligible"} else "warning"
+        policy_detail = {
+            "local_only": "Asset is restricted to local export until a destination is explicitly selected",
+            "review_required": "Destination policy review is required before publishing",
+            "eligible": "Destination policy eligibility has been recorded",
+        }[destination_policy]
+        quality["checks"].append({"id": "destination_policy", "status": policy_status, "detail": policy_detail})
     rights_ok = bool(asset.get("rights_confirmed"))
     quality["checks"].append({
         "id": "rights",

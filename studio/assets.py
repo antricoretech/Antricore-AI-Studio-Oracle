@@ -9,7 +9,7 @@ from pathlib import Path
 
 from . import database as db
 from .media import extension_for
-from .policies import AI_DISCLOSURE
+from .policies import AI_DISCLOSURE, normalize_content_class, normalize_destination_policy
 from .provenance import media_metadata, quality_report, sha256_bytes
 
 
@@ -67,6 +67,8 @@ def register_media_asset(
     rights_confirmed: bool = False,
     original_filename: str | None = None,
     lineage: dict | None = None,
+    content_class: str = "identity",
+    destination_policy: str = "review_required",
 ) -> dict:
     """Store bytes once and register a pending asset with complete provenance."""
 
@@ -80,6 +82,8 @@ def register_media_asset(
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_bytes(raw)
     disclosure_text = (disclosure or AI_DISCLOSURE).strip()[:300]
+    normalized_content_class = normalize_content_class(content_class)
+    normalized_destination_policy = normalize_destination_policy(destination_policy)
     metadata = media_metadata(raw, kind, filename)
     if lineage:
         metadata["lineage"] = lineage
@@ -87,7 +91,7 @@ def register_media_asset(
     asset_id = uuid.uuid4().hex
     created_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     db.write(
-        "INSERT INTO assets (id,persona_id,persona_version_id,job_id,filename,kind,prompt,review,rights_confirmed,disclosure,created_at,sha256,metadata_json,quality_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO assets (id,persona_id,persona_version_id,job_id,filename,kind,prompt,review,rights_confirmed,disclosure,created_at,sha256,metadata_json,quality_json,content_class,destination_policy) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (
             asset_id,
             persona_id,
@@ -103,6 +107,8 @@ def register_media_asset(
             sha256_bytes(raw),
             json.dumps(metadata, ensure_ascii=False),
             json.dumps(quality, ensure_ascii=False),
+            normalized_content_class,
+            normalized_destination_policy,
         ),
     )
     return db.row("SELECT * FROM assets WHERE id=?", (asset_id,))

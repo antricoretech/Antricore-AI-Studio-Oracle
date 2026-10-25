@@ -1323,7 +1323,8 @@ def test_phase5_asset_manifest_and_approved_export_package(client):
     }).json()
     imported = client.post('/api/assets/import', data={
         'persona_id': persona['id'], 'kind': 'video', 'prompt': 'Imported reviewed episode output',
-        'disclosure': 'Fictional adult character. AI-generated synthetic media.', 'rights_confirmed': 'true'
+        'disclosure': 'Fictional adult character. AI-generated synthetic media.', 'rights_confirmed': 'true',
+        'content_class': 'adult glamour', 'destination_policy': 'review_required'
     }, files={'file': ('episode.mp4', b'fake mp4 bytes', 'video/mp4')})
     assert imported.status_code == 201
     aid = imported.json()['id']
@@ -1335,6 +1336,11 @@ def test_phase5_asset_manifest_and_approved_export_package(client):
     assert quality.status_code == 200
     assert any(check['id'] == 'rights' and check['status'] == 'ready' for check in quality.json()['quality']['checks'])
     assert any(check['id'] == 'container' and check['status'] == 'warning' for check in quality.json()['quality']['checks'])
+    assert any(check['id'] == 'content_class' and check['status'] == 'ready' for check in quality.json()['quality']['checks'])
+    assert any(check['id'] == 'destination_policy' and check['status'] == 'warning' for check in quality.json()['quality']['checks'])
+    stored_before_review = next(item for item in client.get('/api/assets').json() if item['id'] == aid)
+    assert stored_before_review['content_class'] == 'adult_glamour'
+    assert stored_before_review['destination_policy'] == 'review_required'
     assert client.get('/api/assets/' + aid + '/package').status_code == 409
     approved = client.patch('/api/assets/' + aid + '/review', json={
         'review': 'approved', 'reviewer': 'qa_operator',
@@ -1351,6 +1357,9 @@ def test_phase5_asset_manifest_and_approved_export_package(client):
     assert package.status_code == 200
     with zipfile.ZipFile(io.BytesIO(package.content)) as archive:
         assert {'manifest.json', 'AI-DISCLOSURE.txt'} <= set(archive.namelist())
+        exported_manifest = json.loads(archive.read('manifest.json'))
+        assert exported_manifest['asset']['content_class'] == 'adult_glamour'
+        assert exported_manifest['asset']['destination_policy'] == 'review_required'
 
 
 def test_phase7_strict_media_quality_blocks_unverified_container(client, monkeypatch):

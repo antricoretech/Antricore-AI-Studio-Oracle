@@ -93,6 +93,8 @@ def manifest(asset: dict, *, job: dict | None = None, persona: dict | None = Non
             "sha256": asset.get("sha256"), "metadata": parse(asset.get("metadata_json")),
             "review": asset.get("review"), "reviewed_at": asset.get("reviewed_at"),
             "reviewer": asset.get("reviewer"), "review_reason": asset.get("review_reason"),
+            "content_class": asset.get("content_class") or "identity",
+            "destination_policy": asset.get("destination_policy") or "review_required",
             "disclosure": asset.get("disclosure") or AI_DISCLOSURE,
         },
         "persona": {

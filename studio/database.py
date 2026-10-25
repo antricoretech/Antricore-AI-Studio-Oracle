@@ -200,6 +200,8 @@ def initialize():
             disclosure TEXT NOT NULL DEFAULT 'Fictional adult character. AI-generated synthetic media.',
             created_at TEXT NOT NULL, sha256 TEXT, metadata_json TEXT NOT NULL DEFAULT '{}',
             quality_json TEXT NOT NULL DEFAULT '{}',
+            content_class TEXT NOT NULL DEFAULT 'identity',
+            destination_policy TEXT NOT NULL DEFAULT 'review_required',
             reviewed_at TEXT,
             reviewer TEXT,
             review_reason TEXT
@@ -331,6 +333,10 @@ def initialize():
             con.execute("ALTER TABLE assets ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}'")
         if "quality_json" not in asset_columns:
             con.execute("ALTER TABLE assets ADD COLUMN quality_json TEXT NOT NULL DEFAULT '{}'")
+        if "content_class" not in asset_columns:
+            con.execute("ALTER TABLE assets ADD COLUMN content_class TEXT NOT NULL DEFAULT 'identity'")
+        if "destination_policy" not in asset_columns:
+            con.execute("ALTER TABLE assets ADD COLUMN destination_policy TEXT NOT NULL DEFAULT 'review_required'")
         job_columns = {row[1] for row in con.execute("PRAGMA table_info(jobs)").fetchall()}
         if "request_json" not in job_columns:
             con.execute("ALTER TABLE jobs ADD COLUMN request_json TEXT NOT NULL DEFAULT '{}'")
@@ -444,7 +450,7 @@ def initialize():
         CREATE INDEX IF NOT EXISTS idx_series_episodes_job ON series_episodes(job_id);
         """)
         con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_idempotency_key ON jobs(idempotency_key) WHERE idempotency_key IS NOT NULL")
-        con.execute("INSERT INTO schema_meta(key,value) VALUES('schema_version','19') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+        con.execute("INSERT INTO schema_meta(key,value) VALUES('schema_version','20') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
         # A durable queued row is safe to dispatch after restart. Only work
         # that may already have reached ComfyUI is interrupted and requires
         # prompt reconciliation or explicit operator retry.
