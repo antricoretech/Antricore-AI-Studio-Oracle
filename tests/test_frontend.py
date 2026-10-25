@@ -57,6 +57,8 @@ def test_frontend_is_module_split_and_static_modules_are_served():
         assert 'data-asset-assessment' in workspace_js.text
         assert 'Save assessment' in workspace_js.text
         assert 'recordAssetAssessment' in workspace_js.text
+        assert 'Check publishing readiness' in workspace_js.text
+        assert '/publishing-readiness' in workspace_js.text
         for module in ('core.js', 'api.js', 'navigation.js', 'photostudio.js'):
             response = client.get('/static/modules/' + module)
             assert response.status_code == 200

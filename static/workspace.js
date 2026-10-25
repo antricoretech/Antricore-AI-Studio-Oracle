@@ -64,6 +64,7 @@ const state = {
   assets: [],
   assessingAssetId: '',
   savingAssetAssessment: '',
+  assetPublishingReadiness: {},
   workflows: [],
   preflight: null,
   preflightFingerprint: '',
@@ -478,6 +479,12 @@ function renderAssetAssessment(asset) {
   return `<form class="asset-assessment-form" data-asset-assessment="${escapeHtml(asset.id)}"><p class="eyebrow">Quality assessment</p><div class="form-grid"><label>Identity <input name="identity_score" type="number" min="0" max="1" step="0.01" value="${score('identity_score')}" placeholder="0–1"></label><label>Anatomy <input name="anatomy_score" type="number" min="0" max="1" step="0.01" value="${score('anatomy_score')}" placeholder="0–1"></label><label>Hands <input name="hands_score" type="number" min="0" max="1" step="0.01" value="${score('hands_score')}" placeholder="0–1"></label><label>Facial drift <input name="facial_drift_score" type="number" min="0" max="1" step="0.01" value="${score('facial_drift_score')}" placeholder="0–1"></label><label>Temporal stability <input name="temporal_stability_score" type="number" min="0" max="1" step="0.01" value="${score('temporal_stability_score')}" placeholder="video only"></label><label>Audio timing <input name="audio_timing_score" type="number" min="0" max="1" step="0.01" value="${score('audio_timing_score')}" placeholder="optional"></label><label>Evaluator <input name="evaluator" maxlength="120" value="${escapeHtml(asset.quality?.assessment?.evaluator || 'local_operator')}" required></label><label class="span-2">Notes <textarea name="notes" rows="2" maxlength="2000" placeholder="Record manual findings or evaluator context.">${escapeHtml(asset.quality?.assessment?.notes || '')}</textarea></label></div><button class="button secondary" type="submit" ${state.savingAssetAssessment === asset.id ? 'disabled' : ''}>${state.savingAssetAssessment === asset.id ? 'Saving assessment…' : 'Save assessment'}</button></form>`;
 }
 
+function renderAssetPublishingReadiness(asset) {
+  const report = state.assetPublishingReadiness[asset.id];
+  if (!report) return '';
+  return `<div class="callout ${report.ready ? '' : 'stale-callout'}" aria-live="polite"><p><strong>Publishing readiness:</strong> ${badge(report.status)}</p><div class="entity-meta">${report.checks.map((check) => badge(`${check.id}: ${check.status}`)).join('')}</div></div>`;
+}
+
 function renderAssetsCanonical() {
   return `<section class="panel" aria-labelledby="assets-heading">
     <div class="section-heading"><div><p class="eyebrow">Human review gate</p><h2 id="assets-heading">Asset Review</h2></div>${badge(`${state.assets.length} asset${state.assets.length === 1 ? '' : 's'}`)}</div>
@@ -487,8 +494,9 @@ function renderAssetsCanonical() {
       <div class="asset-review-meta"><span>${escapeHtml(asset.prompt || 'No generation/import description recorded.')}</span><span>${asset.disclosure ? `Disclosure: ${escapeHtml(asset.disclosure)}` : 'Disclosure not recorded'}</span></div>
       ${renderAssetQuality(asset)}
       ${renderAssetAssessment(asset)}
+      ${renderAssetPublishingReadiness(asset)}
       ${asset.reviewed_at ? `<p class="helper">Reviewed by ${escapeHtml(asset.reviewer || 'local operator')} at ${escapeHtml(asset.reviewed_at)}: ${escapeHtml(asset.review_reason || 'No reason recorded.')}</p>` : '<p class="helper">Review evidence has not been recorded yet.</p>'}
-      <div class="asset-review-actions"><form class="inline-form" data-asset-review="${escapeHtml(asset.id)}"><label>Review<select name="review">${reviewOption('pending', asset.review)}${reviewOption('approved', asset.review)}${reviewOption('rejected', asset.review)}</select></label><label>Reviewer<input name="reviewer" maxlength="120" value="${escapeHtml(asset.reviewer || 'local_operator')}" required></label><label>Reason<input name="reason" maxlength="1000" value="${escapeHtml(asset.review_reason || '')}" placeholder="Why is this decision being made?" required></label><button class="button primary" type="submit">Save review</button></form><button class="button secondary" type="button" data-asset-quality="${escapeHtml(asset.id)}" ${state.assessingAssetId === asset.id ? 'disabled' : ''}>${state.assessingAssetId === asset.id ? 'Refreshing quality…' : 'Refresh quality'}</button><a class="button secondary" href="/api/assets/${encodeURIComponent(asset.id)}/file" target="_blank" rel="noreferrer">Open media</a>${asset.review === 'approved' ? `<a class="button secondary" href="/api/assets/${encodeURIComponent(asset.id)}/package" target="_blank" rel="noreferrer">Export package</a>` : ''}</div>
+      <div class="asset-review-actions"><form class="inline-form" data-asset-review="${escapeHtml(asset.id)}"><label>Review<select name="review">${reviewOption('pending', asset.review)}${reviewOption('approved', asset.review)}${reviewOption('rejected', asset.review)}</select></label><label>Reviewer<input name="reviewer" maxlength="120" value="${escapeHtml(asset.reviewer || 'local_operator')}" required></label><label>Reason<input name="reason" maxlength="1000" value="${escapeHtml(asset.review_reason || '')}" placeholder="Why is this decision being made?" required></label><button class="button primary" type="submit">Save review</button></form><button class="button secondary" type="button" data-asset-quality="${escapeHtml(asset.id)}" ${state.assessingAssetId === asset.id ? 'disabled' : ''}>${state.assessingAssetId === asset.id ? 'Refreshing quality…' : 'Refresh quality'}</button><button class="button secondary" type="button" data-asset-publishing-readiness="${escapeHtml(asset.id)}">Check publishing readiness</button><a class="button secondary" href="/api/assets/${encodeURIComponent(asset.id)}/file" target="_blank" rel="noreferrer">Open media</a>${asset.review === 'approved' ? `<a class="button secondary" href="/api/assets/${encodeURIComponent(asset.id)}/package" target="_blank" rel="noreferrer">Export package</a>` : ''}</div>
     </article>`).join('')}</div>` : emptyState('No generated or imported assets are recorded yet. Assets will appear here after an import or generation job.')}
   </section>`;
 }
@@ -925,6 +933,17 @@ async function recordAssetAssessment(event) {
   } catch (error) {
     state.savingAssetAssessment = '';
     renderView();
+    setStatus(error.message, 'error');
+  }
+}
+
+async function checkAssetPublishingReadiness(assetId) {
+  try {
+    const report = await get(`/api/assets/${encodeURIComponent(assetId)}/publishing-readiness`);
+    state.assetPublishingReadiness[assetId] = report;
+    renderView();
+    setStatus(report.ready ? 'Asset is ready for the future publishing gate.' : 'Asset publishing readiness is blocked.', report.ready ? 'success' : 'error');
+  } catch (error) {
     setStatus(error.message, 'error');
   }
 }
@@ -1413,6 +1432,11 @@ $('#workspace-view').addEventListener('click', (event) => {
   const qualityAssetButton = event.target.closest('[data-asset-quality]');
   if (qualityAssetButton) {
     assessAssetQuality(qualityAssetButton.dataset.assetQuality);
+    return;
+  }
+  const publishingReadinessButton = event.target.closest('[data-asset-publishing-readiness]');
+  if (publishingReadinessButton) {
+    checkAssetPublishingReadiness(publishingReadinessButton.dataset.assetPublishingReadiness);
     return;
   }
   const approveBriefButton = event.target.closest('[data-brief-approve]');

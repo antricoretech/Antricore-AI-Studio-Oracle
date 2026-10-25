@@ -1428,6 +1428,40 @@ def test_phase7_operator_quality_assessment_persists_and_requires_rereview(clien
     assert blocked.status_code == 409
 
 
+def test_phase7_publishing_readiness_requires_frozen_identity_policy_and_quality(client):
+    persona = client.post('/api/personas', json={
+        'name': 'Publishing Gate', 'age': 31,
+        'appearance': 'wavy brown hair and green eyes',
+        'description': 'fictional adult glamour creator for readiness checks'
+    }).json()
+    frozen = client.post(f"/api/personas/{persona['id']}/freeze")
+    assert frozen.status_code == 200
+    image = Image.new('RGB', (32, 32), 'ivory')
+    buffer = BytesIO()
+    image.save(buffer, format='PNG')
+    imported = client.post('/api/assets/import', data={
+        'persona_id': persona['id'], 'kind': 'image', 'prompt': 'Publishing readiness image',
+        'content_class': 'adult_glamour', 'destination_policy': 'eligible',
+        'disclosure': 'Fictional adult character. AI-generated synthetic media.', 'rights_confirmed': 'true',
+    }, files={'file': ('readiness.png', buffer.getvalue(), 'image/png')})
+    assert imported.status_code == 201
+    aid = imported.json()['id']
+    before = client.get(f'/api/assets/{aid}/publishing-readiness')
+    assert before.status_code == 200
+    assert before.json()['status'] == 'blocked'
+    assessment = client.post(f'/api/assets/{aid}/assessment', json={
+        'identity_score': 0.95, 'anatomy_score': 0.9, 'hands_score': 0.9,
+        'facial_drift_score': 0.95, 'evaluator': 'qa_operator',
+    })
+    assert assessment.status_code == 200
+    approved = client.patch(f'/api/assets/{aid}/review', json={'review': 'approved', 'reason': 'Publishing readiness gate passed'})
+    assert approved.status_code == 200
+    ready = client.get(f'/api/assets/{aid}/publishing-readiness')
+    assert ready.status_code == 200
+    assert ready.json()['ready'] is True
+    assert ready.json()['status'] == 'ready'
+
+
 def test_photo_studio_presets(client):
     res = client.get('/api/photo-studio/presets')
     assert res.status_code == 200

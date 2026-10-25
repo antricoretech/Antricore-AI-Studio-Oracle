@@ -901,7 +901,12 @@ stability, and audio timing. Scores below 0.70 create a hard quality failure;
 reassessment of an approved asset returns it to pending and invalidates any
 canonical selection. These are evaluator contracts and audit evidence, not
 model execution; model-backed scoring remains deferred to the final runtime
-gate.
+gate. Asset quality now verifies PersonaVersion existence/state and available
+ContentPack lineage, while a read-only publishing-readiness report requires
+approved review evidence, rights, disclosure, frozen identity, passed quality,
+content class, and an `eligible` destination policy. It does not connect an
+external platform or publish content; platform account and policy checks remain
+Phase 8 work.
 
 Exit: every review decision records status, reason, reviewer, and timestamp; approved assets export with manifest and disclosure sidecar.
 

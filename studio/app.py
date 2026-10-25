@@ -1932,6 +1932,52 @@ def _apply_asset_assessment(asset: dict, quality: dict, assessment: dict | None 
     return quality
 
 
+def _apply_asset_identity_lineage(asset: dict, job: dict | None, quality: dict):
+    version_id = asset.get("persona_version_id")
+    version = db.row(
+        "SELECT id, persona_id, state, version_no FROM persona_versions WHERE id=? AND persona_id=?",
+        (version_id, asset.get("persona_id")),
+    ) if version_id else None
+    if not version:
+        quality["checks"].append({
+            "id": "identity_version",
+            "status": "warning",
+            "detail": "Asset is not bound to a verified PersonaVersion",
+        })
+    else:
+        quality["checks"].append({
+            "id": "identity_version",
+            "status": "ready",
+            "detail": f"Asset is bound to PersonaVersion {version['id']}",
+        })
+        quality["checks"].append({
+            "id": "identity_state",
+            "status": "ready" if version["state"] == "frozen" else "warning",
+            "detail": "PersonaVersion is frozen" if version["state"] == "frozen" else "PersonaVersion remains draft",
+        })
+    if job:
+        try:
+            request = json.loads(job.get("request_json") or "{}")
+        except (TypeError, json.JSONDecodeError):
+            request = {}
+        try:
+            lineage = json.loads(job.get("lineage_json") or "{}")
+        except (TypeError, json.JSONDecodeError):
+            lineage = {}
+        content_pack_id = lineage.get("content_pack_id") or request.get("content_pack_id")
+        if content_pack_id:
+            pack = db.row(
+                "SELECT id, persona_version_id, review, content_class FROM content_packs WHERE id=? AND persona_id=?",
+                (content_pack_id, asset.get("persona_id")),
+            )
+            pack_ready = bool(pack and pack["review"] == "approved" and pack["persona_version_id"] == version_id)
+            quality["checks"].append({
+                "id": "content_pack_lineage",
+                "status": "ready" if pack_ready else "error",
+                "detail": "Approved ContentPack and Asset PersonaVersion match" if pack_ready else "ContentPack lineage is missing approval or PersonaVersion alignment",
+            })
+
+
 def _asset_bundle(aid: str):
     asset = db.row("SELECT * FROM assets WHERE id=?", (aid,))
     if not asset:
@@ -1942,8 +1988,12 @@ def _asset_bundle(aid: str):
         path = resolve_asset_file(asset)
     except FileNotFoundError:
         raise HTTPException(404, "Asset media file is missing") from None
+    try:
+        metadata = json.loads(asset.get("metadata_json") or "{}")
+    except (TypeError, json.JSONDecodeError):
+        metadata = {}
     quality = quality_report(path, asset["kind"], asset.get("disclosure") or AI_DISCLOSURE,
-                             lineage={"job_id": asset.get("job_id")} if asset.get("job_id") else None,
+                             lineage={"job_id": asset.get("job_id")} if asset.get("job_id") else metadata.get("lineage"),
                              expected_sha256=asset.get("sha256"),
                              strict_media=get_settings().strict_media_validation)
     content_class = normalize_content_class(asset.get("content_class"))
@@ -1975,6 +2025,7 @@ def _asset_bundle(aid: str):
         "status": "ready" if rights_ok else "warning",
         "detail": "Rights confirmation recorded" if rights_ok else "Rights confirmation is required before approval or export",
     })
+    _apply_asset_identity_lineage(asset, job, quality)
     _apply_asset_assessment(asset, quality)
     statuses = [item["status"] for item in quality.get("checks", [])]
     quality["status"] = "error" if "error" in statuses else "warning" if "warning" in statuses else "ready"
@@ -1998,6 +2049,39 @@ def refresh_asset_quality(aid: str):
     _asset, _job, _person, quality = _asset_bundle(aid)
     db.write("UPDATE assets SET quality_json=? WHERE id=?", (json.dumps(quality, ensure_ascii=False), aid))
     return {"id": aid, "quality": quality}
+
+
+@app.get("/api/assets/{aid}/publishing-readiness")
+def asset_publishing_readiness(aid: str):
+    asset, _job, _person, quality = _asset_bundle(aid)
+    quality_checks = {item.get("id"): item for item in quality.get("checks", [])}
+    checks = [
+        {
+            "id": "review",
+            "status": "ready" if asset.get("review") == "approved" and asset.get("reviewed_at") else "error",
+            "detail": "Asset has an approved, timestamped review decision" if asset.get("review") == "approved" and asset.get("reviewed_at") else "Asset must be approved with review evidence",
+        },
+        quality_checks.get("rights", {"id": "rights", "status": "error", "detail": "Rights check is missing"}),
+        quality_checks.get("disclosure", {"id": "disclosure", "status": "error", "detail": "Disclosure check is missing"}),
+        quality_checks.get("identity_version", {"id": "identity_version", "status": "error", "detail": "PersonaVersion check is missing"}),
+        quality_checks.get("identity_state", {"id": "identity_state", "status": "error", "detail": "PersonaVersion state check is missing"}),
+        quality_checks.get("content_class", {"id": "content_class", "status": "error", "detail": "Content class check is missing"}),
+        quality_checks.get("destination_policy", {"id": "destination_policy", "status": "error", "detail": "Destination policy check is missing"}),
+        {
+            "id": "quality",
+            "status": "ready" if quality.get("status") == "ready" else "error",
+            "detail": "All recorded quality checks passed" if quality.get("status") == "ready" else "Resolve quality warnings or errors before publishing",
+        },
+    ]
+    ready = all(item.get("status") == "ready" for item in checks)
+    return {
+        "id": aid,
+        "ready": ready,
+        "status": "ready" if ready else "blocked",
+        "content_class": asset.get("content_class") or "identity",
+        "destination_policy": asset.get("destination_policy") or "review_required",
+        "checks": checks,
+    }
 
 
 @app.post("/api/assets/{aid}/assessment")
