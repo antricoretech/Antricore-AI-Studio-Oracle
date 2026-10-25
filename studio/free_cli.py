@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / 'config' / 'approved_models.json'
 REGISTRY = json.loads(CONFIG.read_text(encoding='utf8'))
 MODEL_ROOT = ROOT / 'models'
-OUTPUT_ROOT = ROOT / 'generated'
+OUTPUT_ROOT = Path(os.getenv('STUDIO_GENERATED_DIR') or (ROOT / 'generated')).resolve()
 
 
 def identity_prompt_from_brief(brief) -> str:

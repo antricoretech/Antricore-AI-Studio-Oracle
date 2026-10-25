@@ -30,6 +30,8 @@ from urllib.parse import quote, urlparse
 from dotenv import load_dotenv
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW_CATALOG = ROOT / "config" / "workflow_catalog.json"
+GENERATED_ROOT = Path(os.getenv("STUDIO_GENERATED_DIR") or (ROOT / "generated")).resolve()
+GENERATED_ROOT.mkdir(parents=True, exist_ok=True)
 DEFAULT_WORKFLOW_LABELS = {
     "default_image_api": ("Default image API · checkpoint", "Built-in ComfyUI API starter graph; choose an installed checkpoint before queueing."),
     "wan22_ti2v_5b_default_api": ("Wan2.2 TI2V 5B · default image-to-video API", "Built-in official-style Wan2.2 TI2V graph; requires the matching diffusion model, text encoder and VAE."),
@@ -330,7 +332,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="AI Influencer Studio", version="0.1.0", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
-app.mount("/generated", StaticFiles(directory=ROOT / "generated"), name="generated")
+app.mount("/generated", StaticFiles(directory=GENERATED_ROOT), name="generated")
 
 from .api_v2 import router as v2_router
 app.include_router(v2_router, prefix="/api/v2")
