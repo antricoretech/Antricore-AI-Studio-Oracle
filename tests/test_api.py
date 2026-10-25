@@ -1334,6 +1334,7 @@ def test_phase5_asset_manifest_and_approved_export_package(client):
     quality = client.post('/api/assets/' + aid + '/quality')
     assert quality.status_code == 200
     assert any(check['id'] == 'rights' and check['status'] == 'ready' for check in quality.json()['quality']['checks'])
+    assert any(check['id'] == 'container' and check['status'] == 'warning' for check in quality.json()['quality']['checks'])
     assert client.get('/api/assets/' + aid + '/package').status_code == 409
     approved = client.patch('/api/assets/' + aid + '/review', json={
         'review': 'approved', 'reviewer': 'qa_operator',
@@ -1350,6 +1351,31 @@ def test_phase5_asset_manifest_and_approved_export_package(client):
     assert package.status_code == 200
     with zipfile.ZipFile(io.BytesIO(package.content)) as archive:
         assert {'manifest.json', 'AI-DISCLOSURE.txt'} <= set(archive.namelist())
+
+
+def test_phase7_strict_media_quality_blocks_unverified_container(client, monkeypatch):
+    from studio.assets import register_media_asset
+
+    persona = client.post('/api/personas', json={
+        'name': 'Strict Media', 'age': 30,
+        'appearance': 'short dark hair and brown eyes',
+        'description': 'fictional adult creator for media validation'
+    }).json()
+    monkeypatch.setenv('STUDIO_STRICT_MEDIA', '1')
+    asset = register_media_asset(
+        persona_id=persona['id'], persona_version_id=None, job_id=None,
+        kind='video', prompt='Strict media fixture', raw=b'not a video container',
+        disclosure='Fictional adult character. AI-generated synthetic media.',
+        rights_confirmed=True, original_filename='strict.mp4',
+        lineage={'source': 'test'},
+    )
+    quality = client.post(f"/api/assets/{asset['id']}/quality")
+    assert quality.status_code == 200
+    assert quality.json()['quality']['status'] == 'error'
+    assert any(check['id'] == 'container' and check['status'] == 'error' for check in quality.json()['quality']['checks'])
+    approval = client.patch(f"/api/assets/{asset['id']}/review", json={'review': 'approved'})
+    assert approval.status_code == 409
+    assert 'integrity' in approval.json()['detail'].lower()
 
 
 def test_photo_studio_presets(client):

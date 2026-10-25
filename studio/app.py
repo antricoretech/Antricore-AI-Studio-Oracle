@@ -1880,7 +1880,8 @@ def _asset_bundle(aid: str):
         raise HTTPException(404, "Asset media file is missing") from None
     quality = quality_report(path, asset["kind"], asset.get("disclosure") or AI_DISCLOSURE,
                              lineage={"job_id": asset.get("job_id")} if asset.get("job_id") else None,
-                             expected_sha256=asset.get("sha256"))
+                             expected_sha256=asset.get("sha256"),
+                             strict_media=get_settings().strict_media_validation)
     rights_ok = bool(asset.get("rights_confirmed"))
     quality["checks"].append({
         "id": "rights",

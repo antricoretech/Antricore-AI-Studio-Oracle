@@ -887,8 +887,12 @@ reviewer, and timestamp; manifests carry that review evidence; and approval or
 package export fails closed when rights, disclosure, or integrity requirements
 are missing. Adult/glamour and lingerie/boudoir assets remain eligible for the
 same review path because the gate evaluates provenance and quality rather than
-content style. Model-backed identity/anatomy/video/audio checks and destination
-policy evaluation remain later Phase 7 activities.
+content style. Video/audio assets now also receive extension and container
+signature checks. Compatibility mode records legacy or lightweight fixtures as
+warnings, while `STUDIO_STRICT_MEDIA=1` promotes an unverified container to an
+error and blocks approval/export. Model-backed identity/anatomy/video/audio
+quality checks, content-class checks, and destination-policy evaluation remain
+later Phase 7 activities.
 
 Exit: every review decision records status, reason, reviewer, and timestamp; approved assets export with manifest and disclosure sidecar.
 
