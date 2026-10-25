@@ -944,13 +944,15 @@ Meta integration mode.
 Secret material must be held by an OS keychain-backed adapter. The current
 implementation includes a provider-neutral keyring boundary and reports
 capability status without accepting token values; SQLite may retain only an
-opaque secret reference. Before enabling the eventual token exchange, recheck
-the selected Meta login mode and permission set against the [official
-Instagram content-publishing documentation](https://developers.facebook.com/docs/instagram-platform/content-publishing),
-then add keychain-backed code exchange, token refresh, account verification,
-public media delivery, and a provider-specific publish adapter behind explicit
-feature gates. The callback currently ends at `callback_received`; it does not
-claim that the account is authorized or publishable.
+opaque secret reference. Before enabling live exchange, recheck the selected
+Meta login mode and permission set against the [official Instagram
+content-publishing documentation](https://developers.facebook.com/docs/instagram-platform/content-publishing).
+The implementation now includes a separately gated keychain-backed code
+exchange and refresh boundary using provider response fixtures in tests only;
+it stores token bundles outside SQLite and marks the account `authorized` only
+after a successful exchange. The default path still ends at
+`callback_received`; live Meta calls remain opt-in and do not yet verify the
+account, deliver public media, or publish content.
 
 Publishing requires:
 

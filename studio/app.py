@@ -49,7 +49,7 @@ from .model_registry import get as get_model, rows as model_rows, workflow_model
 from .policies import AI_DISCLOSURE, normalize_content_class, normalize_destination_policy
 from .publishing_policies import catalog as publishing_policy_catalog, evaluate as evaluate_publishing_policy, infer_format
 from .publishing_providers import ProviderDisabled, catalog as publishing_provider_catalog, get as get_publishing_provider
-from .secrets import catalog as secret_storage_catalog
+from .secrets import SecretStoreUnavailable, catalog as secret_storage_catalog, get_store
 from .preflight import resource_preflight, workflow_preflight
 from .provenance import manifest, media_metadata, quality_report, sha256_bytes
 from .identity_conditioning import method_catalog, scenario_catalog
@@ -2121,6 +2121,21 @@ def _publishing_account_response(account: dict | None):
     return account or {}
 
 
+def _oauth_verifier_ref(session_id: str) -> str:
+    return f"publishing/oauth/{session_id}/pkce-verifier"
+
+
+def _account_token_ref(account_id: str) -> str:
+    return f"publishing/account/{account_id}/tokens"
+
+
+def _delete_secret(reference: str):
+    try:
+        get_store().delete(reference)
+    except (SecretStoreUnavailable, ValueError):
+        pass
+
+
 @app.get("/api/personas/{pid}/publishing-accounts")
 def list_publishing_accounts(pid: str):
     if not db.row("SELECT id FROM personas WHERE id=?", (pid,)):
@@ -2163,11 +2178,12 @@ def list_authorization_sessions(account_id: str):
 def publishing_oauth_callback(provider: str | None = None, state: str | None = None,
                               code: str | None = None, error: str | None = None,
                               error_description: str | None = None):
-    """Consume a provider callback without exchanging the code yet.
+    """Validate and consume a provider callback, with explicitly gated exchange.
 
     The raw OAuth state and authorization code are request-only values. The
     session stores only a state hash and is atomically consumed once. Token
-    exchange is intentionally deferred to the provider implementation gate.
+    exchange is disabled unless the provider and runtime feature gate are
+    explicitly enabled.
     """
     state = (state or "").strip()
     if not state or len(state) > 512:
@@ -2181,6 +2197,11 @@ def publishing_oauth_callback(provider: str | None = None, state: str | None = N
     if provider_name and provider_name != session["provider"]:
         raise HTTPException(400, "OAuth callback provider does not match the authorization session")
     try:
+        provider_impl = get_publishing_provider(session["provider"])
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    exchange_enabled = bool(getattr(provider_impl, "token_exchange_enabled", lambda: False)())
+    try:
         expires_at = datetime.fromisoformat(session["expires_at"])
         if expires_at.tzinfo is None:
             expires_at = expires_at.replace(tzinfo=timezone.utc)
@@ -2192,6 +2213,7 @@ def publishing_oauth_callback(provider: str | None = None, state: str | None = N
             session_id=session["id"], status="expired", consumed_at=callback_at.isoformat(timespec="seconds"),
             error="OAuth authorization session expired",
         )
+        _delete_secret(_oauth_verifier_ref(session["id"]))
         raise HTTPException(400, "OAuth authorization session expired")
     if session.get("status") != "planned" or session.get("consumed_at"):
         raise HTTPException(409, "OAuth authorization session has already been consumed")
@@ -2205,15 +2227,75 @@ def publishing_oauth_callback(provider: str | None = None, state: str | None = N
         )
         if not consumed:
             raise HTTPException(409, "OAuth authorization session has already been consumed")
+        _delete_secret(_oauth_verifier_ref(session["id"]))
         return {
             "status": "denied",
             "session": consumed,
             "provider": session["provider"],
             "external_calls": False,
-            "token_exchange": "disabled",
+            "token_exchange": "not_run",
         }
     if not code or len(code) > 4096:
         raise HTTPException(400, "OAuth callback authorization code is missing or invalid")
+    if exchange_enabled:
+        claimed = PublishingRepository.claim_auth_session(session["id"])
+        if not claimed:
+            raise HTTPException(409, "OAuth authorization session has already been consumed")
+        verifier_ref = _oauth_verifier_ref(session["id"])
+        try:
+            verifier = get_store().get(verifier_ref)
+            if not verifier:
+                raise ProviderDisabled("PKCE verifier is not available in the OS keychain")
+            token_payload = provider_impl.exchange_code(
+                auth_mode=session["auth_mode"], redirect_uri=session["redirect_uri"],
+                code=code, code_verifier=verifier,
+            )
+            token_ref = _account_token_ref(session["account_id"])
+            token_bundle = dict(token_payload)
+            token_bundle.update({
+                "provider": session["provider"],
+                "auth_mode": session["auth_mode"],
+                "stored_at": callback_at.isoformat(timespec="seconds"),
+            })
+            get_store().put(token_ref, json.dumps(token_bundle, ensure_ascii=False))
+            account = PublishingRepository.account(session["account_id"])
+            metadata = dict(account.get("metadata") or {}) if account else {}
+            metadata.update({
+                "provider": session["provider"],
+                "auth_mode": session["auth_mode"],
+                "authorized_at": callback_at.isoformat(timespec="seconds"),
+                "token_storage": "os_keyring",
+                "token_type": token_payload.get("token_type"),
+                "scope": token_payload.get("scope"),
+                "expires_in": token_payload.get("expires_in"),
+            })
+            authorized_account = PublishingRepository.authorize_account(
+                account_id=session["account_id"], token_ref=token_ref,
+                metadata=metadata, updated_at=callback_at.isoformat(timespec="seconds"),
+            )
+            finalized = PublishingRepository.finalize_auth_session(
+                session_id=session["id"], status="authorized",
+                consumed_at=callback_at.isoformat(timespec="seconds"),
+            )
+            if not finalized:
+                raise RuntimeError("OAuth authorization session could not be finalized")
+            _delete_secret(verifier_ref)
+            return {
+                "status": "authorized",
+                "session": finalized,
+                "account": authorized_account,
+                "provider": session["provider"],
+                "external_calls": True,
+                "token_exchange": "completed",
+                "token_stored": True,
+            }
+        except (ProviderDisabled, SecretStoreUnavailable, ValueError, RuntimeError) as exc:
+            PublishingRepository.finalize_auth_session(
+                session_id=session["id"], status="exchange_failed",
+                consumed_at=callback_at.isoformat(timespec="seconds"), error="token_exchange_failed",
+            )
+            _delete_secret(verifier_ref)
+            raise HTTPException(502, "Meta token exchange failed") from exc
     consumed = PublishingRepository.consume_auth_session(
         session_id=session["id"], status="callback_received", consumed_at=callback_at.isoformat(timespec="seconds"),
     )
@@ -2226,6 +2308,61 @@ def publishing_oauth_callback(provider: str | None = None, state: str | None = N
         "external_calls": False,
         "token_exchange": "disabled",
         "authorization_code_stored": False,
+    }
+
+
+@app.post("/api/publishing-accounts/{account_id}/token-refresh")
+def refresh_publishing_account_token(account_id: str):
+    account = PublishingRepository.account(account_id)
+    if not account:
+        raise HTTPException(404, "Publishing account not found")
+    provider_name = (account.get("metadata") or {}).get("provider", "meta_instagram")
+    try:
+        provider_impl = get_publishing_provider(provider_name)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if not bool(getattr(provider_impl, "token_exchange_enabled", lambda: False)()):
+        raise HTTPException(409, "Token refresh is disabled by provider configuration")
+    token_ref = PublishingRepository.account_token_ref(account_id)
+    if not token_ref:
+        raise HTTPException(409, "Publishing account has no keychain token bundle")
+    try:
+        raw_bundle = get_store().get(token_ref)
+        bundle = json.loads(raw_bundle or "")
+        refresh_token = bundle.get("refresh_token")
+        if not refresh_token:
+            raise ValueError("Token bundle has no refresh token")
+        refreshed = provider_impl.refresh_token(
+            auth_mode=(account.get("metadata") or {}).get("auth_mode", "instagram_login"),
+            refresh_token=refresh_token,
+        )
+        updated_bundle = dict(bundle)
+        updated_bundle.update({
+            key: value for key, value in refreshed.items()
+            if not (key == "refresh_token" and not value)
+        })
+        updated_bundle.update({"provider": provider_name, "stored_at": now()})
+        get_store().put(token_ref, json.dumps(updated_bundle, ensure_ascii=False))
+    except (SecretStoreUnavailable, ValueError, RuntimeError, json.JSONDecodeError) as exc:
+        raise HTTPException(502, "Meta token refresh failed") from exc
+    metadata = dict(account.get("metadata") or {})
+    metadata.update({
+        "refreshed_at": now(),
+        "token_storage": "os_keyring",
+        "token_type": refreshed.get("token_type"),
+        "scope": refreshed.get("scope"),
+        "expires_in": refreshed.get("expires_in"),
+    })
+    updated_account = PublishingRepository.authorize_account(
+        account_id=account_id, token_ref=token_ref, metadata=metadata, updated_at=now(),
+    )
+    return {
+        "status": "authorized",
+        "account": updated_account,
+        "provider": provider_name,
+        "external_calls": True,
+        "token_refresh": "completed",
+        "token_stored": True,
     }
 
 
@@ -2268,8 +2405,16 @@ def create_authorization_plan(account_id: str, payload: PublishingAuthorizationP
         raise HTTPException(400, str(exc)) from exc
     session_scopes = authorization.get("scopes", scopes)
     auth_mode = authorization.get("auth_mode", payload.auth_mode.strip().lower())
+    session_id = uid()
+    verifier_storage = "hashes_only"
+    if authorization.get("token_exchange_enabled"):
+        try:
+            get_store().put(_oauth_verifier_ref(session_id), verifier)
+        except (SecretStoreUnavailable, ValueError) as exc:
+            raise HTTPException(503, "OS keychain could not retain the PKCE verifier") from exc
+        verifier_storage = "os_keyring_verifier"
     session = PublishingRepository.create_auth_session(
-        session_id=uid(), account_id=account_id, provider=provider_name,
+        session_id=session_id, account_id=account_id, provider=provider_name,
         auth_mode=auth_mode,
         state_hash=hashlib.sha256(state.encode("utf-8")).hexdigest(),
         verifier_hash=hashlib.sha256(verifier.encode("utf-8")).hexdigest(),
@@ -2282,9 +2427,9 @@ def create_authorization_plan(account_id: str, payload: PublishingAuthorizationP
         "authorization_url": authorization.get("authorization_url"),
         "state_issued": bool(authorization),
         "state": state if authorization else None,
-        "code_verifier": authorization.get("code_verifier"),
+        "code_verifier": authorization.get("code_verifier") if verifier_storage == "hashes_only" else None,
         "scopes": session_scopes,
-        "secret_storage": "hashes_only",
+        "secret_storage": verifier_storage,
         "external_calls": False,
         "status": status,
         "error": error,

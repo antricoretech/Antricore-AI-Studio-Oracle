@@ -1,4 +1,7 @@
 import studio.database as db
+from studio import app as app_module
+from studio import publishing_providers as provider_module
+from studio.secrets import InMemorySecretStore
 
 
 def _persona(client):
@@ -201,6 +204,49 @@ def test_oauth_callback_records_denial_and_expires_sessions(client, monkeypatch)
     assert expired.status_code == 400
     sessions = client.get(f"/api/publishing-accounts/{account['id']}/authorization-sessions").json()
     assert any(item['id'] == expired_plan['session']['id'] and item['status'] == 'expired' for item in sessions)
+
+
+def test_configured_token_exchange_and_refresh_use_keychain_only(client, monkeypatch):
+    monkeypatch.setenv('STUDIO_ENABLE_INSTAGRAM_PROVIDER', '1')
+    monkeypatch.setenv('STUDIO_ENABLE_INSTAGRAM_TOKEN_EXCHANGE', '1')
+    monkeypatch.setenv('STUDIO_INSTAGRAM_CLIENT_ID', 'test-client-id')
+    monkeypatch.setenv('STUDIO_INSTAGRAM_CLIENT_SECRET_REF', 'keyring/meta/client-secret')
+    monkeypatch.setenv('STUDIO_INSTAGRAM_REDIRECT_URI', 'http://127.0.0.1:8123/oauth/callback')
+    store = InMemorySecretStore()
+    store.put('keyring/meta/client-secret', 'client-secret')
+    monkeypatch.setattr(app_module, 'get_store', lambda: store)
+    monkeypatch.setattr(provider_module, 'get_store', lambda: store)
+    provider = provider_module.get('meta_instagram')
+    monkeypatch.setattr(provider, '_post_form', lambda _url, _form: {
+        'access_token': 'access-token-value', 'refresh_token': 'refresh-token-value',
+        'expires_in': 3600, 'token_type': 'bearer', 'scope': 'instagram_business_basic',
+    })
+    persona = _persona(client)
+    account = client.post(f"/api/personas/{persona['id']}/publishing-accounts", json={
+        'platform': 'instagram', 'account_label': 'Token account', 'account_type': 'creator',
+    }).json()
+    plan = client.post(f"/api/publishing-accounts/{account['id']}/authorization-plan", json={
+        'provider': 'meta_instagram', 'redirect_uri': 'http://127.0.0.1:8123/oauth/callback',
+    }).json()
+    assert plan['secret_storage'] == 'os_keyring_verifier'
+    assert plan['code_verifier'] is None
+    callback = client.get('/oauth/callback', params={
+        'state': plan['state'], 'code': 'authorization-code',
+    })
+    assert callback.status_code == 200
+    assert callback.json()['status'] == 'authorized'
+    assert callback.json()['token_stored'] is True
+    assert 'access-token-value' not in callback.text
+    assert store.get(f"publishing/account/{account['id']}/tokens")
+    monkeypatch.setattr(provider, '_post_form', lambda _url, _form: {
+        'access_token': 'refreshed-access-token', 'expires_in': 3600,
+        'token_type': 'bearer', 'scope': 'instagram_business_basic',
+    })
+    refreshed = client.post(f"/api/publishing-accounts/{account['id']}/token-refresh")
+    assert refreshed.status_code == 200
+    assert refreshed.json()['token_refresh'] == 'completed'
+    assert 'refresh-token-value' not in refreshed.text
+    assert 'refresh-token-value' in store.get(f"publishing/account/{account['id']}/tokens")
 
 
 def test_publishing_account_rejects_unsupported_instagram_account_type(client):

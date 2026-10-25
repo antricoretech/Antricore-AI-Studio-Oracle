@@ -1312,6 +1312,19 @@ class PublishingRepository:
         )]
 
     @staticmethod
+    def account_token_ref(account_id: str):
+        row = db.row("SELECT token_ref FROM publishing_accounts WHERE id=?", (account_id,))
+        return row.get("token_ref") if row else None
+
+    @staticmethod
+    def authorize_account(*, account_id: str, token_ref: str, metadata: dict, updated_at: str):
+        db.write(
+            "UPDATE publishing_accounts SET status='authorized',token_ref=?,metadata_json=?,updated_at=? WHERE id=?",
+            (token_ref, json.dumps(metadata, ensure_ascii=False), updated_at, account_id),
+        )
+        return PublishingRepository.account(account_id)
+
+    @staticmethod
     def create_account(*, account_id: str, persona_id: str, platform: str, account_label: str,
                        account_type: str, handle: str | None, external_account_id: str | None,
                        metadata: dict, created_at: str):
@@ -1388,6 +1401,31 @@ class PublishingRepository:
                              error: str | None = None):
         updated = db.write(
             "UPDATE publishing_auth_sessions SET status=?,consumed_at=?,error=? WHERE id=? AND status='planned' AND consumed_at IS NULL",
+            (status, consumed_at, error, session_id),
+        )
+        if updated != 1:
+            return None
+        return PublishingRepository._decode_auth_session(db.row(
+            "SELECT * FROM publishing_auth_sessions WHERE id=?", (session_id,)
+        ))
+
+    @staticmethod
+    def claim_auth_session(session_id: str):
+        updated = db.write(
+            "UPDATE publishing_auth_sessions SET status='exchange_in_progress' WHERE id=? AND status='planned' AND consumed_at IS NULL",
+            (session_id,),
+        )
+        if updated != 1:
+            return None
+        return PublishingRepository._decode_auth_session(db.row(
+            "SELECT * FROM publishing_auth_sessions WHERE id=?", (session_id,)
+        ))
+
+    @staticmethod
+    def finalize_auth_session(*, session_id: str, status: str, consumed_at: str,
+                              error: str | None = None):
+        updated = db.write(
+            "UPDATE publishing_auth_sessions SET status=?,consumed_at=?,error=? WHERE id=? AND status='exchange_in_progress' AND consumed_at IS NULL",
             (status, consumed_at, error, session_id),
         )
         if updated != 1:
