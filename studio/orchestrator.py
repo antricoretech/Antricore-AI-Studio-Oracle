@@ -8,8 +8,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Dict, Any, List, Tuple
 from PIL import Image, ImageFilter
-
-import torch
+try:
+    import torch
+except ImportError:
+    torch = None
 
 from . import database as db
 from .provenance import media_metadata, quality_report, sha256_bytes
