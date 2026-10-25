@@ -947,12 +947,15 @@ capability status without accepting token values; SQLite may retain only an
 opaque secret reference. Before enabling live exchange, recheck the selected
 Meta login mode and permission set against the [official Instagram
 content-publishing documentation](https://developers.facebook.com/docs/instagram-platform/content-publishing).
-The implementation now includes a separately gated keychain-backed code
-exchange and refresh boundary using provider response fixtures in tests only;
-it stores token bundles outside SQLite and marks the account `authorized` only
-after a successful exchange. The default path still ends at
-`callback_received`; live Meta calls remain opt-in and do not yet verify the
-account, deliver public media, or publish content.
+The implementation now includes separately gated keychain-backed code
+exchange, refresh, and professional-account verification boundaries using
+provider response fixtures in tests only; it stores token bundles outside
+SQLite and marks the account `authorized` or `verified` only after the
+corresponding successful operation. A configured HTTPS public-media base URL
+can prepare a canonical asset delivery URL after local review gates pass; the
+app records that network reachability is not independently verified. The
+default path still ends at `callback_received`; live Meta calls remain opt-in
+and the publish adapter remains disabled.
 
 Publishing requires:
 

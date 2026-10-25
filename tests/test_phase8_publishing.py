@@ -249,6 +249,67 @@ def test_configured_token_exchange_and_refresh_use_keychain_only(client, monkeyp
     assert 'refresh-token-value' in store.get(f"publishing/account/{account['id']}/tokens")
 
 
+def test_account_verification_and_public_media_complete_readiness_contract(client, monkeypatch):
+    from io import BytesIO
+    from PIL import Image
+
+    monkeypatch.setenv('STUDIO_ENABLE_INSTAGRAM_PROVIDER', '1')
+    monkeypatch.setenv('STUDIO_ENABLE_INSTAGRAM_TOKEN_EXCHANGE', '1')
+    monkeypatch.setenv('STUDIO_ENABLE_INSTAGRAM_ACCOUNT_VERIFICATION', '1')
+    monkeypatch.setenv('STUDIO_ENABLE_PUBLIC_MEDIA_DELIVERY', '1')
+    monkeypatch.setenv('STUDIO_PUBLIC_MEDIA_BASE_URL', 'https://media.example.test')
+    monkeypatch.setenv('STUDIO_INSTAGRAM_CLIENT_ID', 'test-client-id')
+    monkeypatch.setenv('STUDIO_INSTAGRAM_CLIENT_SECRET_REF', 'keyring/meta/client-secret')
+    monkeypatch.setenv('STUDIO_INSTAGRAM_REDIRECT_URI', 'http://127.0.0.1:8123/oauth/callback')
+    store = InMemorySecretStore()
+    store.put('keyring/meta/client-secret', 'client-secret')
+    monkeypatch.setattr(app_module, 'get_store', lambda: store)
+    monkeypatch.setattr(provider_module, 'get_store', lambda: store)
+    provider = provider_module.get('meta_instagram')
+    monkeypatch.setattr(provider, '_post_form', lambda _url, _form: {
+        'access_token': 'access-token-value', 'refresh_token': 'refresh-token-value',
+        'expires_in': 3600, 'token_type': 'bearer',
+        'scope': 'instagram_business_basic,instagram_business_content_publish',
+    })
+    monkeypatch.setattr(provider, '_get_json', lambda _url, _query: {
+        'id': 'instagram-external-123', 'username': 'verified_creator', 'account_type': 'creator',
+    })
+    persona = _persona(client)
+    account = client.post(f"/api/personas/{persona['id']}/publishing-accounts", json={
+        'platform': 'instagram', 'account_label': 'Verified account', 'account_type': 'creator',
+    }).json()
+    plan = client.post(f"/api/publishing-accounts/{account['id']}/authorization-plan", json={
+        'provider': 'meta_instagram', 'redirect_uri': 'http://127.0.0.1:8123/oauth/callback',
+    }).json()
+    assert client.get('/oauth/callback', params={'state': plan['state'], 'code': 'authorization-code'}).status_code == 200
+    verified = client.post(f"/api/publishing-accounts/{account['id']}/verify")
+    assert verified.status_code == 200
+    assert verified.json()['status'] == 'verified'
+    assert verified.json()['account']['external_account_id'] == 'instagram-external-123'
+    assert 'access-token-value' not in verified.text
+
+    assert client.post(f"/api/personas/{persona['id']}/freeze").status_code == 200
+    buffer = BytesIO()
+    Image.new('RGB', (32, 32), 'ivory').save(buffer, format='PNG')
+    imported = client.post('/api/assets/import', data={
+        'persona_id': persona['id'], 'kind': 'image', 'prompt': 'Public media image',
+        'content_class': 'adult_glamour', 'destination_policy': 'eligible',
+        'disclosure': 'Fictional adult character. AI-generated synthetic media.', 'rights_confirmed': 'true',
+    }, files={'file': ('public-media.png', buffer.getvalue(), 'image/png')})
+    aid = imported.json()['id']
+    assert client.post(f'/api/assets/{aid}/assessment', json={
+        'identity_score': 0.95, 'anatomy_score': 0.9, 'hands_score': 0.9,
+        'facial_drift_score': 0.95, 'evaluator': 'qa_operator',
+    }).status_code == 200
+    assert client.patch(f'/api/assets/{aid}/review', json={'review': 'approved', 'reason': 'Ready for delivery'}).status_code == 200
+    public_media = client.post(f'/api/assets/{aid}/public-media')
+    assert public_media.status_code == 200
+    assert public_media.json()['media']['url'] == f'https://media.example.test/api/assets/{aid}/file'
+    readiness = client.get(f'/api/assets/{aid}/platform-readiness?platform=instagram&format=feed_image&account_id={account["id"]}')
+    assert readiness.status_code == 200
+    assert readiness.json()['platform_readiness']['ready'] is True
+
+
 def test_publishing_account_rejects_unsupported_instagram_account_type(client):
     persona = _persona(client)
     response = client.post(f"/api/personas/{persona['id']}/publishing-accounts", json={

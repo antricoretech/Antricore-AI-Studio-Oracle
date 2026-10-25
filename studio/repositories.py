@@ -1325,6 +1325,15 @@ class PublishingRepository:
         return PublishingRepository.account(account_id)
 
     @staticmethod
+    def verify_account(*, account_id: str, external_account_id: str, handle: str | None,
+                       account_type: str, metadata: dict, updated_at: str):
+        db.write(
+            "UPDATE publishing_accounts SET status='verified',external_account_id=?,handle=?,account_type=?,metadata_json=?,updated_at=? WHERE id=? AND status IN ('authorized','verified')",
+            (external_account_id, handle, account_type, json.dumps(metadata, ensure_ascii=False), updated_at, account_id),
+        )
+        return PublishingRepository.account(account_id)
+
+    @staticmethod
     def create_account(*, account_id: str, persona_id: str, platform: str, account_label: str,
                        account_type: str, handle: str | None, external_account_id: str | None,
                        metadata: dict, created_at: str):

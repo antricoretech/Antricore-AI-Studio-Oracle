@@ -25,7 +25,7 @@ from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from dotenv import load_dotenv
 ROOT = Path(__file__).resolve().parents[1]
@@ -2366,6 +2366,97 @@ def refresh_publishing_account_token(account_id: str):
     }
 
 
+@app.post("/api/publishing-accounts/{account_id}/verify")
+def verify_publishing_account(account_id: str):
+    account = PublishingRepository.account(account_id)
+    if not account:
+        raise HTTPException(404, "Publishing account not found")
+    if account.get("platform") != "instagram":
+        raise HTTPException(400, "Only Instagram account verification is supported")
+    if account.get("status") not in {"authorized", "verified"}:
+        raise HTTPException(409, "Authorize the publishing account before verification")
+    metadata = account.get("metadata") or {}
+    provider_name = metadata.get("provider", "meta_instagram")
+    try:
+        provider_impl = get_publishing_provider(provider_name)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if not bool(getattr(provider_impl, "account_verification_enabled", lambda: False)()):
+        raise HTTPException(409, "Meta account verification is disabled by provider configuration")
+    token_ref = PublishingRepository.account_token_ref(account_id)
+    if not token_ref:
+        raise HTTPException(409, "Publishing account has no keychain token bundle")
+    try:
+        bundle = json.loads(get_store().get(token_ref) or "")
+        if not isinstance(bundle, dict) or not bundle.get("access_token"):
+            raise ValueError("Token bundle has no access token")
+        verification = provider_impl.verify_account(
+            auth_mode=metadata.get("auth_mode", "instagram_login"),
+            access_token=bundle["access_token"],
+        )
+    except (SecretStoreUnavailable, ValueError, RuntimeError, json.JSONDecodeError) as exc:
+        raise HTTPException(502, "Meta account verification failed") from exc
+    account_type = verification.get("account_type")
+    if account_type not in {"professional", "business", "creator"}:
+        raise HTTPException(409, "Verified Instagram account is not a professional, business, or creator account")
+    metadata.update({
+        "verified_at": now(),
+        "verified_by_provider": provider_name,
+        "verified_external_account_id": verification["external_account_id"],
+        "verified_handle": verification.get("handle"),
+    })
+    verified_account = PublishingRepository.verify_account(
+        account_id=account_id, external_account_id=verification["external_account_id"],
+        handle=verification.get("handle"), account_type=account_type,
+        metadata=metadata, updated_at=now(),
+    )
+    return {
+        "status": "verified",
+        "account": verified_account,
+        "provider": provider_name,
+        "external_calls": True,
+        "account_verified": True,
+    }
+
+
+def _asset_public_media(asset: dict) -> dict:
+    try:
+        metadata = json.loads(asset.get("metadata_json") or "{}")
+    except (TypeError, json.JSONDecodeError):
+        metadata = {}
+    value = metadata.get("publishing_media")
+    return value if isinstance(value, dict) else {}
+
+
+@app.post("/api/assets/{aid}/public-media")
+def prepare_public_media(aid: str):
+    asset, _job, _person, _quality = _asset_bundle(aid)
+    base = asset_publishing_readiness(aid)
+    if not base["ready"]:
+        raise HTTPException(409, "Asset must pass publishing readiness before public media delivery is prepared")
+    enabled = os.getenv("STUDIO_ENABLE_PUBLIC_MEDIA_DELIVERY", "0").lower() in {"1", "true", "yes"}
+    base_url = os.getenv("STUDIO_PUBLIC_MEDIA_BASE_URL", "").strip().rstrip("/")
+    parsed = urlparse(base_url)
+    allow_insecure = os.getenv("STUDIO_ALLOW_INSECURE_PUBLIC_MEDIA", "0").lower() in {"1", "true", "yes"}
+    if not enabled or not parsed.netloc or parsed.scheme not in ({"http", "https"} if allow_insecure else {"https"}):
+        raise HTTPException(409, "Public media delivery is not explicitly configured with an HTTPS base URL")
+    try:
+        metadata = json.loads(asset.get("metadata_json") or "{}")
+    except (TypeError, json.JSONDecodeError):
+        metadata = {}
+    public_url = f"{base_url}/api/assets/{quote(aid, safe='')}/file"
+    media = {
+        "status": "ready",
+        "url": public_url,
+        "provider": "configured_public_base_url",
+        "prepared_at": now(),
+        "network_verified": False,
+    }
+    metadata["publishing_media"] = media
+    db.write("UPDATE assets SET metadata_json=? WHERE id=?", (json.dumps(metadata, ensure_ascii=False), aid))
+    return {"id": aid, "status": "ready", "media": media, "external_calls": False}
+
+
 @app.post("/api/publishing-accounts/{account_id}/authorization-plan")
 def create_authorization_plan(account_id: str, payload: PublishingAuthorizationPlanIn):
     account = PublishingRepository.account(account_id)
@@ -2445,13 +2536,17 @@ def asset_platform_readiness(aid: str, platform: str = "instagram", format: str 
         raise HTTPException(400, "A supported publishing format is required for this asset kind")
     try:
         account = PublishingRepository.account(account_id, asset.get("persona_id")) if account_id else None
+        account_metadata = account.get("metadata") or {} if account else {}
+        public_media = _asset_public_media(asset)
         report = evaluate_publishing_policy(
             platform,
             format_name,
             asset_kind=asset.get("kind") or "",
             base_ready=base["ready"],
             destination_policy=asset.get("destination_policy") or "review_required",
+            public_media_url=bool(public_media.get("status") == "ready" and public_media.get("url")),
             account_bound=bool(account and account.get("status") == "verified"),
+            permissions_configured=bool(account and account.get("status") == "verified" and account_metadata.get("scope")),
             professional_account=bool(account and account.get("account_type") in {"professional", "business", "creator"} and account.get("status") == "verified"),
         )
     except ValueError as exc:
@@ -2464,6 +2559,7 @@ def asset_platform_readiness(aid: str, platform: str = "instagram", format: str 
         "platform_readiness": report,
         "quality_status": quality.get("status"),
         "account": account,
+        "public_media": public_media,
     }
 
 
@@ -2478,10 +2574,14 @@ def publish_dry_run(aid: str, payload: PublishDryRunIn):
         raise HTTPException(400, "A supported publishing format is required for this asset kind")
     base = asset_publishing_readiness(aid)
     try:
+        account_metadata = account.get("metadata") or {}
+        public_media = _asset_public_media(asset)
         policy = evaluate_publishing_policy(
             account["platform"], format_name, asset_kind=asset.get("kind") or "",
             base_ready=base["ready"], destination_policy=asset.get("destination_policy") or "review_required",
+            public_media_url=bool(public_media.get("status") == "ready" and public_media.get("url")),
             account_bound=account.get("status") == "verified",
+            permissions_configured=account.get("status") == "verified" and bool(account_metadata.get("scope")),
             professional_account=account.get("status") == "verified" and account.get("account_type") in {"professional", "business", "creator"},
         )
     except ValueError as exc:

@@ -70,6 +70,7 @@ class MetaInstagramProvider:
     def _config(self) -> dict:
         enabled = os.getenv("STUDIO_ENABLE_INSTAGRAM_PROVIDER", "0").lower() in {"1", "true", "yes"}
         token_exchange_enabled = os.getenv("STUDIO_ENABLE_INSTAGRAM_TOKEN_EXCHANGE", "0").lower() in {"1", "true", "yes"}
+        account_verification_enabled = os.getenv("STUDIO_ENABLE_INSTAGRAM_ACCOUNT_VERIFICATION", "0").lower() in {"1", "true", "yes"}
         secret_ref = os.getenv("STUDIO_INSTAGRAM_CLIENT_SECRET_REF", "").strip()
         client_id = os.getenv("STUDIO_INSTAGRAM_CLIENT_ID", "").strip()
         redirect_uri = os.getenv("STUDIO_INSTAGRAM_REDIRECT_URI", "").strip()
@@ -79,6 +80,7 @@ class MetaInstagramProvider:
             "enabled": enabled,
             "configured": configured,
             "token_exchange_enabled": token_exchange_enabled and configured,
+            "account_verification_enabled": account_verification_enabled and configured and token_exchange_enabled,
             "client_id": client_id,
             "secret_ref": secret_ref,
             "client_secret_ref_present": bool(secret_ref),
@@ -97,8 +99,8 @@ class MetaInstagramProvider:
             "supports_oauth": config["configured"],
             "supports_token_exchange": config["token_exchange_enabled"],
             "supports_token_refresh": config["token_exchange_enabled"],
+            "supports_account_verification": config["account_verification_enabled"],
             "supports_publish": False,
-            "supports_account_verification": False,
             "configuration": {
                 "enabled": config["enabled"],
                 "configured": config["configured"],
@@ -107,6 +109,7 @@ class MetaInstagramProvider:
                 "redirect_uri_present": bool(config["redirect_uri"]),
                 "secret_storage_ready": config["secret_storage_ready"],
                 "token_exchange_enabled": config["token_exchange_enabled"],
+                "account_verification_enabled": config["account_verification_enabled"],
             },
             "auth_modes": {
                 mode: {"required_scopes": list(details["scopes"])}
@@ -116,6 +119,9 @@ class MetaInstagramProvider:
 
     def token_exchange_enabled(self) -> bool:
         return bool(self._config()["token_exchange_enabled"])
+
+    def account_verification_enabled(self) -> bool:
+        return bool(self._config()["account_verification_enabled"])
 
     def authorization_plan(self, *, auth_mode: str, redirect_uri: str, state: str, code_verifier: str,
                            requested_scopes: list[str]) -> dict:
@@ -244,6 +250,47 @@ class MetaInstagramProvider:
         }
         payload = (request_fn or self._post_form)(self._token_endpoint(auth_mode), form)
         return self._token_payload(payload)
+
+    @staticmethod
+    def _get_json(url: str, query: dict) -> dict:
+        endpoint = f"{url}?{urlencode(query)}"
+        request = Request(endpoint, headers={"Accept": "application/json"}, method="GET")
+        try:
+            with urlopen(request, timeout=20) as response:
+                payload = response.read(1_000_000)
+        except (HTTPError, URLError, TimeoutError) as exc:
+            raise RuntimeError("Meta account verification request failed") from exc
+        try:
+            result = json.loads(payload.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise RuntimeError("Meta account verification response was not valid JSON") from exc
+        if not isinstance(result, dict) or result.get("error"):
+            raise RuntimeError("Meta account verification response was invalid")
+        return result
+
+    def verify_account(self, *, auth_mode: str, access_token: str, request_fn=None) -> dict:
+        config = self._config()
+        if not config["account_verification_enabled"]:
+            raise ProviderDisabled("Meta account verification is disabled by configuration")
+        if not access_token or len(access_token) > 4096:
+            raise ValueError("An access token is required for account verification")
+        version = os.getenv("STUDIO_META_API_VERSION", "v25.0")
+        if auth_mode == "instagram_login":
+            endpoint = os.getenv("STUDIO_INSTAGRAM_VERIFY_ENDPOINT", "https://graph.instagram.com/me")
+            fields = "id,username,account_type,user_type"
+        elif auth_mode == "facebook_login":
+            endpoint = os.getenv("STUDIO_META_VERIFY_ENDPOINT", f"https://graph.facebook.com/{version}/me")
+            fields = "id,name,username,account_type,user_type"
+        else:
+            raise ValueError(f"Unsupported Meta Instagram authorization mode: {auth_mode}")
+        query = {"access_token": access_token, "fields": fields}
+        payload = (request_fn or self._get_json)(endpoint, query)
+        external_id = payload.get("id")
+        if not isinstance(external_id, str) or not external_id:
+            raise RuntimeError("Meta account verification did not return an account id")
+        account_type = str(payload.get("account_type") or payload.get("user_type") or "").strip().lower()
+        handle = str(payload.get("username") or "").strip() or None
+        return {"external_account_id": external_id[:160], "handle": handle[:120] if handle else None, "account_type": account_type[:40]}
 
     def dry_run(self, *, platform: str, format_name: str, checks: list[dict], account_id: str) -> dict:
         return {
