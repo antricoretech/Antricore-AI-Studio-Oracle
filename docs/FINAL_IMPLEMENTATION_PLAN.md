@@ -936,6 +936,10 @@ permission set against the [official Instagram content-publishing
 documentation](https://developers.facebook.com/docs/instagram-platform/content-publishing);
 the app must not assume that one permission set or account path covers every
 Meta integration mode.
+Secret material must be held by an OS keychain-backed adapter. The current
+implementation includes a provider-neutral keyring boundary and reports
+capability status without accepting token values; SQLite may retain only an
+opaque secret reference.
 
 Publishing requires:
 

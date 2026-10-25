@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from copy import deepcopy
 
+from .secrets import catalog as secret_storage_catalog
+
 
 class LocalDryRunProvider:
     name = "local_dry_run"
@@ -21,6 +23,7 @@ class LocalDryRunProvider:
             "supports_oauth": False,
             "supports_publish": False,
             "supports_account_verification": False,
+            "secret_storage": secret_storage_catalog(),
         }
 
     def dry_run(self, *, platform: str, format_name: str, checks: list[dict], account_id: str) -> dict:
@@ -43,8 +46,22 @@ class LocalDryRunProvider:
 _PROVIDERS = {LocalDryRunProvider.name: LocalDryRunProvider()}
 
 
+def _planned_provider_catalog() -> dict:
+    return {
+        "id": "meta_instagram",
+        "label": "Meta Instagram provider",
+        "execution_status": "disabled",
+        "implementation_status": "planned",
+        "external_calls": False,
+        "supports_oauth": False,
+        "supports_publish": False,
+        "supports_account_verification": False,
+        "requires_secret_storage": "keyring",
+    }
+
+
 def catalog() -> list[dict]:
-    return [provider.catalog() for provider in _PROVIDERS.values()]
+    return [provider.catalog() for provider in _PROVIDERS.values()] + [_planned_provider_catalog()]
 
 
 def get(name: str):

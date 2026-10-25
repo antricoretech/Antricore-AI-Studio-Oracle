@@ -49,6 +49,7 @@ from .model_registry import get as get_model, rows as model_rows, workflow_model
 from .policies import AI_DISCLOSURE, normalize_content_class, normalize_destination_policy
 from .publishing_policies import catalog as publishing_policy_catalog, evaluate as evaluate_publishing_policy, infer_format
 from .publishing_providers import catalog as publishing_provider_catalog, get as get_publishing_provider
+from .secrets import catalog as secret_storage_catalog
 from .preflight import resource_preflight, workflow_preflight
 from .provenance import manifest, media_metadata, quality_report, sha256_bytes
 from .identity_conditioning import method_catalog, scenario_catalog
@@ -2103,7 +2104,17 @@ def publishing_policies():
 
 @app.get("/api/publishing/providers")
 def publishing_providers():
-    return {"external_calls": False, "providers": publishing_provider_catalog()}
+    return {"external_calls": False, "secret_storage": secret_storage_catalog(), "providers": publishing_provider_catalog()}
+
+
+@app.get("/api/publishing/security")
+def publishing_security():
+    return {
+        "external_calls": False,
+        "secret_storage": secret_storage_catalog(),
+        "database_secret_values": False,
+        "token_reference_policy": "opaque_reference_only",
+    }
 
 
 def _publishing_account_response(account: dict | None):

@@ -29,6 +29,28 @@ def test_publishing_provider_catalog_is_dry_run_only(client):
     assert provider['id'] == 'local_dry_run'
     assert provider['supports_oauth'] is False
     assert provider['supports_publish'] is False
+    assert data['providers'][1]['id'] == 'meta_instagram'
+    assert data['providers'][1]['execution_status'] == 'disabled'
+
+
+def test_publishing_security_exposes_capability_only(client):
+    response = client.get('/api/publishing/security')
+    assert response.status_code == 200
+    data = response.json()
+    assert data['external_calls'] is False
+    assert data['database_secret_values'] is False
+    assert data['token_reference_policy'] == 'opaque_reference_only'
+    assert 'secret' not in str(data).lower() or 'secret_storage' in data
+
+
+def test_in_memory_secret_store_is_only_a_test_contract():
+    from studio.secrets import InMemorySecretStore
+
+    store = InMemorySecretStore()
+    store.put('test/provider/token', 'token-value')
+    assert store.get('test/provider/token') == 'token-value'
+    store.delete('test/provider/token')
+    assert store.get('test/provider/token') is None
 
 
 def test_authorization_plan_is_persisted_without_oauth_or_secrets(client):
