@@ -1,3 +1,6 @@
+import studio.database as db
+
+
 def _persona(client):
     return client.post('/api/personas', json={
         'name': 'Publishing Persona', 'age': 30,
@@ -115,6 +118,89 @@ def test_configured_meta_provider_generates_pkce_plan_without_network(client, mo
     sessions = client.get(f"/api/publishing-accounts/{account['id']}/authorization-sessions").json()
     assert sessions[0]['auth_mode'] == 'instagram_login'
     assert sessions[0]['scopes'] == data['scopes']
+
+
+def test_oauth_callback_consumes_state_once_without_token_exchange(client, monkeypatch):
+    monkeypatch.setenv('STUDIO_ENABLE_INSTAGRAM_PROVIDER', '1')
+    monkeypatch.setenv('STUDIO_INSTAGRAM_CLIENT_ID', 'test-client-id')
+    monkeypatch.setenv('STUDIO_INSTAGRAM_CLIENT_SECRET_REF', 'keyring/meta/client-secret')
+    monkeypatch.setenv('STUDIO_INSTAGRAM_REDIRECT_URI', 'http://127.0.0.1:8123/oauth/callback')
+    persona = _persona(client)
+    account = client.post(f"/api/personas/{persona['id']}/publishing-accounts", json={
+        'platform': 'instagram', 'account_label': 'Callback account', 'account_type': 'creator',
+    }).json()
+    plan = client.post(f"/api/publishing-accounts/{account['id']}/authorization-plan", json={
+        'provider': 'meta_instagram', 'redirect_uri': 'http://127.0.0.1:8123/oauth/callback',
+    }).json()
+    callback = client.get('/oauth/callback', params={
+        'provider': 'meta_instagram', 'state': plan['state'], 'code': 'one-time-code',
+    })
+    assert callback.status_code == 200
+    data = callback.json()
+    assert data['status'] == 'callback_received'
+    assert data['token_exchange'] == 'disabled'
+    assert data['authorization_code_stored'] is False
+    assert 'one-time-code' not in callback.text
+    replay = client.get('/api/publishing/oauth/callback', params={
+        'provider': 'meta_instagram', 'state': plan['state'], 'code': 'one-time-code',
+    })
+    assert replay.status_code == 409
+    sessions = client.get(f"/api/publishing-accounts/{account['id']}/authorization-sessions").json()
+    assert sessions[0]['status'] == 'callback_received'
+    assert sessions[0]['consumed_at']
+
+
+def test_oauth_callback_rejects_invalid_state_and_provider_mismatch(client, monkeypatch):
+    monkeypatch.setenv('STUDIO_ENABLE_INSTAGRAM_PROVIDER', '1')
+    monkeypatch.setenv('STUDIO_INSTAGRAM_CLIENT_ID', 'test-client-id')
+    monkeypatch.setenv('STUDIO_INSTAGRAM_CLIENT_SECRET_REF', 'keyring/meta/client-secret')
+    monkeypatch.setenv('STUDIO_INSTAGRAM_REDIRECT_URI', 'http://127.0.0.1:8123/oauth/callback')
+    persona = _persona(client)
+    account = client.post(f"/api/personas/{persona['id']}/publishing-accounts", json={
+        'platform': 'instagram', 'account_label': 'State account', 'account_type': 'creator',
+    }).json()
+    plan = client.post(f"/api/publishing-accounts/{account['id']}/authorization-plan", json={
+        'provider': 'meta_instagram', 'redirect_uri': 'http://127.0.0.1:8123/oauth/callback',
+    }).json()
+    invalid = client.get('/api/publishing/oauth/callback', params={'state': 'wrong-state', 'code': 'code'})
+    assert invalid.status_code == 400
+    mismatch = client.get('/api/publishing/oauth/callback', params={
+        'provider': 'local_dry_run', 'state': plan['state'], 'code': 'code',
+    })
+    assert mismatch.status_code == 400
+
+
+def test_oauth_callback_records_denial_and_expires_sessions(client, monkeypatch):
+    monkeypatch.setenv('STUDIO_ENABLE_INSTAGRAM_PROVIDER', '1')
+    monkeypatch.setenv('STUDIO_INSTAGRAM_CLIENT_ID', 'test-client-id')
+    monkeypatch.setenv('STUDIO_INSTAGRAM_CLIENT_SECRET_REF', 'keyring/meta/client-secret')
+    monkeypatch.setenv('STUDIO_INSTAGRAM_REDIRECT_URI', 'http://127.0.0.1:8123/oauth/callback')
+    persona = _persona(client)
+    account = client.post(f"/api/personas/{persona['id']}/publishing-accounts", json={
+        'platform': 'instagram', 'account_label': 'Denial account', 'account_type': 'creator',
+    }).json()
+    denied_plan = client.post(f"/api/publishing-accounts/{account['id']}/authorization-plan", json={
+        'provider': 'meta_instagram', 'redirect_uri': 'http://127.0.0.1:8123/oauth/callback',
+    }).json()
+    denied = client.get('/oauth/callback', params={
+        'state': denied_plan['state'], 'error': 'access_denied',
+        'error_description': 'contains private details',
+    })
+    assert denied.status_code == 200
+    assert denied.json()['status'] == 'denied'
+    assert denied.json()['session']['error'] == 'access_denied'
+    assert 'private' not in denied.text
+
+    expired_plan = client.post(f"/api/publishing-accounts/{account['id']}/authorization-plan", json={
+        'provider': 'meta_instagram', 'redirect_uri': 'http://127.0.0.1:8123/oauth/callback',
+    }).json()
+    db.write("UPDATE publishing_auth_sessions SET expires_at=? WHERE id=?", (
+        '2000-01-01T00:00:00+00:00', expired_plan['session']['id'],
+    ))
+    expired = client.get('/oauth/callback', params={'state': expired_plan['state'], 'code': 'code'})
+    assert expired.status_code == 400
+    sessions = client.get(f"/api/publishing-accounts/{account['id']}/authorization-sessions").json()
+    assert any(item['id'] == expired_plan['session']['id'] and item['status'] == 'expired' for item in sessions)
 
 
 def test_publishing_account_rejects_unsupported_instagram_account_type(client):

@@ -1378,6 +1378,25 @@ class PublishingRepository:
         )]
 
     @staticmethod
+    def auth_session_by_state_hash(state_hash: str):
+        return PublishingRepository._decode_auth_session(db.row(
+            "SELECT * FROM publishing_auth_sessions WHERE state_hash=?", (state_hash,)
+        ))
+
+    @staticmethod
+    def consume_auth_session(*, session_id: str, status: str, consumed_at: str,
+                             error: str | None = None):
+        updated = db.write(
+            "UPDATE publishing_auth_sessions SET status=?,consumed_at=?,error=? WHERE id=? AND status='planned' AND consumed_at IS NULL",
+            (status, consumed_at, error, session_id),
+        )
+        if updated != 1:
+            return None
+        return PublishingRepository._decode_auth_session(db.row(
+            "SELECT * FROM publishing_auth_sessions WHERE id=?", (session_id,)
+        ))
+
+    @staticmethod
     def create_auth_session(*, session_id: str, account_id: str, provider: str,
                             auth_mode: str,
                             state_hash: str, verifier_hash: str, redirect_uri: str,

@@ -932,8 +932,10 @@ keychain secret reference, and exact callback URI. The plan validates the
 selected Meta login mode and scopes, persists only hashes of state/verifier,
 and performs no OAuth exchange, account verification, media upload, or
 publishing. The authorization response exposes the transient state and PKCE
-verifier only to the initiating caller; later callback work must bind them to
-the persisted session and never log or persist the raw values.
+verifier only to the initiating caller. The local callback contract now
+validates the state/provider/session lifetime, records denied callbacks with
+sanitized errors, atomically consumes successful callbacks once, and never
+stores the raw state, verifier, authorization code, or token.
 Before enabling that adapter, revalidate the selected Meta login mode and
 permission set against the [official Instagram content-publishing
 documentation](https://developers.facebook.com/docs/instagram-platform/content-publishing);
@@ -945,9 +947,10 @@ capability status without accepting token values; SQLite may retain only an
 opaque secret reference. Before enabling the eventual token exchange, recheck
 the selected Meta login mode and permission set against the [official
 Instagram content-publishing documentation](https://developers.facebook.com/docs/instagram-platform/content-publishing),
-then add callback validation, one-time session consumption, token refresh,
-account verification, public media delivery, and a provider-specific publish
-adapter behind explicit feature gates.
+then add keychain-backed code exchange, token refresh, account verification,
+public media delivery, and a provider-specific publish adapter behind explicit
+feature gates. The callback currently ends at `callback_received`; it does not
+claim that the account is authorized or publishable.
 
 Publishing requires:
 

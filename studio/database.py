@@ -550,7 +550,7 @@ def row(sql: str, args=()):
 
 def write(sql: str, args=()):
     with connection() as con:
-        con.execute(sql, args)
+        return con.execute(sql, args).rowcount
 
 
 def write_many(statements):

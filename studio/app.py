@@ -2158,6 +2158,77 @@ def list_authorization_sessions(account_id: str):
     return PublishingRepository.auth_sessions(account_id)
 
 
+@app.get("/oauth/callback")
+@app.get("/api/publishing/oauth/callback")
+def publishing_oauth_callback(provider: str | None = None, state: str | None = None,
+                              code: str | None = None, error: str | None = None,
+                              error_description: str | None = None):
+    """Consume a provider callback without exchanging the code yet.
+
+    The raw OAuth state and authorization code are request-only values. The
+    session stores only a state hash and is atomically consumed once. Token
+    exchange is intentionally deferred to the provider implementation gate.
+    """
+    state = (state or "").strip()
+    if not state or len(state) > 512:
+        raise HTTPException(400, "OAuth callback state is missing or invalid")
+    session = PublishingRepository.auth_session_by_state_hash(
+        hashlib.sha256(state.encode("utf-8")).hexdigest()
+    )
+    if not session:
+        raise HTTPException(400, "OAuth callback state is invalid")
+    provider_name = (provider or "").strip().lower()
+    if provider_name and provider_name != session["provider"]:
+        raise HTTPException(400, "OAuth callback provider does not match the authorization session")
+    try:
+        expires_at = datetime.fromisoformat(session["expires_at"])
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        expires_at = datetime.min.replace(tzinfo=timezone.utc)
+    callback_at = datetime.now(timezone.utc)
+    if expires_at <= callback_at:
+        PublishingRepository.consume_auth_session(
+            session_id=session["id"], status="expired", consumed_at=callback_at.isoformat(timespec="seconds"),
+            error="OAuth authorization session expired",
+        )
+        raise HTTPException(400, "OAuth authorization session expired")
+    if session.get("status") != "planned" or session.get("consumed_at"):
+        raise HTTPException(409, "OAuth authorization session has already been consumed")
+    if error:
+        # Persist only a bounded provider error code. Never retain the
+        # provider's free-form description, which may contain sensitive data.
+        safe_error = re.sub(r"[^A-Za-z0-9._:-]+", "_", error.strip().lower())[:80] or "provider_denied"
+        consumed = PublishingRepository.consume_auth_session(
+            session_id=session["id"], status="denied", consumed_at=callback_at.isoformat(timespec="seconds"),
+            error=safe_error,
+        )
+        if not consumed:
+            raise HTTPException(409, "OAuth authorization session has already been consumed")
+        return {
+            "status": "denied",
+            "session": consumed,
+            "provider": session["provider"],
+            "external_calls": False,
+            "token_exchange": "disabled",
+        }
+    if not code or len(code) > 4096:
+        raise HTTPException(400, "OAuth callback authorization code is missing or invalid")
+    consumed = PublishingRepository.consume_auth_session(
+        session_id=session["id"], status="callback_received", consumed_at=callback_at.isoformat(timespec="seconds"),
+    )
+    if not consumed:
+        raise HTTPException(409, "OAuth authorization session has already been consumed")
+    return {
+        "status": "callback_received",
+        "session": consumed,
+        "provider": session["provider"],
+        "external_calls": False,
+        "token_exchange": "disabled",
+        "authorization_code_stored": False,
+    }
+
+
 @app.post("/api/publishing-accounts/{account_id}/authorization-plan")
 def create_authorization_plan(account_id: str, payload: PublishingAuthorizationPlanIn):
     account = PublishingRepository.account(account_id)
