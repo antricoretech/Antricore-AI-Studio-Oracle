@@ -224,7 +224,37 @@ part of the selected production profile.
 
 This stage requires explicit approval after all earlier stages pass.
 
-Install only the selected, license-verified assets:
+Do not install every model in the registry. Select one primary image model after
+the target-Mac benchmark and keep only the compatibility or fallback models that
+are justified by the production workflow.
+
+### Image-model selection matrix
+
+| Model ID | Intended role | Production recommendation | License / decision note | Runtime note |
+|---|---|---|---|---|
+| `flux2-klein-4b` | Canonical primary image generation and reference-image editing | **Primary benchmark candidate** for the M5/16 GB Mac | Apache-2.0; verify the exact model-card terms and current release before installation | Requires measured MPS memory, speed, identity consistency, and adult/glamour prompt-quality testing |
+| `juggernaut-xl-v10` | Legacy SDXL photoshoot and existing legacy content compatibility | **Legacy compatibility model** | CreativeML OpenRAIL++-M; verify commercial-use terms for the selected checkpoint | Explicitly supported by `studio/diffusion_engine.py`; checkpoint filename/path is fixed and must not be substituted |
+| `cyberrealistic-xl` | Alternative legacy SDXL photorealism baseline | **Optional legacy fallback** | CreativeML OpenRAIL++-M; verify commercial-use terms for the selected checkpoint | Explicitly supported by `studio/diffusion_engine.py`; benchmark against Juggernaut before retaining both |
+| `z-image-turbo` | Fast image-generation benchmark and possible lightweight alternative | Optional | Apache-2.0; verify model-card terms and output quality | Benchmark latency, MPS memory, hands/face quality, and identity stability before production use |
+| `flux2-klein-base-4b` | Training/reference and identity-conditioning experimentation | Not required for first production setup | Apache-2.0; use only if the training/reference workflow is approved | Do not install merely because it is in the registry; it is not the first-line generation model |
+| `pony-diffusion-v6-xl` | Specialized SDXL style/content experimentation | **Do not install by default** | Fair AI Public License 1.0-SD; monetized inference and commercial-use restrictions require explicit legal review | Style bias and license constraints make it unsuitable as the default commercial influencer model |
+| `flux1-dev-gguf` | Legacy FLUX experiment | **Exclude from commercial production** | FLUX.1-dev Non-Commercial License | Keep out of the commercial production install unless the use case and license are explicitly approved |
+
+The recommended first production benchmark set is:
+
+1. `flux2-klein-4b` as the canonical primary candidate.
+2. `juggernaut-xl-v10` for legacy SDXL compatibility.
+3. `cyberrealistic-xl` only if it wins a measured legacy-quality comparison.
+4. `z-image-turbo` only if its speed and quality justify a separate runtime path.
+
+The benchmark must use the new Master Persona structure and include front,
+three-quarter, profile, full-body, lifestyle, adult/glamour, and product-content
+scenarios. Adult/glamour packs remain part of the Identity Core and must be
+evaluated for identity consistency, body/wardrobe continuity, disclosure, review,
+and canonical-anchor lineage—not treated as an unrelated model test.
+
+The image model is only one part of the production stack. Install the selected,
+license-verified assets together with the explicitly approved supporting assets:
 
 - Base image model
 - Identity-conditioning adapter and face encoder
