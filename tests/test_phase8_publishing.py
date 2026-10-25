@@ -87,6 +87,36 @@ def test_authorization_plan_rejects_non_absolute_redirect_uri(client):
     assert response.status_code == 400
 
 
+def test_configured_meta_provider_generates_pkce_plan_without_network(client, monkeypatch):
+    monkeypatch.setenv('STUDIO_ENABLE_INSTAGRAM_PROVIDER', '1')
+    monkeypatch.setenv('STUDIO_INSTAGRAM_CLIENT_ID', 'test-client-id')
+    monkeypatch.setenv('STUDIO_INSTAGRAM_CLIENT_SECRET_REF', 'keyring/meta/client-secret')
+    monkeypatch.setenv('STUDIO_INSTAGRAM_REDIRECT_URI', 'http://127.0.0.1:8123/oauth/callback')
+    persona = _persona(client)
+    account = client.post(f"/api/personas/{persona['id']}/publishing-accounts", json={
+        'platform': 'instagram', 'account_label': 'Configured Meta account', 'account_type': 'creator',
+    }).json()
+    providers = client.get('/api/publishing/providers').json()['providers']
+    meta = next(item for item in providers if item['id'] == 'meta_instagram')
+    assert meta['execution_status'] == 'configured'
+    assert meta['supports_oauth'] is True
+    response = client.post(f"/api/publishing-accounts/{account['id']}/authorization-plan", json={
+        'provider': 'meta_instagram', 'auth_mode': 'instagram_login',
+        'redirect_uri': 'http://127.0.0.1:8123/oauth/callback',
+    })
+    assert response.status_code == 200
+    data = response.json()
+    assert data['status'] == 'planned'
+    assert data['state_issued'] is True
+    assert data['authorization_url'].startswith('https://www.instagram.com/oauth/authorize?')
+    assert 'code_challenge_method=S256' in data['authorization_url']
+    assert data['scopes'] == ['instagram_business_basic', 'instagram_business_content_publish']
+    assert 'client_secret' not in data['authorization_url']
+    sessions = client.get(f"/api/publishing-accounts/{account['id']}/authorization-sessions").json()
+    assert sessions[0]['auth_mode'] == 'instagram_login'
+    assert sessions[0]['scopes'] == data['scopes']
+
+
 def test_publishing_account_rejects_unsupported_instagram_account_type(client):
     persona = _persona(client)
     response = client.post(f"/api/personas/{persona['id']}/publishing-accounts", json={

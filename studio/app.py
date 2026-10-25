@@ -48,7 +48,7 @@ from .media import read_limited, validate_image_bytes, validate_media_signature
 from .model_registry import get as get_model, rows as model_rows, workflow_model
 from .policies import AI_DISCLOSURE, normalize_content_class, normalize_destination_policy
 from .publishing_policies import catalog as publishing_policy_catalog, evaluate as evaluate_publishing_policy, infer_format
-from .publishing_providers import catalog as publishing_provider_catalog, get as get_publishing_provider
+from .publishing_providers import ProviderDisabled, catalog as publishing_provider_catalog, get as get_publishing_provider
 from .secrets import catalog as secret_storage_catalog
 from .preflight import resource_preflight, workflow_preflight
 from .provenance import manifest, media_metadata, quality_report, sha256_bytes
@@ -2167,6 +2167,9 @@ def create_authorization_plan(account_id: str, payload: PublishingAuthorizationP
         provider = get_publishing_provider(payload.provider)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+    provider_name = payload.provider.strip().lower()
+    if provider_name == "meta_instagram" and account.get("platform") != "instagram":
+        raise HTTPException(400, "Meta Instagram provider requires an Instagram account binding")
     redirect = urlparse(payload.redirect_uri.strip())
     if redirect.scheme not in {"http", "https"} or not redirect.netloc:
         raise HTTPException(400, "redirect_uri must be an absolute HTTP(S) URL")
@@ -2176,21 +2179,40 @@ def create_authorization_plan(account_id: str, payload: PublishingAuthorizationP
     state = secrets.token_urlsafe(32)
     verifier = secrets.token_urlsafe(48)
     capability = provider.catalog()
-    supported = bool(capability.get("supports_oauth"))
-    status = "planned" if supported else "blocked"
-    error = None if supported else "Selected provider does not support OAuth; no authorization URL was created"
+    status = "blocked"
+    error = "Selected provider does not support OAuth; no authorization URL was created"
+    authorization = {}
+    try:
+        authorization = provider.authorization_plan(
+            auth_mode=payload.auth_mode.strip().lower(), redirect_uri=payload.redirect_uri.strip(),
+            state=state, code_verifier=verifier, requested_scopes=scopes,
+        )
+        status = "planned"
+        error = None
+    except AttributeError:
+        pass
+    except ProviderDisabled as exc:
+        error = str(exc)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    session_scopes = authorization.get("scopes", scopes)
+    auth_mode = authorization.get("auth_mode", payload.auth_mode.strip().lower())
     session = PublishingRepository.create_auth_session(
-        session_id=uid(), account_id=account_id, provider=payload.provider.strip().lower(),
+        session_id=uid(), account_id=account_id, provider=provider_name,
+        auth_mode=auth_mode,
         state_hash=hashlib.sha256(state.encode("utf-8")).hexdigest(),
         verifier_hash=hashlib.sha256(verifier.encode("utf-8")).hexdigest(),
-        redirect_uri=payload.redirect_uri.strip(), scopes=scopes, status=status,
+        redirect_uri=payload.redirect_uri.strip(), scopes=session_scopes, status=status,
         expires_at=expires_at, error=error, created_at=created_at,
     )
     return {
         "session": session,
         "provider": capability,
-        "authorization_url": None,
-        "state_issued": False,
+        "authorization_url": authorization.get("authorization_url"),
+        "state_issued": bool(authorization),
+        "state": state if authorization else None,
+        "code_verifier": authorization.get("code_verifier"),
+        "scopes": session_scopes,
         "secret_storage": "hashes_only",
         "external_calls": False,
         "status": status,

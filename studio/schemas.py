@@ -72,6 +72,7 @@ class PublishDryRunIn(BaseModel):
 
 class PublishingAuthorizationPlanIn(BaseModel):
     provider: str = Field(default="local_dry_run", min_length=2, max_length=60)
+    auth_mode: str = Field(default="instagram_login", min_length=2, max_length=40)
     redirect_uri: str = Field(min_length=8, max_length=1000)
     scopes: list[str] = Field(default_factory=list, max_length=20)
 

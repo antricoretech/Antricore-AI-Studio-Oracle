@@ -925,12 +925,15 @@ Phase 8 slice now stores secret-free persona-owned account bindings as
 the Phase 7 platform-policy contract rather than bypassing it: account
 binding, professional-account verification, external permission scopes, and
 public media delivery must resolve before an Instagram publish attempt can be
-created. The next implementation should add a provider interface with a
-local dry-run adapter; that provider boundary is now present and is the only
-enabled provider. It explicitly reports that OAuth, account verification, and
-publishing are unsupported. The next implementation may add OAuth/token
-storage and a real Instagram adapter behind explicit configuration, but no
-platform credential or outbound publish call belongs in the current branch.
+created. The provider boundary and local dry-run adapter are present. A
+separately registered Meta Instagram provider can now generate a PKCE
+authorization plan when explicitly configured with a client ID, opaque
+keychain secret reference, and exact callback URI. The plan validates the
+selected Meta login mode and scopes, persists only hashes of state/verifier,
+and performs no OAuth exchange, account verification, media upload, or
+publishing. The authorization response exposes the transient state and PKCE
+verifier only to the initiating caller; later callback work must bind them to
+the persisted session and never log or persist the raw values.
 Before enabling that adapter, revalidate the selected Meta login mode and
 permission set against the [official Instagram content-publishing
 documentation](https://developers.facebook.com/docs/instagram-platform/content-publishing);
@@ -939,7 +942,12 @@ Meta integration mode.
 Secret material must be held by an OS keychain-backed adapter. The current
 implementation includes a provider-neutral keyring boundary and reports
 capability status without accepting token values; SQLite may retain only an
-opaque secret reference.
+opaque secret reference. Before enabling the eventual token exchange, recheck
+the selected Meta login mode and permission set against the [official
+Instagram content-publishing documentation](https://developers.facebook.com/docs/instagram-platform/content-publishing),
+then add callback validation, one-time session consumption, token refresh,
+account verification, public media delivery, and a provider-specific publish
+adapter behind explicit feature gates.
 
 Publishing requires:
 

@@ -1379,12 +1379,13 @@ class PublishingRepository:
 
     @staticmethod
     def create_auth_session(*, session_id: str, account_id: str, provider: str,
+                            auth_mode: str,
                             state_hash: str, verifier_hash: str, redirect_uri: str,
                             scopes: list[str], status: str, expires_at: str,
                             error: str | None, created_at: str):
         db.write(
-            "INSERT INTO publishing_auth_sessions (id,account_id,provider,state_hash,verifier_hash,redirect_uri,scopes_json,status,expires_at,error,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-            (session_id, account_id, provider, state_hash, verifier_hash, redirect_uri,
+            "INSERT INTO publishing_auth_sessions (id,account_id,provider,auth_mode,state_hash,verifier_hash,redirect_uri,scopes_json,status,expires_at,error,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (session_id, account_id, provider, auth_mode, state_hash, verifier_hash, redirect_uri,
              json.dumps(scopes, ensure_ascii=False), status, expires_at, error, created_at),
         )
         return PublishingRepository._decode_auth_session(db.row(
