@@ -1066,6 +1066,9 @@ def test_generation_job_rejects_server_side_workflow_preflight_error(client, mon
     }).json()
     workflow = test_db.WORKFLOWS / 'phase10_gate.json'
     workflow.write_text(json.dumps({'1': {'class_type': 'SaveImage', 'inputs': {}}}))
+    monkeypatch.setattr(backend, 'resource_preflight', lambda **kwargs: [
+        {'id': 'resource_disk', 'status': 'ready', 'detail': 'Synthetic resource readiness'}
+    ])
     monkeypatch.setattr(backend, 'workflow_preflight', lambda *args, **kwargs: [
         {'id': 'model_capability', 'status': 'error', 'detail': 'Synthetic workflow preflight failure'}
     ])
