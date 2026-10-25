@@ -246,9 +246,9 @@ check, disk/memory estimate, validation result, and tracker entry.
 |---|---|---|---|---|
 | `flux2-klein-4b` | Canonical primary image generation and reference-image editing | **Primary benchmark candidate** for the M5/16 GB Mac | Apache-2.0; verify the exact model-card terms and current release before installation | Requires measured MPS memory, speed, identity consistency, and adult/glamour prompt-quality testing |
 | `juggernaut-xl-v10` | Legacy SDXL photoshoot and existing legacy content compatibility | **Legacy compatibility model** | CreativeML OpenRAIL++-M; verify commercial-use terms for the selected checkpoint | Explicitly supported by `studio/diffusion_engine.py`; checkpoint filename/path is fixed and must not be substituted |
-| `cyberrealistic-xl` | Alternative legacy SDXL photorealism baseline | **Optional legacy fallback** | CreativeML OpenRAIL++-M; verify commercial-use terms for the selected checkpoint | Explicitly supported by `studio/diffusion_engine.py`; benchmark against Juggernaut before retaining both |
+| `cyberrealistic-xl` | Alternative legacy SDXL photorealism baseline | **Required later-stage independent fallback** | CreativeML OpenRAIL++-M; verify commercial-use terms for the selected checkpoint | Explicitly supported by `studio/diffusion_engine.py`; benchmark against Juggernaut before retaining both |
 | `z-image-turbo` | Fast image-generation benchmark and possible lightweight alternative | Optional | Apache-2.0; verify model-card terms and output quality | Benchmark latency, MPS memory, hands/face quality, and identity stability before production use |
-| `flux2-klein-base-4b` | Training/reference and identity-conditioning experimentation | Not required for first production setup | Apache-2.0; use only if the training/reference workflow is approved | Do not install merely because it is in the registry; it is not the first-line generation model |
+| `flux2-klein-base-4b` | Training/reference and identity-conditioning experimentation | **Required later-stage training model** | Apache-2.0; install before enabling the approved training/reference workflow | Not needed for first-line generation, but required for the complete training-capable production profile |
 | `pony-diffusion-v6-xl` | Specialized SDXL style/content experimentation | **Do not install by default** | Fair AI Public License 1.0-SD; monetized inference and commercial-use restrictions require explicit legal review | Style bias and license constraints make it unsuitable as the default commercial influencer model |
 | `flux1-dev-gguf` | Legacy FLUX experiment | **Exclude from commercial production** | FLUX.1-dev Non-Commercial License | Keep out of the commercial production install unless the use case and license are explicitly approved |
 
@@ -256,18 +256,26 @@ The recommended staged production benchmark set is:
 
 1. **Stage A — required first model:** choose one primary candidate, preferably
    `flux2-klein-4b`, and install only it with its required runtime companions.
-2. **Stage B — required only for legacy operation:** add `juggernaut-xl-v10`
-   only if the legacy application must generate new images locally. Existing
-   legacy assets do not require installing the legacy model.
-3. **Stage C — recommended alternative:** add `cyberrealistic-xl` only if it
-   wins a measured legacy-quality comparison or provides a required workflow
-   capability that Stage B does not provide.
-4. **Stage D — optional speed alternative:** add `z-image-turbo` only if its
+2. **Stage B — required training/reference model:** add
+   `flux2-klein-base-4b` before enabling identity-training, LoRA, or reference
+   adaptation workflows. It is not needed for ordinary Stage A generation, but it
+   is required for the complete training-capable production profile.
+3. **Stage C — required legacy fallback:** add `juggernaut-xl-v10` when the
+   separate legacy application must continue generating locally. Existing legacy
+   assets do not require installing it, but the legacy runtime cannot provide a
+   real fallback without its declared checkpoint.
+4. **Stage D — required independent fallback candidate:** add
+   `cyberrealistic-xl` when the production resilience policy requires a second
+   independently benchmarked SDXL checkpoint. The recommended robust profile
+   retains both Juggernaut and CyberRealistic after validation; do not substitute
+   one checkpoint for the other.
+5. **Stage E — optional speed alternative:** add `z-image-turbo` only if its
    measured speed/quality trade-off justifies a separate runtime path.
 
-`flux2-klein-base-4b`, video models, voice models, and experimental models are
-not part of the first image-generation install. They must be handled in later
-feature-specific activities.
+The first install remains intentionally small, but the complete production image
+profile requires the primary model, the approved training/reference model, and
+the validated fallback model set in their separate stages. Video, voice, and
+other experimental models remain separate feature-specific activities.
 
 The benchmark must use the new Master Persona structure and include front,
 three-quarter, profile, full-body, lifestyle, adult/glamour, and product-content
@@ -377,3 +385,15 @@ Notes / known warnings:
 
 Models and model weights remain tracked separately as `MODEL-001` through
 `MODEL-004` and must remain `NOT INSTALLED` until the final approval gate.
+
+For the complete image-production profile, the model register must eventually
+contain separate completed records for:
+
+- `flux2-klein-4b` — primary canonical image model
+- `flux2-klein-base-4b` — training/reference model
+- `juggernaut-xl-v10` — legacy-compatible fallback
+- `cyberrealistic-xl` — independently benchmarked SDXL fallback, if the robust
+  two-checkpoint policy is selected
+
+These are required capabilities, but they are installed sequentially with a
+validation gate after each model. They are not downloaded as one batch.
