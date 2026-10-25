@@ -29,30 +29,65 @@ _lock = threading.Lock()
 _current_pipe = None
 _current_model_id = None
 
+
+class ModelConfigurationError(RuntimeError):
+    """Raised when a requested model cannot be served by this runtime."""
+
+
+# This module is deliberately narrow: it is the legacy SDXL single-file
+# renderer, not a universal adapter for every model in approved_models.json.
+# Keeping the mapping explicit prevents a missing checkpoint from silently
+# selecting an unrelated file from the models directory.
+SUPPORTED_SINGLE_FILE_MODELS: Dict[str, Path] = {
+    "juggernaut-xl-v10": Path(
+        "models/juggernaut-xl-v10/Juggernaut-X-RunDiffusion-NSFW.safetensors"
+    ),
+    "cyberrealistic-xl": Path(
+        "models/cyberrealistic-xl/CyberRealisticXLPlay_V10.0_FP16.safetensors"
+    ),
+}
+
 def get_pipeline(model_id: str = "juggernaut-xl-v10"):
     global _current_pipe, _current_model_id
     with _lock:
         if _current_pipe is not None and _current_model_id == model_id:
             return _current_pipe
 
+        model_relative_path = SUPPORTED_SINGLE_FILE_MODELS.get(model_id)
+        if model_relative_path is None:
+            from .model_registry import get
+
+            if get(model_id) is None:
+                raise ModelConfigurationError(
+                    f"Model '{model_id}' is not in the approved registry"
+                )
+            raise ModelConfigurationError(
+                f"Model '{model_id}' is registered but not supported by the "
+                "legacy SDXL single-file runtime"
+            )
+
+        from .model_registry import match
+
+        compatible, reason = match(
+            model_id,
+            task="image.text_to_image",
+            backend="direct-cli",
+        )
+        if not compatible:
+            raise ModelConfigurationError(reason)
+
+        model_path = ROOT_DIR / model_relative_path
+        if not model_path.is_file():
+            raise FileNotFoundError(
+                f"Model file not found for '{model_id}': {model_path}. "
+                "Install the approved checkpoint before running generation."
+            )
+
         import torch
         from diffusers import StableDiffusionXLPipeline, DPMSolverMultistepScheduler
 
         device = "mps" if (hasattr(torch.backends, "mps") and torch.backends.mps.is_available()) else ("cuda" if torch.cuda.is_available() else "cpu")
         dtype = torch.float16 if device in ("mps", "cuda") else torch.float32
-
-        if model_id == "cyberrealistic-xl":
-            model_path = ROOT_DIR / "models/cyberrealistic-xl/CyberRealisticXLPlay_V10.0_FP16.safetensors"
-        else:
-            model_path = ROOT_DIR / "models/juggernaut-xl-v10/Juggernaut-X-RunDiffusion-NSFW.safetensors"
-
-        if not model_path.exists():
-            # Check alternative in models
-            alternatives = list((ROOT_DIR / "models").glob("*/*.safetensors"))
-            if alternatives:
-                model_path = alternatives[0]
-            else:
-                raise FileNotFoundError(f"Model file not found: {model_path}")
 
         print(f"[Diffusion Engine] Loading {model_id} from {model_path} onto {device} ({dtype})...")
         pipe = StableDiffusionXLPipeline.from_single_file(
@@ -124,6 +159,9 @@ def generate_render(
     Executes real neural diffusion inference on Apple MPS using Juggernaut XL v10 / CyberRealistic XL.
     Saves the generated PNG to generated/renders/ and registers in SQLite assets table.
     """
+    # Validate routing before importing the heavyweight runtime. This gives a
+    # deterministic configuration error for unsupported/uninstalled models.
+    pipe = get_pipeline(model_id)
     import torch
 
     device = "mps" if (hasattr(torch.backends, "mps") and torch.backends.mps.is_available()) else ("cuda" if torch.cuda.is_available() else "cpu")
@@ -135,8 +173,6 @@ def generate_render(
     neg = negative_prompt.strip() if (negative_prompt and negative_prompt.strip()) else UNIVERSAL_NEGATIVE
 
     t0 = time.time()
-    pipe = get_pipeline(model_id)
-
     print(f"[Diffusion Engine] Generating {width}x{height} render for {persona_name} (Seed: {actual_seed}, Steps: {steps})...")
     with _lock:
         image = pipe(
