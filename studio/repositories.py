@@ -1358,6 +1358,39 @@ class PublishingRepository:
         )
         return PublishingRepository.attempt(attempt_id)
 
+    @staticmethod
+    def _decode_auth_session(row):
+        if not row:
+            return None
+        result = dict(row)
+        try:
+            result["scopes"] = json.loads(result.pop("scopes_json", "[]") or "[]")
+        except (TypeError, json.JSONDecodeError):
+            result["scopes"] = []
+        result.pop("state_hash", None)
+        result.pop("verifier_hash", None)
+        return result
+
+    @staticmethod
+    def auth_sessions(account_id: str):
+        return [PublishingRepository._decode_auth_session(row) for row in db.all_rows(
+            "SELECT * FROM publishing_auth_sessions WHERE account_id=? ORDER BY created_at DESC", (account_id,)
+        )]
+
+    @staticmethod
+    def create_auth_session(*, session_id: str, account_id: str, provider: str,
+                            state_hash: str, verifier_hash: str, redirect_uri: str,
+                            scopes: list[str], status: str, expires_at: str,
+                            error: str | None, created_at: str):
+        db.write(
+            "INSERT INTO publishing_auth_sessions (id,account_id,provider,state_hash,verifier_hash,redirect_uri,scopes_json,status,expires_at,error,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (session_id, account_id, provider, state_hash, verifier_hash, redirect_uri,
+             json.dumps(scopes, ensure_ascii=False), status, expires_at, error, created_at),
+        )
+        return PublishingRepository._decode_auth_session(db.row(
+            "SELECT * FROM publishing_auth_sessions WHERE id=?", (session_id,)
+        ))
+
 
 class JobRepository:
     @staticmethod

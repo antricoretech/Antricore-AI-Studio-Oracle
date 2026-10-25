@@ -6,6 +6,7 @@ loopback or using a shared cloud worker.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from io import BytesIO
 import importlib.util
 import json
@@ -56,7 +57,7 @@ from .readiness import evaluate as evaluate_readiness
 from .schemas import (
     AssetAssessmentIn, ContentArtifactIn, ContentArtifactReviewIn, ContentBriefIn, ContentPackIn, ContentPackReviewIn, CreatorProfileIn, IdentityBenchmarkIn, IdentityBenchmarkResultIn, JobIn, LinkIn, PersonaIn, ReviewIn, ReferencePackReviewIn, ReferencePackCanonicalIn, ReferencePackAssetLinkIn,
     SeriesEpisodeIn, SeriesIn, SeriesQueueIn, VoiceIn, PhotoStudioPromptIn, PhotoStudioGenerateIn,
-    OrchestratorCompilePersonaIn, OrchestratorCreatePersonaIn, OrchestratorRenderAnchorIn, OrchestratorLockAnchorIn, PublishingAccountIn, PublishDryRunIn,
+    OrchestratorCompilePersonaIn, OrchestratorCreatePersonaIn, OrchestratorRenderAnchorIn, OrchestratorLockAnchorIn, PublishingAccountIn, PublishDryRunIn, PublishingAuthorizationPlanIn,
     OrchestratorSynthesizeScenesIn, OrchestratorBatchGenerateIn
 )
 from . import orchestrator
@@ -2136,6 +2137,54 @@ def create_publishing_account(pid: str, payload: PublishingAccountIn):
         ))
     except sqlite3.IntegrityError:
         raise HTTPException(409, "An account with this label is already bound to this persona") from None
+
+
+@app.get("/api/publishing-accounts/{account_id}/authorization-sessions")
+def list_authorization_sessions(account_id: str):
+    account = PublishingRepository.account(account_id)
+    if not account:
+        raise HTTPException(404, "Publishing account not found")
+    return PublishingRepository.auth_sessions(account_id)
+
+
+@app.post("/api/publishing-accounts/{account_id}/authorization-plan")
+def create_authorization_plan(account_id: str, payload: PublishingAuthorizationPlanIn):
+    account = PublishingRepository.account(account_id)
+    if not account:
+        raise HTTPException(404, "Publishing account not found")
+    try:
+        provider = get_publishing_provider(payload.provider)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    redirect = urlparse(payload.redirect_uri.strip())
+    if redirect.scheme not in {"http", "https"} or not redirect.netloc:
+        raise HTTPException(400, "redirect_uri must be an absolute HTTP(S) URL")
+    scopes = list(dict.fromkeys(scope.strip()[:160] for scope in payload.scopes if scope.strip()))[:20]
+    created_at = now()
+    expires_at = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat(timespec="seconds")
+    state = secrets.token_urlsafe(32)
+    verifier = secrets.token_urlsafe(48)
+    capability = provider.catalog()
+    supported = bool(capability.get("supports_oauth"))
+    status = "planned" if supported else "blocked"
+    error = None if supported else "Selected provider does not support OAuth; no authorization URL was created"
+    session = PublishingRepository.create_auth_session(
+        session_id=uid(), account_id=account_id, provider=payload.provider.strip().lower(),
+        state_hash=hashlib.sha256(state.encode("utf-8")).hexdigest(),
+        verifier_hash=hashlib.sha256(verifier.encode("utf-8")).hexdigest(),
+        redirect_uri=payload.redirect_uri.strip(), scopes=scopes, status=status,
+        expires_at=expires_at, error=error, created_at=created_at,
+    )
+    return {
+        "session": session,
+        "provider": capability,
+        "authorization_url": None,
+        "state_issued": False,
+        "secret_storage": "hashes_only",
+        "external_calls": False,
+        "status": status,
+        "error": error,
+    }
 
 
 @app.get("/api/assets/{aid}/platform-readiness")

@@ -931,6 +931,11 @@ enabled provider. It explicitly reports that OAuth, account verification, and
 publishing are unsupported. The next implementation may add OAuth/token
 storage and a real Instagram adapter behind explicit configuration, but no
 platform credential or outbound publish call belongs in the current branch.
+Before enabling that adapter, revalidate the selected Meta login mode and
+permission set against the [official Instagram content-publishing
+documentation](https://developers.facebook.com/docs/instagram-platform/content-publishing);
+the app must not assume that one permission set or account path covers every
+Meta integration mode.
 
 Publishing requires:
 

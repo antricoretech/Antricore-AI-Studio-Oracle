@@ -246,6 +246,21 @@ def initialize():
             FOREIGN KEY(content_artifact_id) REFERENCES content_artifacts(id),
             FOREIGN KEY(account_id) REFERENCES publishing_accounts(id)
         );
+        CREATE TABLE IF NOT EXISTS publishing_auth_sessions (
+            id TEXT PRIMARY KEY,
+            account_id TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            state_hash TEXT NOT NULL,
+            verifier_hash TEXT NOT NULL,
+            redirect_uri TEXT NOT NULL,
+            scopes_json TEXT NOT NULL DEFAULT '[]',
+            status TEXT NOT NULL DEFAULT 'planned',
+            expires_at TEXT NOT NULL,
+            error TEXT,
+            created_at TEXT NOT NULL,
+            consumed_at TEXT,
+            FOREIGN KEY(account_id) REFERENCES publishing_accounts(id)
+        );
         CREATE TABLE IF NOT EXISTS identity_benchmarks (
             id TEXT PRIMARY KEY,
             persona_id TEXT NOT NULL,
@@ -485,6 +500,8 @@ def initialize():
         CREATE INDEX IF NOT EXISTS idx_publish_attempts_asset ON publish_attempts(asset_id, created_at);
         CREATE INDEX IF NOT EXISTS idx_publish_attempts_account ON publish_attempts(account_id, created_at);
         CREATE INDEX IF NOT EXISTS idx_publish_attempts_status ON publish_attempts(status, created_at);
+        CREATE INDEX IF NOT EXISTS idx_publishing_auth_sessions_account ON publishing_auth_sessions(account_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_publishing_auth_sessions_status ON publishing_auth_sessions(status, expires_at);
         CREATE INDEX IF NOT EXISTS idx_identity_benchmarks_persona ON identity_benchmarks(persona_id, created_at);
         CREATE INDEX IF NOT EXISTS idx_identity_benchmarks_version ON identity_benchmarks(persona_version_id, status);
         CREATE INDEX IF NOT EXISTS idx_identity_benchmark_cases_benchmark ON identity_benchmark_cases(benchmark_id, status);
@@ -494,7 +511,7 @@ def initialize():
         CREATE INDEX IF NOT EXISTS idx_series_episodes_job ON series_episodes(job_id);
         """)
         con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_idempotency_key ON jobs(idempotency_key) WHERE idempotency_key IS NOT NULL")
-        con.execute("INSERT INTO schema_meta(key,value) VALUES('schema_version','22') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+        con.execute("INSERT INTO schema_meta(key,value) VALUES('schema_version','23') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
         # A durable queued row is safe to dispatch after restart. Only work
         # that may already have reached ComfyUI is interrupted and requires
         # prompt reconciliation or explicit operator retry.

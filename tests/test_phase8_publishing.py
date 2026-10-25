@@ -31,6 +31,40 @@ def test_publishing_provider_catalog_is_dry_run_only(client):
     assert provider['supports_publish'] is False
 
 
+def test_authorization_plan_is_persisted_without_oauth_or_secrets(client):
+    persona = _persona(client)
+    account = client.post(f"/api/personas/{persona['id']}/publishing-accounts", json={
+        'platform': 'instagram', 'account_label': 'Authorization plan account', 'account_type': 'creator',
+    }).json()
+    response = client.post(f"/api/publishing-accounts/{account['id']}/authorization-plan", json={
+        'redirect_uri': 'http://127.0.0.1:8123/oauth/callback',
+        'scopes': ['future.publish', 'future.publish'],
+    })
+    assert response.status_code == 200
+    data = response.json()
+    assert data['status'] == 'blocked'
+    assert data['authorization_url'] is None
+    assert data['state_issued'] is False
+    assert data['secret_storage'] == 'hashes_only'
+    assert data['external_calls'] is False
+    assert 'state_hash' not in data['session']
+    assert 'verifier_hash' not in data['session']
+    sessions = client.get(f"/api/publishing-accounts/{account['id']}/authorization-sessions")
+    assert sessions.status_code == 200
+    assert sessions.json()[0]['scopes'] == ['future.publish']
+
+
+def test_authorization_plan_rejects_non_absolute_redirect_uri(client):
+    persona = _persona(client)
+    account = client.post(f"/api/personas/{persona['id']}/publishing-accounts", json={
+        'platform': 'instagram', 'account_label': 'Invalid redirect account', 'account_type': 'business',
+    }).json()
+    response = client.post(f"/api/publishing-accounts/{account['id']}/authorization-plan", json={
+        'redirect_uri': '/oauth/callback',
+    })
+    assert response.status_code == 400
+
+
 def test_publishing_account_rejects_unsupported_instagram_account_type(client):
     persona = _persona(client)
     response = client.post(f"/api/personas/{persona['id']}/publishing-accounts", json={

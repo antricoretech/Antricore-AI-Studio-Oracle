@@ -70,6 +70,12 @@ class PublishDryRunIn(BaseModel):
     idempotency_key: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
 
 
+class PublishingAuthorizationPlanIn(BaseModel):
+    provider: str = Field(default="local_dry_run", min_length=2, max_length=60)
+    redirect_uri: str = Field(min_length=8, max_length=1000)
+    scopes: list[str] = Field(default_factory=list, max_length=20)
+
+
 class ReferencePackReviewIn(BaseModel):
     review: str
     rights_confirmed: bool | None = None
