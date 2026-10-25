@@ -224,9 +224,21 @@ part of the selected production profile.
 
 This stage requires explicit approval after all earlier stages pass.
 
-Do not install every model in the registry. Select one primary image model after
-the target-Mac benchmark and keep only the compatibility or fallback models that
-are justified by the production workflow.
+Do not install every model in the registry, and do not install the recommended
+models as one batch. Use a staged model policy:
+
+1. Install the minimum required production model only after the image runtime
+   passes its validation gate.
+2. Benchmark that model against the new Master Persona workflow.
+3. Install the recommended alternative only when the benchmark shows a concrete
+   quality, speed, identity-consistency, or workflow-coverage gap.
+4. Install fallback, training, video, voice, or experimental models later as
+   separate approved activities—not as part of the first production setup.
+
+The first install should therefore contain one approved base image model, its
+required companion files, and only the identity-conditioning assets required by
+the selected benchmark. Every additional model requires its own reason, license
+check, disk/memory estimate, validation result, and tracker entry.
 
 ### Image-model selection matrix
 
@@ -240,12 +252,22 @@ are justified by the production workflow.
 | `pony-diffusion-v6-xl` | Specialized SDXL style/content experimentation | **Do not install by default** | Fair AI Public License 1.0-SD; monetized inference and commercial-use restrictions require explicit legal review | Style bias and license constraints make it unsuitable as the default commercial influencer model |
 | `flux1-dev-gguf` | Legacy FLUX experiment | **Exclude from commercial production** | FLUX.1-dev Non-Commercial License | Keep out of the commercial production install unless the use case and license are explicitly approved |
 
-The recommended first production benchmark set is:
+The recommended staged production benchmark set is:
 
-1. `flux2-klein-4b` as the canonical primary candidate.
-2. `juggernaut-xl-v10` for legacy SDXL compatibility.
-3. `cyberrealistic-xl` only if it wins a measured legacy-quality comparison.
-4. `z-image-turbo` only if its speed and quality justify a separate runtime path.
+1. **Stage A — required first model:** choose one primary candidate, preferably
+   `flux2-klein-4b`, and install only it with its required runtime companions.
+2. **Stage B — required only for legacy operation:** add `juggernaut-xl-v10`
+   only if the legacy application must generate new images locally. Existing
+   legacy assets do not require installing the legacy model.
+3. **Stage C — recommended alternative:** add `cyberrealistic-xl` only if it
+   wins a measured legacy-quality comparison or provides a required workflow
+   capability that Stage B does not provide.
+4. **Stage D — optional speed alternative:** add `z-image-turbo` only if its
+   measured speed/quality trade-off justifies a separate runtime path.
+
+`flux2-klein-base-4b`, video models, voice models, and experimental models are
+not part of the first image-generation install. They must be handled in later
+feature-specific activities.
 
 The benchmark must use the new Master Persona structure and include front,
 three-quarter, profile, full-body, lifestyle, adult/glamour, and product-content
