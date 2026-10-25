@@ -206,6 +206,46 @@ def initialize():
             reviewer TEXT,
             review_reason TEXT
         );
+        CREATE TABLE IF NOT EXISTS publishing_accounts (
+            id TEXT PRIMARY KEY,
+            persona_id TEXT NOT NULL,
+            platform TEXT NOT NULL,
+            account_label TEXT NOT NULL,
+            account_type TEXT NOT NULL DEFAULT 'professional',
+            handle TEXT,
+            external_account_id TEXT,
+            status TEXT NOT NULL DEFAULT 'unverified',
+            token_ref TEXT,
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(persona_id, platform, account_label),
+            FOREIGN KEY(persona_id) REFERENCES personas(id)
+        );
+        CREATE TABLE IF NOT EXISTS publish_attempts (
+            id TEXT PRIMARY KEY,
+            persona_id TEXT NOT NULL,
+            persona_version_id TEXT,
+            asset_id TEXT NOT NULL,
+            content_artifact_id TEXT,
+            account_id TEXT NOT NULL,
+            platform TEXT NOT NULL,
+            format TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL UNIQUE,
+            status TEXT NOT NULL DEFAULT 'planned',
+            dry_run INTEGER NOT NULL DEFAULT 1,
+            request_json TEXT NOT NULL DEFAULT '{}',
+            response_json TEXT NOT NULL DEFAULT '{}',
+            error TEXT,
+            attempt INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(persona_id) REFERENCES personas(id),
+            FOREIGN KEY(persona_version_id) REFERENCES persona_versions(id),
+            FOREIGN KEY(asset_id) REFERENCES assets(id),
+            FOREIGN KEY(content_artifact_id) REFERENCES content_artifacts(id),
+            FOREIGN KEY(account_id) REFERENCES publishing_accounts(id)
+        );
         CREATE TABLE IF NOT EXISTS identity_benchmarks (
             id TEXT PRIMARY KEY,
             persona_id TEXT NOT NULL,
@@ -441,6 +481,10 @@ def initialize():
         CREATE INDEX IF NOT EXISTS idx_assets_review_kind ON assets(review, kind);
         CREATE INDEX IF NOT EXISTS idx_assets_sha256 ON assets(sha256);
         CREATE INDEX IF NOT EXISTS idx_assets_persona_version ON assets(persona_id, persona_version_id, kind, review);
+        CREATE INDEX IF NOT EXISTS idx_publishing_accounts_persona ON publishing_accounts(persona_id, platform, status);
+        CREATE INDEX IF NOT EXISTS idx_publish_attempts_asset ON publish_attempts(asset_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_publish_attempts_account ON publish_attempts(account_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_publish_attempts_status ON publish_attempts(status, created_at);
         CREATE INDEX IF NOT EXISTS idx_identity_benchmarks_persona ON identity_benchmarks(persona_id, created_at);
         CREATE INDEX IF NOT EXISTS idx_identity_benchmarks_version ON identity_benchmarks(persona_version_id, status);
         CREATE INDEX IF NOT EXISTS idx_identity_benchmark_cases_benchmark ON identity_benchmark_cases(benchmark_id, status);
@@ -450,7 +494,7 @@ def initialize():
         CREATE INDEX IF NOT EXISTS idx_series_episodes_job ON series_episodes(job_id);
         """)
         con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_idempotency_key ON jobs(idempotency_key) WHERE idempotency_key IS NOT NULL")
-        con.execute("INSERT INTO schema_meta(key,value) VALUES('schema_version','21') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+        con.execute("INSERT INTO schema_meta(key,value) VALUES('schema_version','22') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
         # A durable queued row is safe to dispatch after restart. Only work
         # that may already have reached ComfyUI is interrupted and requires
         # prompt reconciliation or explicit operator retry.

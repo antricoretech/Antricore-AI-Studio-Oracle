@@ -1,0 +1,60 @@
+def _persona(client):
+    return client.post('/api/personas', json={
+        'name': 'Publishing Persona', 'age': 30,
+        'appearance': 'long brown hair and hazel eyes',
+        'description': 'fictional adult creator for publishing account tests',
+    }).json()
+
+
+def test_publishing_account_binding_is_local_and_unverified(client):
+    persona = _persona(client)
+    response = client.post(f"/api/personas/{persona['id']}/publishing-accounts", json={
+        'platform': 'instagram', 'account_label': 'Main creator account',
+        'account_type': 'creator', 'handle': '@publishing_persona',
+        'external_account_id': 'local-placeholder',
+    })
+    assert response.status_code == 201
+    account = response.json()
+    assert account['status'] == 'unverified'
+    assert 'token' not in account
+    assert client.get(f"/api/personas/{persona['id']}/publishing-accounts").json()[0]['id'] == account['id']
+
+
+def test_publishing_account_rejects_unsupported_instagram_account_type(client):
+    persona = _persona(client)
+    response = client.post(f"/api/personas/{persona['id']}/publishing-accounts", json={
+        'platform': 'instagram', 'account_label': 'Invalid account', 'account_type': 'personal',
+    })
+    assert response.status_code == 400
+
+
+def test_publish_dry_run_is_idempotent_and_has_no_external_side_effect(client):
+    from io import BytesIO
+    from PIL import Image
+
+    persona = _persona(client)
+    account = client.post(f"/api/personas/{persona['id']}/publishing-accounts", json={
+        'platform': 'instagram', 'account_label': 'Dry run account', 'account_type': 'professional',
+    }).json()
+    assert client.post(f"/api/personas/{persona['id']}/freeze").status_code == 200
+    buffer = BytesIO()
+    Image.new('RGB', (32, 32), 'ivory').save(buffer, format='PNG')
+    imported = client.post('/api/assets/import', data={
+        'persona_id': persona['id'], 'kind': 'image', 'prompt': 'Dry run image',
+        'content_class': 'adult_glamour', 'destination_policy': 'eligible',
+        'disclosure': 'Fictional adult character. AI-generated synthetic media.', 'rights_confirmed': 'true',
+    }, files={'file': ('dry-run.png', buffer.getvalue(), 'image/png')})
+    aid = imported.json()['id']
+    result = client.post(f'/api/assets/{aid}/publish-dry-run', json={
+        'account_id': account['id'], 'idempotency_key': 'phase8-dry-run-001',
+    })
+    assert result.status_code == 200
+    assert result.json()['attempt']['dry_run'] is True
+    assert result.json()['attempt']['status'] == 'blocked'
+    assert result.json()['attempt']['response']['external_calls'] is False
+    replay = client.post(f'/api/assets/{aid}/publish-dry-run', json={
+        'account_id': account['id'], 'idempotency_key': 'phase8-dry-run-001',
+    })
+    assert replay.status_code == 200
+    assert replay.json()['replayed'] is True
+    assert replay.json()['attempt']['id'] == result.json()['attempt']['id']

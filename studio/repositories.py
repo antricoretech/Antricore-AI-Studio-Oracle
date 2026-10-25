@@ -1283,6 +1283,82 @@ class SeriesRepository:
         return db.row("SELECT * FROM series WHERE id=?", (series_id,))
 
 
+class PublishingRepository:
+    @staticmethod
+    def _decode_account(row):
+        if not row:
+            return None
+        result = dict(row)
+        try:
+            result["metadata"] = json.loads(result.pop("metadata_json", "{}") or "{}")
+        except (TypeError, json.JSONDecodeError):
+            result["metadata"] = {}
+        result.pop("token_ref", None)
+        return result
+
+    @staticmethod
+    def account(account_id: str, persona_id: str | None = None):
+        sql = "SELECT * FROM publishing_accounts WHERE id=?"
+        args = [account_id]
+        if persona_id:
+            sql += " AND persona_id=?"
+            args.append(persona_id)
+        return PublishingRepository._decode_account(db.row(sql, tuple(args)))
+
+    @staticmethod
+    def accounts(persona_id: str):
+        return [PublishingRepository._decode_account(row) for row in db.all_rows(
+            "SELECT * FROM publishing_accounts WHERE persona_id=? ORDER BY created_at DESC", (persona_id,)
+        )]
+
+    @staticmethod
+    def create_account(*, account_id: str, persona_id: str, platform: str, account_label: str,
+                       account_type: str, handle: str | None, external_account_id: str | None,
+                       metadata: dict, created_at: str):
+        db.write(
+            "INSERT INTO publishing_accounts (id,persona_id,platform,account_label,account_type,handle,external_account_id,status,metadata_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (account_id, persona_id, platform, account_label, account_type, handle, external_account_id,
+             "unverified", json.dumps(metadata, ensure_ascii=False), created_at, created_at),
+        )
+        return PublishingRepository.account(account_id, persona_id)
+
+    @staticmethod
+    def attempt(attempt_id: str):
+        row = db.row("SELECT * FROM publish_attempts WHERE id=?", (attempt_id,))
+        return PublishingRepository._decode_attempt(row)
+
+    @staticmethod
+    def attempt_by_key(key: str):
+        row = db.row("SELECT * FROM publish_attempts WHERE idempotency_key=?", (key,))
+        return PublishingRepository._decode_attempt(row)
+
+    @staticmethod
+    def _decode_attempt(row):
+        if not row:
+            return None
+        result = dict(row)
+        for field in ("request_json", "response_json"):
+            try:
+                result[field.removesuffix("_json")] = json.loads(result.pop(field, "{}") or "{}")
+            except (TypeError, json.JSONDecodeError):
+                result[field.removesuffix("_json")] = {}
+        result["dry_run"] = bool(result.get("dry_run"))
+        return result
+
+    @staticmethod
+    def create_attempt(*, attempt_id: str, persona_id: str, persona_version_id: str | None,
+                       asset_id: str, content_artifact_id: str | None, account_id: str,
+                       platform: str, format_name: str, idempotency_key: str, status: str,
+                       request: dict, response: dict, error: str | None, created_at: str):
+        db.write(
+            "INSERT INTO publish_attempts (id,persona_id,persona_version_id,asset_id,content_artifact_id,account_id,platform,format,idempotency_key,status,dry_run,request_json,response_json,error,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (attempt_id, persona_id, persona_version_id, asset_id, content_artifact_id, account_id,
+             platform, format_name, idempotency_key, status, 1, json.dumps(request, ensure_ascii=False),
+             json.dumps(response, ensure_ascii=False), error, created_at, created_at),
+        )
+        return PublishingRepository.attempt(attempt_id)
+
+
 class JobRepository:
     @staticmethod
     def create(*, job_id: str, persona_id: str, workflow_id: str, kind: str, prompt: str, request_json: str, lineage_json: str = "{}", created_at: str, idempotency_key: str | None = None, status: str = "queued"):

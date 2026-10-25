@@ -53,6 +53,22 @@ class AssetAssessmentIn(BaseModel):
     notes: str = Field(default="", max_length=2000)
 
 
+class PublishingAccountIn(BaseModel):
+    platform: str = Field(default="instagram", min_length=2, max_length=40)
+    account_label: str = Field(min_length=2, max_length=120)
+    account_type: str = Field(default="professional", min_length=2, max_length=40)
+    handle: str | None = Field(default=None, max_length=120)
+    external_account_id: str | None = Field(default=None, max_length=160)
+    metadata: dict = Field(default_factory=dict)
+
+
+class PublishDryRunIn(BaseModel):
+    account_id: str = Field(min_length=1, max_length=128)
+    format: str | None = Field(default=None, max_length=40)
+    content_artifact_id: str | None = Field(default=None, max_length=128)
+    idempotency_key: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
 class ReferencePackReviewIn(BaseModel):
     review: str
     rights_confirmed: bool | None = None

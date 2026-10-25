@@ -50,12 +50,12 @@ from .publishing_policies import catalog as publishing_policy_catalog, evaluate 
 from .preflight import resource_preflight, workflow_preflight
 from .provenance import manifest, media_metadata, quality_report, sha256_bytes
 from .identity_conditioning import method_catalog, scenario_catalog
-from .repositories import ContentArtifactRepository, ContentBriefRepository, ContentPackRepository, CreatorProfileRepository, IdentityBenchmarkRepository, JobRepository, PersonaRepository, ReferencePackRepository, SeriesRepository
+from .repositories import ContentArtifactRepository, ContentBriefRepository, ContentPackRepository, CreatorProfileRepository, IdentityBenchmarkRepository, JobRepository, PersonaRepository, PublishingRepository, ReferencePackRepository, SeriesRepository
 from .readiness import evaluate as evaluate_readiness
 from .schemas import (
     AssetAssessmentIn, ContentArtifactIn, ContentArtifactReviewIn, ContentBriefIn, ContentPackIn, ContentPackReviewIn, CreatorProfileIn, IdentityBenchmarkIn, IdentityBenchmarkResultIn, JobIn, LinkIn, PersonaIn, ReviewIn, ReferencePackReviewIn, ReferencePackCanonicalIn, ReferencePackAssetLinkIn,
     SeriesEpisodeIn, SeriesIn, SeriesQueueIn, VoiceIn, PhotoStudioPromptIn, PhotoStudioGenerateIn,
-    OrchestratorCompilePersonaIn, OrchestratorCreatePersonaIn, OrchestratorRenderAnchorIn, OrchestratorLockAnchorIn,
+    OrchestratorCompilePersonaIn, OrchestratorCreatePersonaIn, OrchestratorRenderAnchorIn, OrchestratorLockAnchorIn, PublishingAccountIn, PublishDryRunIn,
     OrchestratorSynthesizeScenesIn, OrchestratorBatchGenerateIn
 )
 from . import orchestrator
@@ -2098,20 +2098,56 @@ def publishing_policies():
     }
 
 
+def _publishing_account_response(account: dict | None):
+    return account or {}
+
+
+@app.get("/api/personas/{pid}/publishing-accounts")
+def list_publishing_accounts(pid: str):
+    if not db.row("SELECT id FROM personas WHERE id=?", (pid,)):
+        raise HTTPException(404, "Persona not found")
+    return PublishingRepository.accounts(pid)
+
+
+@app.post("/api/personas/{pid}/publishing-accounts", status_code=201)
+def create_publishing_account(pid: str, payload: PublishingAccountIn):
+    if not db.row("SELECT id FROM personas WHERE id=?", (pid,)):
+        raise HTTPException(404, "Persona not found")
+    platform = payload.platform.strip().lower()
+    account_type = payload.account_type.strip().lower()
+    if platform not in publishing_policy_catalog():
+        raise HTTPException(400, "Unsupported publishing platform")
+    if platform == "instagram" and account_type not in {"professional", "business", "creator"}:
+        raise HTTPException(400, "Instagram account must be professional, business, or creator")
+    try:
+        return _publishing_account_response(PublishingRepository.create_account(
+            account_id=uid(), persona_id=pid, platform=platform,
+            account_label=payload.account_label.strip(), account_type=account_type,
+            handle=(payload.handle or "").strip() or None,
+            external_account_id=(payload.external_account_id or "").strip() or None,
+            metadata=dict(payload.metadata or {}), created_at=now(),
+        ))
+    except sqlite3.IntegrityError:
+        raise HTTPException(409, "An account with this label is already bound to this persona") from None
+
+
 @app.get("/api/assets/{aid}/platform-readiness")
-def asset_platform_readiness(aid: str, platform: str = "instagram", format: str | None = None):
+def asset_platform_readiness(aid: str, platform: str = "instagram", format: str | None = None, account_id: str | None = None):
     asset, _job, _person, quality = _asset_bundle(aid)
     base = asset_publishing_readiness(aid)
     format_name = format or infer_format(platform, asset.get("kind") or "")
     if not format_name:
         raise HTTPException(400, "A supported publishing format is required for this asset kind")
     try:
+        account = PublishingRepository.account(account_id, asset.get("persona_id")) if account_id else None
         report = evaluate_publishing_policy(
             platform,
             format_name,
             asset_kind=asset.get("kind") or "",
             base_ready=base["ready"],
             destination_policy=asset.get("destination_policy") or "review_required",
+            account_bound=bool(account and account.get("status") == "verified"),
+            professional_account=bool(account and account.get("account_type") in {"professional", "business", "creator"} and account.get("status") == "verified"),
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -2122,7 +2158,55 @@ def asset_platform_readiness(aid: str, platform: str = "instagram", format: str 
         "base_readiness": base,
         "platform_readiness": report,
         "quality_status": quality.get("status"),
+        "account": account,
     }
+
+
+@app.post("/api/assets/{aid}/publish-dry-run")
+def publish_dry_run(aid: str, payload: PublishDryRunIn):
+    asset, _job, _person, quality = _asset_bundle(aid)
+    account = PublishingRepository.account(payload.account_id, asset.get("persona_id"))
+    if not account:
+        raise HTTPException(404, "Publishing account is not bound to this persona")
+    format_name = payload.format or infer_format(account["platform"], asset.get("kind") or "")
+    if not format_name:
+        raise HTTPException(400, "A supported publishing format is required for this asset kind")
+    base = asset_publishing_readiness(aid)
+    try:
+        policy = evaluate_publishing_policy(
+            account["platform"], format_name, asset_kind=asset.get("kind") or "",
+            base_ready=base["ready"], destination_policy=asset.get("destination_policy") or "review_required",
+            account_bound=account.get("status") == "verified",
+            professional_account=account.get("status") == "verified" and account.get("account_type") in {"professional", "business", "creator"},
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    caption_check = {"id": "approved_caption", "status": "blocked", "detail": "An approved caption ContentArtifact is required before publishing"}
+    artifact = None
+    if payload.content_artifact_id:
+        artifact = db.row("SELECT id, persona_id, artifact_type, status, quality_status FROM content_artifacts WHERE id=?", (payload.content_artifact_id,))
+        if artifact and artifact["persona_id"] == asset.get("persona_id") and artifact["artifact_type"] == "caption" and artifact["status"] == "approved" and artifact["quality_status"] == "passed":
+            caption_check = {"id": "approved_caption", "status": "ready", "detail": "Approved caption ContentArtifact is bound to the same persona"}
+        else:
+            caption_check["detail"] = "Caption artifact must belong to the persona, be a caption, and be approved with passed quality"
+    checks = list(policy["checks"]) + [caption_check]
+    ready = all(check["status"] == "ready" for check in checks)
+    response = {
+        "dry_run": True, "external_calls": False, "ready": ready,
+        "status": "ready" if ready else "blocked", "checks": checks,
+        "platform": account["platform"], "format": format_name,
+    }
+    existing = PublishingRepository.attempt_by_key(payload.idempotency_key)
+    if existing:
+        return {"replayed": True, "attempt": existing}
+    attempt = PublishingRepository.create_attempt(
+        attempt_id=uid(), persona_id=asset["persona_id"], persona_version_id=asset.get("persona_version_id"),
+        asset_id=aid, content_artifact_id=payload.content_artifact_id, account_id=account["id"],
+        platform=account["platform"], format_name=format_name, idempotency_key=payload.idempotency_key,
+        status="ready" if ready else "blocked", request={"asset_id": aid, "account_id": account["id"], "format": format_name, "content_artifact_id": payload.content_artifact_id},
+        response=response, error=None if ready else "Dry run is blocked by one or more publishing checks", created_at=now(),
+    )
+    return {"replayed": False, "attempt": attempt, "quality_status": quality.get("status")}
 
 
 @app.post("/api/assets/{aid}/assessment")

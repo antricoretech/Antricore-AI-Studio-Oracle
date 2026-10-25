@@ -61,6 +61,7 @@ def evaluate(
     public_media_url: bool = False,
     account_bound: bool = False,
     permissions_configured: bool = False,
+    professional_account: bool = False,
 ) -> dict:
     """Evaluate a platform contract without making external calls."""
 
@@ -92,8 +93,8 @@ def evaluate(
         checks.extend([
             {
                 "id": "professional_account",
-                "status": "blocked",
-                "detail": "Professional-account verification is deferred to Phase 8 account binding",
+                "status": "ready" if professional_account else "blocked",
+                "detail": "Professional-account verification is recorded" if professional_account else "Professional-account verification is not recorded",
             },
             {
                 "id": "platform_account_binding",

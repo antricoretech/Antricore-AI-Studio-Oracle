@@ -919,14 +919,16 @@ Exit: every review decision records status, reason, reviewer, and timestamp; app
 ### Phase 8 — Publishing integration
 
 Add platform accounts, Persona-to-account binding, content calendar, captions,
-publish attempts, retries, audit logs, and platform responses. Start from the
-Phase 7 platform-policy contract rather than bypassing it: account binding,
-professional-account verification, external permission scopes, and public
-media delivery must resolve before an Instagram publish attempt can be
-created. The first implementation should use a provider interface with a
+publish attempts, retries, audit logs, and platform responses. The first
+Phase 8 slice now stores secret-free persona-owned account bindings as
+`unverified` and records idempotent, no-network publish dry-runs. Start from
+the Phase 7 platform-policy contract rather than bypassing it: account
+binding, professional-account verification, external permission scopes, and
+public media delivery must resolve before an Instagram publish attempt can be
+created. The next implementation should add a provider interface with a
 local dry-run adapter, then add OAuth/token storage and a real Instagram
 adapter behind explicit configuration. No platform credential or outbound
-publish call belongs in the Phase 7 branch.
+publish call belongs in the current branch.
 
 Publishing requires:
 

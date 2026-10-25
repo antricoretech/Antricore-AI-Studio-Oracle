@@ -61,6 +61,9 @@ def test_frontend_is_module_split_and_static_modules_are_served():
         assert '/publishing-readiness' in workspace_js.text
         assert 'Check Instagram readiness' in workspace_js.text
         assert '/platform-readiness?platform=instagram' in workspace_js.text
+        assert 'publishing-account-form' in workspace_js.text
+        assert '/publishing-accounts' in workspace_js.text
+        assert 'publish-dry-run' not in workspace_js.text
         for module in ('core.js', 'api.js', 'navigation.js', 'photostudio.js'):
             response = client.get('/static/modules/' + module)
             assert response.status_code == 200

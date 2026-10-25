@@ -66,6 +66,9 @@ const state = {
   savingAssetAssessment: '',
   assetPublishingReadiness: {},
   assetPlatformReadiness: {},
+  publishingPolicies: null,
+  publishingAccounts: [],
+  creatingPublishingAccount: false,
   workflows: [],
   preflight: null,
   preflightFingerprint: '',
@@ -652,7 +655,8 @@ function renderIdentityBenchmarks() {
 
 function renderPublishing() {
   const persona = activePersona();
-  return `<section class="panel" aria-labelledby="publishing-heading"><div class="section-heading"><div><p class="eyebrow">Outbound control</p><h2 id="publishing-heading">Publishing readiness</h2></div>${badge('planned')}</div><div class="callout"><p><strong>Account-aware publishing is not connected yet.</strong></p><p class="helper">The future Instagram integration will require a persona-owned account, approved media, disclosure metadata, destination-policy checks, and an explicit publish action.</p></div><div class="card-list" style="margin-top: 16px"><div class="entity-card"><div><h3>Identity lineage</h3><p>${persona ? 'Active PersonaVersion is available for downstream checks.' : 'Select a Master Persona first.'}</p></div>${persona ? badge('ready') : badge('pending')}</div><div class="entity-card"><div><h3>Media approval</h3><p>Only approved assets may advance to publishing.</p></div>${badge('required')}</div><div class="entity-card"><div><h3>Platform account mapping</h3><p>Instagram account ownership and token storage remain a future implementation phase.</p></div>${badge('planned')}</div></div></section>`;
+  const accounts = state.publishingAccounts || [];
+  return `<section class="panel" aria-labelledby="publishing-heading"><div class="section-heading"><div><p class="eyebrow">Phase 8 · local contract</p><h2 id="publishing-heading">Publishing readiness</h2></div>${badge(state.publishingPolicies?.execution_status || 'catalog_only')}</div><div class="callout"><p><strong>External publishing remains disabled.</strong></p><p class="helper">This phase records persona-owned account bindings and dry-run evidence only. No OAuth token, outbound request, or publish action is performed.</p></div><div class="card-list" style="margin-top: 16px"><div class="entity-card"><div><h3>Identity lineage</h3><p>${persona ? 'Active PersonaVersion is available for downstream checks.' : 'Select a Master Persona first.'}</p></div>${persona ? badge('ready') : badge('pending')}</div><div class="entity-card"><div><h3>Media approval</h3><p>Only approved assets may advance to publishing.</p></div>${badge('required')}</div><div class="entity-card"><div><h3>Platform account mapping</h3><p>Account records are local, secret-free, and remain unverified until Phase 8 provider verification is added.</p></div>${badge(accounts.length ? `${accounts.length} configured` : 'planned')}</div></div>${persona ? `<section class="subpanel" aria-labelledby="account-binding-heading"><div class="section-heading"><div><p class="eyebrow">Persona-owned mapping</p><h3 id="account-binding-heading">Publishing accounts</h3></div>${badge(`${accounts.length} account${accounts.length === 1 ? '' : 's'}`)}</div><form id="publishing-account-form" class="content-artifact-form"><div class="form-grid"><label>Platform<select name="platform"><option value="instagram">Instagram</option></select></label><label>Account label<input name="account_label" minlength="2" maxlength="120" required placeholder="Main creator account"></label><label>Account type<select name="account_type"><option value="professional">Professional</option><option value="creator">Creator</option><option value="business">Business</option></select></label><label>Handle <span class="field-hint">optional</span><input name="handle" maxlength="120" placeholder="@persona"></label><label>External account ID <span class="field-hint">optional placeholder</span><input name="external_account_id" maxlength="160" placeholder="configured later"></label></div><p class="helper">Do not enter passwords or access tokens. New records stay unverified and cannot publish.</p><p id="publishing-account-form-error" class="form-error" role="alert" hidden></p><div class="form-actions"><button class="button primary" type="submit" ${state.creatingPublishingAccount ? 'disabled' : ''}>${state.creatingPublishingAccount ? 'Saving…' : 'Save local account binding'}</button></div></form>${accounts.length ? `<div class="entity-list">${accounts.map((account) => `<article class="entity-card"><div><h4>${escapeHtml(account.account_label)}</h4><p class="helper">${escapeHtml(account.platform)} · ${escapeHtml(account.account_type)}${account.handle ? ` · ${escapeHtml(account.handle)}` : ''}</p></div>${badge(account.status)}</article>`).join('')}</div>` : emptyState('No persona-owned publishing account is configured yet.')}</section>` : `<div class="callout readiness-callout"><p><strong>Select a Master Persona first.</strong></p><p class="helper">Account bindings must belong to one canonical persona.</p></div>`}</section>`;
 }
 
 function renderView() {
@@ -672,7 +676,7 @@ async function loadViewData() {
   renderView();
   setStatus('Loading canonical workspace data…');
   try {
-    const requests = { overview: [], personas: state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/versions`] : [], references: state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/reference-packs`, '/api/assets'] : [], 'content-packs': state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/content-packs`] : [], creator: state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/creator-profile`] : [], 'content-briefs': state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/content-briefs`, `/api/personas/${encodeURIComponent(state.activePersonaId)}/creator-profile`, `/api/personas/${encodeURIComponent(state.activePersonaId)}/content-packs`, `/api/personas/${encodeURIComponent(state.activePersonaId)}/content-artifacts`] : [], benchmarks: state.activePersonaId ? ['/api/identity-conditioning/catalog', `/api/personas/${encodeURIComponent(state.activePersonaId)}/identity-benchmarks`] : ['/api/identity-conditioning/catalog'], production: state.activePersonaId ? ['/api/jobs', '/api/workflows', `/api/personas/${encodeURIComponent(state.activePersonaId)}/content-packs`] : ['/api/jobs', '/api/workflows'], assets: state.activePersonaId ? ['/api/assets', `/api/personas/${encodeURIComponent(state.activePersonaId)}/reference-packs`] : ['/api/assets'], publishing: [] }[state.view] || [];
+    const requests = { overview: [], personas: state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/versions`] : [], references: state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/reference-packs`, '/api/assets'] : [], 'content-packs': state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/content-packs`] : [], creator: state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/creator-profile`] : [], 'content-briefs': state.activePersonaId ? [`/api/personas/${encodeURIComponent(state.activePersonaId)}/content-briefs`, `/api/personas/${encodeURIComponent(state.activePersonaId)}/creator-profile`, `/api/personas/${encodeURIComponent(state.activePersonaId)}/content-packs`, `/api/personas/${encodeURIComponent(state.activePersonaId)}/content-artifacts`] : [], benchmarks: state.activePersonaId ? ['/api/identity-conditioning/catalog', `/api/personas/${encodeURIComponent(state.activePersonaId)}/identity-benchmarks`] : ['/api/identity-conditioning/catalog'], production: state.activePersonaId ? ['/api/jobs', '/api/workflows', `/api/personas/${encodeURIComponent(state.activePersonaId)}/content-packs`] : ['/api/jobs', '/api/workflows'], assets: state.activePersonaId ? ['/api/assets', `/api/personas/${encodeURIComponent(state.activePersonaId)}/reference-packs`] : ['/api/assets'], publishing: state.activePersonaId ? ['/api/publishing/policies', `/api/personas/${encodeURIComponent(state.activePersonaId)}/publishing-accounts`] : ['/api/publishing/policies'] }[state.view] || [];
     const results = await Promise.all(requests.map((url) => get(url, { signal })));
     if (signal.aborted || token !== state.requestToken) return;
     if (state.view === 'references') {
@@ -702,6 +706,10 @@ async function loadViewData() {
       state.assetReferenceLinks = Array.isArray(results[1]) ? results[1] : results[1]?.packs || [];
     }
     if (state.view === 'personas') state.versions = results[0] || [];
+    if (state.view === 'publishing') {
+      state.publishingPolicies = results[0] || null;
+      state.publishingAccounts = Array.isArray(results[1]) ? results[1] : [];
+    }
     renderView();
     $('#workspace-view').setAttribute('aria-busy', 'false');
     setStatus('Canonical workspace ready.', 'success');
@@ -953,6 +961,32 @@ async function checkAssetPublishingReadiness(assetId) {
     renderView();
     setStatus(report.ready ? 'Asset is ready for the future publishing gate.' : 'Asset publishing readiness is blocked.', report.ready ? 'success' : 'error');
   } catch (error) {
+    setStatus(error.message, 'error');
+  }
+}
+
+async function createPublishingAccount(event) {
+  event.preventDefault();
+  const form = event.target;
+  const errorTarget = $('#publishing-account-form-error');
+  if (!form.reportValidity()) return;
+  if (errorTarget) { errorTarget.textContent = ''; errorTarget.hidden = true; }
+  state.creatingPublishingAccount = true;
+  renderView();
+  try {
+    await post(`/api/personas/${encodeURIComponent(state.activePersonaId)}/publishing-accounts`, {
+      platform: form.elements.platform.value,
+      account_label: form.elements.account_label.value.trim(),
+      account_type: form.elements.account_type.value,
+      handle: form.elements.handle.value.trim() || null,
+      external_account_id: form.elements.external_account_id.value.trim() || null,
+    });
+    state.creatingPublishingAccount = false;
+    setStatus('Local publishing account binding saved; verification remains deferred.', 'success');
+    await loadViewData();
+  } catch (error) {
+    state.creatingPublishingAccount = false;
+    renderView();
     setStatus(error.message, 'error');
   }
 }
@@ -1505,6 +1539,10 @@ $('#workspace-view').addEventListener('submit', (event) => {
   }
   if (event.target.id === 'identity-benchmark-create-form') {
     createIdentityBenchmark(event);
+    return;
+  }
+  if (event.target.id === 'publishing-account-form') {
+    createPublishingAccount(event);
     return;
   }
   if (event.target.matches('[data-identity-benchmark-result]')) {
